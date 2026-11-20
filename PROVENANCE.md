@@ -45,4 +45,5 @@ abertura do nosso código.
 
 | Data | Evento |
 |---|---|
+| 2026-11-20 | licença proprietária atribuída a Fábio Morales Brião (CNPJ 34.681.339/0001-12) |
 | 2026-11-20 | contrato próprio implementado (`packages/contract`), política de encode com guarda GPL (`packages/encode`), CLI `lint` |
