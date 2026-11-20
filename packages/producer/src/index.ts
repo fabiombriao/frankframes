@@ -1,5 +1,7 @@
 // FrankFrames — proprietário. Ver LICENSE na raiz.
 export { renderComposition, prepare, RenderError, timedClips, frameCountFor } from "./render.ts";
+export { RENDER_ERROR_CODES, sanitizeMessage, toErrorPayload } from "./errors.ts";
+export type { ErrorPayload, RenderCode } from "./errors.ts";
 export type { PrepareOptions, PreparedComposition, RenderOptions, RenderResult, RenderStage } from "./render.ts";
 export { captureGolden, engineSignature, sampleFrames } from "./goldens.ts";
 export type { GoldenBlock, GoldenFrame, GoldenManifest } from "./goldens.ts";

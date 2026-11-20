@@ -10,7 +10,7 @@ import { loadComposition } from "@frankframes/contract";
 import { PINNED_BROWSER, assetPath, checkPinnedBrowser, startServer } from "@frankframes/engine";
 import { assertCodecAllowed, assertFfmpegAllowed, containerFor, detectFfmpeg } from "@frankframes/encode";
 import type { Preset, VideoCodec } from "@frankframes/encode";
-import { RenderError, prepare, renderComposition, resolveFfmpeg } from "@frankframes/producer";
+import { RenderError, prepare, renderComposition, resolveFfmpeg, toErrorPayload } from "@frankframes/producer";
 import { installLocalModel, resolveProvider } from "@frankframes/transcribe";
 import { listBlocks, readBlock } from "@frankframes/catalog";
 import { runDoctor, runInit, runSkillInstall } from "./onboarding.ts";
@@ -419,6 +419,10 @@ async function main(): Promise<void> {
     }
     process.exit(0);
   } catch (error) {
+    if (cli.json) {
+      process.stdout.write(`${JSON.stringify(toErrorPayload(error), null, 2)}\n`);
+      process.exit(1);
+    }
     if (error instanceof RenderError) {
       process.stderr.write(`erro ${error.code} no estágio ${error.stage}: ${error.message}\n`);
       for (const d of error.diagnostics.filter((x) => x.severity === "error")) {

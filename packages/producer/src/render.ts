@@ -2,6 +2,7 @@
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
@@ -246,6 +247,16 @@ export async function renderComposition(options: RenderOptions): Promise<RenderR
   const ffmpeg = options.ffmpeg ?? pair.ffmpeg;
   const { workDir, totalFrames, fps, viewport, seconds, entryDir, composition, warnings } = prepared;
 
+  // Ctrl+C não executa `finally`: o handler de exit remove o diretório de frames.
+  const cleanup = (): void => {
+    try {
+      rmSync(workDir, { recursive: true, force: true });
+    } catch {
+      /* já removido */
+    }
+  };
+  process.once("exit", cleanup);
+
   try {
     progress("capture", 25);
     const server = await startServer(entryDir, {
@@ -332,6 +343,9 @@ export async function renderComposition(options: RenderOptions): Promise<RenderR
       workDir,
     };
   } finally {
-    if (options.keepWorkDir !== true && prepared.ownsWorkDir) await rm(workDir, { recursive: true, force: true });
+    if (options.keepWorkDir !== true && prepared.ownsWorkDir) {
+      process.removeListener("exit", cleanup);
+      await rm(workDir, { recursive: true, force: true });
+    }
   }
 }
