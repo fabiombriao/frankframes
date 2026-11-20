@@ -18,6 +18,7 @@ export type { ServerOptions, StaticServer } from "./server.ts";
 export { extractFrames, probeDuration } from "./media.ts";
 export type { ExtractOptions, MediaManifest, MediaManifestEntry } from "./media.ts";
 export { MEDIA_SHIM_SOURCE } from "./media-shim.ts";
+export { PREVIEW_UI_SOURCE } from "./preview-ui.ts";
 export { captureFramesInParallel, splitIntoChunks } from "./parallel.ts";
 export type { ParallelCaptureOptions } from "./parallel.ts";
 export { classifyFailure, retryOnceIfTransient } from "./failures.ts";

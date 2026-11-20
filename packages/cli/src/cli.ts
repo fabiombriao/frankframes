@@ -288,6 +288,7 @@ async function main(): Promise<void> {
     const serverOptions: Parameters<typeof startServer>[1] = {
       page,
       live: true,
+      preview: { fps: prepared.fps, frames: prepared.totalFrames },
       ...(prepared.manifest !== undefined ? { manifest: prepared.manifest } : {}),
       ...(prepared.mediaDir !== undefined ? { mediaRoot: prepared.mediaDir } : {}),
     };
@@ -313,6 +314,7 @@ async function main(): Promise<void> {
         const next = await prepare({ entry, ffmpeg: pair.ffmpeg, ffprobe: pair.ffprobe, workDir });
         page.html = next.compiledHtml;
         serverOptions.manifest = next.manifest;
+        serverOptions.preview = { fps: next.fps, frames: next.totalFrames };
         prepared = next;
         server.notify();
         process.stdout.write(`recompilado em ${Date.now() - started} ms · ${next.totalFrames} frames\n`);

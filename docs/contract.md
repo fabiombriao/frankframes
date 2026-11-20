@@ -107,6 +107,10 @@ O contrato promete isto ao autor, e o engine tem que cumprir:
    decodifica vídeo durante a captura.
 5. **Prontidão explícita** antes do frame 0: fontes, imagens (`decode()`), metadados de mídia, N ticks de warmup.
 6. **Captura atômica**: layout+paint+composite num round-trip.
+   - a primeira captura de cada sessão é descartada, para forçar um frame completo;
+   - depois de cada seek, dois frames reais de compositor (`__ff.settle`);
+   - em software, `--disable-gpu-compositing`: o compositor SwiftShader re-apresenta raster parcial
+     em camadas com `clip-path`/`transform` e faz o mesmo frame sair diferente.
 7. **Prova**: SHA-256 por frame amostrado, versionado no repositório. Divergência falha o CI.
 
 **GPU:** o padrão é `auto` — hardware quando existe, SwiftShader como fallback. Igualdade byte-a-byte

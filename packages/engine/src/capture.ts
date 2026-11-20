@@ -116,11 +116,17 @@ async function startSession(
   });
 
   const cdp: CDPSession = await page.createCDPSession();
+  // Primeira captura descartada: força um frame completo antes de qualquer medição.
+  await cdp.send("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
 
   return {
     seekFrame: async (frame, fps) => {
       const ms = timeOfFrame(frame, fps) * 1000;
-      await page.evaluate((value) => (globalThis as unknown as VirtualClockWindow).__ff!.seek(value), ms);
+      await page.evaluate(async (value) => {
+        const clock = (globalThis as unknown as VirtualClockWindow).__ff!;
+        await clock.seek(value);
+        await (clock as unknown as { settle?: () => Promise<boolean> }).settle?.();
+      }, ms);
     },
     capture: async () => {
       const { data } = await cdp.send("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });

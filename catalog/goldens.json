@@ -1,0 +1,217 @@
+{
+  "engine": {
+    "browser": "158.0.8127.36",
+    "gpu": "software",
+    "viewport": "nativo"
+  },
+  "blocks": [
+    {
+      "name": "chart-bars",
+      "durationSeconds": 4,
+      "frames": [
+        {
+          "frame": 12,
+          "sha256": "073a0125eb45c3b148651188d366072af155a9e6f91ac95cd54b921e2ad52bd3"
+        },
+        {
+          "frame": 36,
+          "sha256": "222b473fdd1f92c098c1976495aa49c0854b1ab5a30cafa9200d5aa981d6eb2d"
+        },
+        {
+          "frame": 60,
+          "sha256": "f3c809e6e87d82e44a602cb2d4be5f7ad88c95816dfbc1d02f814b9197257e57"
+        },
+        {
+          "frame": 83,
+          "sha256": "f3c809e6e87d82e44a602cb2d4be5f7ad88c95816dfbc1d02f814b9197257e57"
+        },
+        {
+          "frame": 107,
+          "sha256": "f3c809e6e87d82e44a602cb2d4be5f7ad88c95816dfbc1d02f814b9197257e57"
+        }
+      ]
+    },
+    {
+      "name": "image-frame",
+      "durationSeconds": 3.5,
+      "frames": [
+        {
+          "frame": 10,
+          "sha256": "cf9a8a55cf20fed15e30f8f08e55d1faff396cb238bc6cb665b255bd87419258"
+        },
+        {
+          "frame": 31,
+          "sha256": "11feeadedd895c37ffe63f69f3663b42bfd4eb4d35db43ebbb60f789f77a3923"
+        },
+        {
+          "frame": 52,
+          "sha256": "212ccbfc87abe7ed5289fed83f3e7d967d82644d29b409b34e4fedeb3a8b4a1c"
+        },
+        {
+          "frame": 73,
+          "sha256": "1a7fbdf50893a6220cb0a21f50239da08924ce9298d6342f2a51112cb0c05b39"
+        },
+        {
+          "frame": 94,
+          "sha256": "4081fa51629629219a9dff7ec024b48bee2e131217223c143a29ee820816182b"
+        }
+      ]
+    },
+    {
+      "name": "list-reveal",
+      "durationSeconds": 4,
+      "frames": [
+        {
+          "frame": 12,
+          "sha256": "25c260a58996245d6b4888fdee350136a7ccef1873a6fcc8908f006577a1c84b"
+        },
+        {
+          "frame": 36,
+          "sha256": "a4c4ae785f3baee5798f273e53f75f75f08619cce3b8826e457d5c8d925d9296"
+        },
+        {
+          "frame": 60,
+          "sha256": "622af0c3655032dee8e0ff5a3c705dd2ba589884885393574224ca4d6e671167"
+        },
+        {
+          "frame": 83,
+          "sha256": "622af0c3655032dee8e0ff5a3c705dd2ba589884885393574224ca4d6e671167"
+        },
+        {
+          "frame": 107,
+          "sha256": "622af0c3655032dee8e0ff5a3c705dd2ba589884885393574224ca4d6e671167"
+        }
+      ]
+    },
+    {
+      "name": "lower-third",
+      "durationSeconds": 3,
+      "frames": [
+        {
+          "frame": 9,
+          "sha256": "80013659de90eb68843e3fd9bf9e6dcda13ab84b29f319141e43e7e1ef1fa5f9"
+        },
+        {
+          "frame": 27,
+          "sha256": "892f4c502d01763d5a90a8db4694a84819410ecb2a4cc9ab1af795cd294e6d0d"
+        },
+        {
+          "frame": 45,
+          "sha256": "80a09240702e726f2c6d92e3e3f5930b739a879446590183255c6599d14ec247"
+        },
+        {
+          "frame": 62,
+          "sha256": "80a09240702e726f2c6d92e3e3f5930b739a879446590183255c6599d14ec247"
+        },
+        {
+          "frame": 80,
+          "sha256": "80a09240702e726f2c6d92e3e3f5930b739a879446590183255c6599d14ec247"
+        }
+      ]
+    },
+    {
+      "name": "outro",
+      "durationSeconds": 3,
+      "frames": [
+        {
+          "frame": 9,
+          "sha256": "5953e0964716ca3447b67a8ae0d73caf6e30b8dc38a3e910e709d83d0ae78c7d"
+        },
+        {
+          "frame": 27,
+          "sha256": "e5a179bf840b18d8949f258cdd71acc2707f524a250a5eb85fba26d704cc3749"
+        },
+        {
+          "frame": 45,
+          "sha256": "013da2bc52a761898f7dbb6f1944adaba3043c629bf757aac152c063262c5b5b"
+        },
+        {
+          "frame": 62,
+          "sha256": "a33f42613b2be1655bdbd0343f85020e9b934fb4065b4a30822555ecf73d6d8c"
+        },
+        {
+          "frame": 80,
+          "sha256": "a33f42613b2be1655bdbd0343f85020e9b934fb4065b4a30822555ecf73d6d8c"
+        }
+      ]
+    },
+    {
+      "name": "quote",
+      "durationSeconds": 4.5,
+      "frames": [
+        {
+          "frame": 13,
+          "sha256": "03669abf05f55bf94b0bf01b5c3862830369fad15d2b2947608100208e369a5d"
+        },
+        {
+          "frame": 40,
+          "sha256": "dd7a5752a86c612bbbb211cafe0a94484f748ab6319a7cf55f08feaaed1a2856"
+        },
+        {
+          "frame": 67,
+          "sha256": "fd10e4b05ea3db4abb84424522dc08c0916bd9f19141f19f6d0d1c2ad6eb7131"
+        },
+        {
+          "frame": 94,
+          "sha256": "fd10e4b05ea3db4abb84424522dc08c0916bd9f19141f19f6d0d1c2ad6eb7131"
+        },
+        {
+          "frame": 121,
+          "sha256": "fd10e4b05ea3db4abb84424522dc08c0916bd9f19141f19f6d0d1c2ad6eb7131"
+        }
+      ]
+    },
+    {
+      "name": "stat-counter",
+      "durationSeconds": 3.5,
+      "frames": [
+        {
+          "frame": 10,
+          "sha256": "cf63fa5023ea6139d0d1c11a62a67c3ebdd6dc9b5a1e83f1e7c624ba90c76a15"
+        },
+        {
+          "frame": 31,
+          "sha256": "e318e829bffa318d56141c4a88848cb2f6b63b1537fc9e540837a68016e508c7"
+        },
+        {
+          "frame": 52,
+          "sha256": "d19e601d36f641f7f36cdd60398b5f434ab8aa52650ea91b8682488f3e3ce5ad"
+        },
+        {
+          "frame": 73,
+          "sha256": "50902cd4c285a2b4cd88a36120dfcefd05a09410d6d3175ca47e9f072025cf8b"
+        },
+        {
+          "frame": 94,
+          "sha256": "50902cd4c285a2b4cd88a36120dfcefd05a09410d6d3175ca47e9f072025cf8b"
+        }
+      ]
+    },
+    {
+      "name": "title-card",
+      "durationSeconds": 4,
+      "frames": [
+        {
+          "frame": 12,
+          "sha256": "b274061a6c26f159548db96e34eb7eaea9442df315189a03adb6579cc5e97f2b"
+        },
+        {
+          "frame": 36,
+          "sha256": "af72106a169fb83b91a317c5f33188d1fe0770ccfe32119bdf1bb5e5526880c9"
+        },
+        {
+          "frame": 60,
+          "sha256": "cbd2c2329e6e21ac32bf65dc465561b6f380f7e9834ae5b602118ae60c8c44fa"
+        },
+        {
+          "frame": 83,
+          "sha256": "cbd2c2329e6e21ac32bf65dc465561b6f380f7e9834ae5b602118ae60c8c44fa"
+        },
+        {
+          "frame": 107,
+          "sha256": "cbd2c2329e6e21ac32bf65dc465561b6f380f7e9834ae5b602118ae60c8c44fa"
+        }
+      ]
+    }
+  ]
+}

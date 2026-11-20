@@ -25,6 +25,7 @@ export const CLOCK_SOURCE = `(() => {
 
   const realNow = performance.now.bind(performance);
   const realRaf = window.requestAnimationFrame.bind(window);
+  const realSetTimeout = window.setTimeout.bind(window);
   const RealDate = Date;
   class VirtualDate extends RealDate {
     constructor(...args) {
@@ -117,8 +118,16 @@ export const CLOCK_SOURCE = `(() => {
   const liveErrors = [];
   let liveHandle = null;
 
+  let liveToken = 0;
+
+  const stopLive = () => {
+    liveToken += 1;
+    liveHandle = null;
+  };
+
   const startLive = (startAtMs) => {
     if (liveHandle !== null) return;
+    const token = ++liveToken;
     const base = realNow() - (startAtMs || 0);
     let lastPersist = 0;
     // Primeiro passe é síncrono: nada de mostrar o estado errado antes do primeiro rAF.
@@ -126,6 +135,7 @@ export const CLOCK_SOURCE = `(() => {
     syncAnimations();
     syncVisibility();
     const tick = () => {
+      if (token !== liveToken) return;
       nowMs = realNow() - base;
       try {
         syncAnimations();
@@ -145,11 +155,27 @@ export const CLOCK_SOURCE = `(() => {
     liveHandle = realRaf(tick);
   };
 
+  // Dois frames reais de compositor, com teto de tempo: garante que o paint do
+  // seek atual já subiu antes do screenshot.
+  const settlePaint = () =>
+    new Promise((resolve) => {
+      let done = false;
+      const finish = () => {
+        if (done) return;
+        done = true;
+        resolve(true);
+      };
+      realRaf(() => realRaf(finish));
+      realSetTimeout(finish, 60);
+    });
+
   window.__ff = {
     ready,
+    settle: settlePaint,
     syncVisibility,
     syncAnimations,
     startLive,
+    stopLive,
     liveHooks,
     liveErrors,
     now: () => nowMs,

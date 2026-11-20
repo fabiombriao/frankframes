@@ -44,7 +44,14 @@ const DETERMINISM_FLAGS = [
  */
 export function gpuFlags(mode: ResolvedGpuMode, platform: string = process.platform): string[] {
   if (mode === "software") {
-    return ["--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader"];
+    return [
+      "--use-gl=angle",
+      "--use-angle=swiftshader",
+      "--enable-unsafe-swiftshader",
+      // SwiftShader retém camada transformada por vários frames e re-apresenta
+      // raster parcial; sem isso, blocos com clip-path/transform divergem.
+      "--disable-gpu-compositing",
+    ];
   }
   if (platform === "win32") return ["--use-angle=d3d11"];
   if (platform === "darwin") return ["--use-angle=metal"];

@@ -50,6 +50,8 @@ export interface ServerOptions {
   page?: { path: string; html: string };
   /** Preview: relógio em tempo real + recarga por SSE. */
   live?: boolean;
+  /** Preview com barra de controle (fps e total de frames). */
+  preview?: { fps: { num: number; den: number }; frames: number };
 }
 
 const MEDIA_PREFIX = "/__ff_media/";
@@ -120,6 +122,7 @@ export async function startServer(rootDir: string, options: ServerOptions = {}):
               disableMediaShim: options.disableMediaShim,
               fontsBase: roots.fonts ? FONTS_PREFIX.slice(0, -1) : null,
               ...(options.live === true ? { live: true } : {}),
+              ...(options.preview !== undefined ? { preview: options.preview } : {}),
             }),
           )
         : raw;

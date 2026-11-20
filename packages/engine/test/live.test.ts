@@ -46,8 +46,8 @@ test("preview roda em tempo real e respeita a janela dos clips", { timeout: 120_
     const first = await session.evaluate<number>("window.__ff.now()");
     assert.equal(visibility, "hidden", "clip que começa em 1 s não pode aparecer aos ~0 s");
 
-    const second = await waitForClock(session, 600);
-    assert.ok(second > first + 300, `relógio do preview precisa avançar sozinho (${Math.round(first)} → ${Math.round(second)})`);
+    const second = await waitForClock(session, first + 300);
+    assert.ok(second >= first + 300, `relógio do preview precisa avançar sozinho (${Math.round(first)} → ${Math.round(second)})`);
 
     await waitForClock(session, 1_200);
     const later = await session.evaluate<string>(
