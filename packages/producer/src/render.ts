@@ -10,7 +10,7 @@ import { loadComposition } from "@frankframes/contract";
 import type { Composition, Diagnostic, RawClip, ResolvedClip } from "@frankframes/contract";
 import { buildFrameSequenceArgs, buildMuxArgs, containerFor } from "@frankframes/encode";
 import type { Preset, VideoCodec } from "@frankframes/encode";
-import { captureFramesInParallel, extractFrames, probeDuration, retryOnceIfTransient, startServer } from "@frankframes/engine";
+import { assetPath, captureFramesInParallel, extractFramesCached, probeDuration, retryOnceIfTransient, startServer } from "@frankframes/engine";
 import type { MediaManifest } from "@frankframes/engine";
 import { annotateTiming, materializeClipIds, mergeSubCompositions } from "./compile.ts";
 import { resolveFfmpeg } from "./ffmpeg.ts";
@@ -157,12 +157,12 @@ export async function prepare(options: PrepareOptions): Promise<PreparedComposit
   const videos = timedClips(composition).filter((item) => item.clip.tag === "video" && item.clip.mediaSrc !== undefined);
   if (videos.length > 0) {
     progress("extract", 20);
-    mediaDir = join(workDir, "media");
+    mediaDir = assetPath("cache", "frames");
     manifest = { fps, clips: [] };
     for (const { clip, start } of videos) {
       const dir = `${clip.id.replace(/[^A-Za-z0-9_-]/g, "_")}_${createHash("sha256").update(clip.id).digest("hex").slice(0, 6)}`;
       const clipDuration = clip.authoredDuration ?? Math.max(0, seconds - start);
-      const { frameCount } = await extractFrames({
+      const { frameCount, dir: cacheDir } = await extractFramesCached({
         ffmpeg,
         input: resolve(entryDir, clip.mediaSrc!),
         outDir: join(mediaDir, dir),
@@ -170,13 +170,14 @@ export async function prepare(options: PrepareOptions): Promise<PreparedComposit
         offset: clip.offset,
         duration: clipDuration * clip.playbackRate,
       });
+      const cacheName = cacheDir.slice(mediaDir.length + 1);
       manifest.clips.push({
         clipId: clip.id,
         start,
         duration: clipDuration,
         offset: clip.offset,
         playbackRate: clip.playbackRate,
-        dir,
+        dir: cacheName,
         frameCount,
       });
     }

@@ -99,9 +99,11 @@ try {
   const entry = join(workspace, "index.html");
   await writeFile(entry, composition);
 
+  const workersFlag = args.indexOf("--workers");
+  const workers = workersFlag >= 0 ? Number(args[workersFlag + 1]) : 2;
   const gpuFlag = args.indexOf("--gpu");
   const gpu = gpuFlag >= 0 ? (args[gpuFlag + 1] as "auto" | "software" | "hardware") : "auto";
-  const renderOptions = { entry, ffmpeg, ffprobe, codec: "av1" as const, preset: "draft" as const, workers: 2, gpu };
+  const renderOptions = { entry, ffmpeg, ffprobe, codec: "av1" as const, preset: "draft" as const, workers, gpu };
   const first = await renderComposition({ ...renderOptions, outPath: join(workspace, "a.mp4") });
   const second = await renderComposition({ ...renderOptions, outPath: join(workspace, "b.mp4") });
 

@@ -129,9 +129,21 @@ export const CLOCK_SOURCE = `(() => {
     liveHandle = null;
   };
 
+  let persistOnHide = false;
   const startLive = (startAtMs) => {
     if (liveHandle !== null) return;
     const token = ++liveToken;
+    if (!persistOnHide) {
+      persistOnHide = true;
+      // Recarregar/navegar precisa gravar o instante exato, não o último tick periódico.
+      const persist = () => {
+        try {
+          sessionStorage.setItem("__ffTime", String(Math.round(nowMs)));
+        } catch {}
+      };
+      window.addEventListener("pagehide", persist);
+      window.addEventListener("visibilitychange", persist);
+    }
     const base = realNow() - (startAtMs || 0);
     let lastPersist = 0;
     // Primeiro passe é síncrono: nada de mostrar o estado errado antes do primeiro rAF.

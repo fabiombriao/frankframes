@@ -16,6 +16,8 @@ export type { RendererInfo } from "./probe.ts";
 export { startServer } from "./server.ts";
 export type { ServerOptions, StaticServer } from "./server.ts";
 export { extractFrames, probeDuration } from "./media.ts";
+export { DEFAULT_FRAME_CACHE_BYTES, evictCache, extractFramesCached, fileDigest, frameCacheKey } from "./cache.ts";
+export type { CachedExtraction, FrameCacheOptions } from "./cache.ts";
 export type { ExtractOptions, MediaManifest, MediaManifestEntry } from "./media.ts";
 export { MEDIA_SHIM_SOURCE } from "./media-shim.ts";
 export { PREVIEW_UI_SOURCE } from "./preview-ui.ts";
