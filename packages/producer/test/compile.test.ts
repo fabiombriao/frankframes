@@ -91,3 +91,30 @@ test("clip sem data-clip-id recebe tempo anotado", async () => {
   assert.match(annotated, /data-ff-start="1000"/);
   assert.match(annotated, /data-ff-end="2000"/);
 });
+
+test("<style> do <head> da sub-composição é preservado", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "ff-head-"));
+  await writeFile(
+    join(dir, "card.html"),
+    `<html><head><style>.x{color:red}</style></head><body>
+      <div data-composition-id="card" data-duration="1" style="background:blue">
+        <div data-clip-id="x" data-start="0" data-duration="1" class="x">oi</div>
+      </div></body></html>`,
+  );
+  const merged = await mergeSubCompositions(
+    `<div data-composition-id="main" data-root="true"><div data-composition-id="h" data-start="0" data-composition-src="card.html"></div></div>`,
+    dir,
+  );
+  assert.ok(merged.html.includes(".x{color:red}"), "o <style> do head precisa entrar");
+  assert.ok(merged.html.includes("background:blue"), "o style da raiz interna precisa ser herdado");
+});
+
+test("data-composition-src fora da entrada é recusado", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "ff-escape-"));
+  const merged = await mergeSubCompositions(
+    `<div data-composition-id="main" data-root="true"><div data-composition-id="h" data-start="0" data-composition-src="../segredo.html"></div></div>`,
+    dir,
+  );
+  assert.ok(merged.warnings.some((w) => w.includes("fora do diretório")));
+  assert.ok(!merged.html.includes("data-composition-src"));
+});
