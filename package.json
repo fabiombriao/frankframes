@@ -14,7 +14,9 @@
   "scripts": {
     "test": "node --test \"packages/*/test/*.test.ts\"",
     "typecheck": "tsc --noEmit",
-    "ci": "node packages/cli/src/cli.ts setup && node packages/cli/src/cli.ts doctor && npm test"
+    "ci": "node scripts/ci.ts",
+    "ci:fast": "node scripts/ci.ts --fast",
+    "ci:release": "node scripts/ci.ts --release"
   },
   "devDependencies": {
     "@types/node": "^26.6.6",

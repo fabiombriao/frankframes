@@ -73,6 +73,11 @@ vendor/ffmpeg       build LGPL pinado + LICENSE + SOURCE (binários fora do vers
 PROVENANCE.md       método e limites de reuso
 ```
 
+## CI
+
+O gate roda local, sem serviço externo: `node scripts/ci.ts` (47 s, 6 etapas). Detalhes em
+`docs/ci.md`. Para rodar antes de cada push: `node scripts/install-hooks.ts`.
+
 ## Regras do projeto
 
 - Contrato inválido **bloqueia** o render. Nunca há "renderizou com sucesso e saiu errado".

@@ -49,6 +49,16 @@
           ],
           "acceptance": "Em VM sem Node global, sem Chrome e sem FFmpeg, `frankframes doctor` aponta exatamente o que instalar e o `init` + `render` funciona após o postinstall.",
           "jiraKey": "EDT-5"
+        },
+        {
+          "summary": "CI em servidor próprio (Linux)",
+          "points": 5,
+          "labels": [
+            "plataforma",
+            "ci"
+          ],
+          "acceptance": "Build e gate rodam sem a máquina local: FFmpeg Linux LGPL pinado por SHA-256, libs do Chrome headless no container, cache por versão e relatório de falha por etapa. Só entra quando houver VPS.",
+          "jiraKey": "EDT-34"
         }
       ],
       "jiraKey": "EDT-1"
