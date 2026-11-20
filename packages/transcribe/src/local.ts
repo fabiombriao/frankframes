@@ -1,7 +1,8 @@
 // FrankFrames — proprietário. Ver LICENSE na raiz.
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, open, readFile, rename, rm } from "node:fs/promises";
+import { createReadStream } from "node:fs";
+import { mkdir, mkdtemp, open, readFile, rename, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { TranscribeError } from "./types.ts";
@@ -12,12 +13,6 @@ export interface LocalConfig {
   modelPath: string;
   /** Opcional: converte a entrada para WAV 16 kHz mono antes do whisper.cpp. */
   ffmpeg?: string;
-}
-
-export interface InstallLocalModelOptions {
-  modelUrl: string;
-  destPath: string;
-  expectedSha256?: string;
 }
 
 interface WhisperEntry {
@@ -128,52 +123,94 @@ export function createLocal(config: LocalConfig): Transcriber {
  * Único caminho que baixa o modelo. Streaming para arquivo temporário, SHA-256
  * conferido antes do rename — em caso de hash errado o destino nunca aparece.
  */
-export async function installLocalModel(options: InstallLocalModelOptions): Promise<{ path: string; bytes: number }> {
-  let response: Response;
-  try {
-    response = await fetch(options.modelUrl);
-  } catch (error) {
-    throw new TranscribeError("E_MODEL_DOWNLOAD", `Falha ao baixar ${options.modelUrl}.`, { cause: error });
-  }
+export interface InstallLocalModelOptions {
+  modelUrl: string;
+  destPath: string;
+  expectedSha256?: string;
+  onProgress?: (info: { bytes: number; total?: number }) => void;
+}
 
-  const body = response.body;
-  if (!response.ok || !body) {
-    throw new TranscribeError(
-      "E_MODEL_DOWNLOAD",
-      `Download do modelo falhou (HTTP ${response.status}): ${(await response.text()).slice(0, 300)}`,
-      { status: response.status },
-    );
-  }
-
-  await mkdir(dirname(options.destPath), { recursive: true });
-  const tmpPath = `${options.destPath}.${process.pid}.${Date.now()}.tmp`;
+async function sha256File(path: string): Promise<string> {
   const hash = createHash("sha256");
-  let bytes = 0;
+  for await (const chunk of createReadStream(path)) hash.update(chunk as Buffer);
+  return hash.digest("hex");
+}
 
-  try {
-    const handle = await open(tmpPath, "w");
-    const reader = body.getReader();
+async function fileSize(path: string): Promise<number> {
+  return stat(path).then((info) => info.size).catch(() => 0);
+}
+
+/**
+ * Baixa o modelo com retomada (Range sobre `.part`), verifica o SHA-256 antes
+ * de publicar e nunca chama a rede quando o destino já está íntegro.
+ */
+export async function installLocalModel(options: InstallLocalModelOptions): Promise<{
+  path: string;
+  bytes: number;
+  sha256: string;
+  resumed: boolean;
+}> {
+  await mkdir(dirname(options.destPath), { recursive: true });
+  const partPath = `${options.destPath}.part`;
+
+  if (await fileSize(options.destPath) > 0) {
+    const digest = await sha256File(options.destPath);
+    if (options.expectedSha256 === undefined || digest.toLowerCase() === options.expectedSha256.toLowerCase()) {
+      return { path: options.destPath, bytes: await fileSize(options.destPath), sha256: digest, resumed: false };
+    }
+    await rm(options.destPath, { force: true });
+  }
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const offset = await fileSize(partPath);
+    let response: Response;
     try {
-      for (;;) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        const buffer = Buffer.from(value);
-        hash.update(buffer);
-        bytes += buffer.byteLength;
-        await handle.write(buffer);
+      response = await fetch(options.modelUrl, offset > 0 ? { headers: { Range: `bytes=${offset}-` } } : {});
+    } catch (error) {
+      if (attempt === 1) throw new TranscribeError("E_MODEL_DOWNLOAD", `Falha ao baixar ${options.modelUrl}.`, { cause: error });
+      continue;
+    }
+
+    if (response.status === 416) break; // já temos tudo
+    if (!response.ok || response.body === null) {
+      throw new TranscribeError(
+        "E_MODEL_DOWNLOAD",
+        `Download do modelo falhou (HTTP ${response.status}): ${(await response.text()).slice(0, 300)}`,
+        { status: response.status },
+      );
+    }
+
+    const append = response.status === 206 && offset > 0;
+    let written = append ? offset : 0;
+    const handle = await open(partPath, append ? "a" : "w");
+    try {
+      const reader = response.body.getReader();
+      try {
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          const buffer = Buffer.from(value);
+          written += buffer.byteLength;
+          await handle.write(buffer);
+          options.onProgress?.({ bytes: written });
+        }
+      } finally {
+        reader.releaseLock();
       }
+    } catch (error) {
+      if (attempt === 1) {
+        throw new TranscribeError("E_MODEL_DOWNLOAD", `Falha ao gravar o modelo em ${options.destPath}.`, { cause: error });
+      }
+      continue;
     } finally {
-      reader.releaseLock();
       await handle.close();
     }
-  } catch (error) {
-    await rm(tmpPath, { force: true });
-    throw new TranscribeError("E_MODEL_DOWNLOAD", `Falha ao gravar o modelo em ${options.destPath}.`, { cause: error });
+    break;
   }
 
-  const digest = hash.digest("hex");
-  if (options.expectedSha256 && digest.toLowerCase() !== options.expectedSha256.toLowerCase()) {
-    await rm(tmpPath, { force: true });
+  const digest = await sha256File(partPath);
+  if (options.expectedSha256 !== undefined && digest.toLowerCase() !== options.expectedSha256.toLowerCase()) {
+    await rm(partPath, { force: true });
     throw new TranscribeError(
       "E_MODEL_HASH",
       `SHA-256 do modelo não confere: esperado ${options.expectedSha256}, obtido ${digest}.`,
@@ -181,12 +218,16 @@ export async function installLocalModel(options: InstallLocalModelOptions): Prom
   }
 
   try {
-    await rename(tmpPath, options.destPath);
+    await rename(partPath, options.destPath);
   } catch {
-    // Windows não sobrescreve via rename.
     await rm(options.destPath, { force: true });
-    await rename(tmpPath, options.destPath);
+    await rename(partPath, options.destPath);
   }
 
-  return { path: options.destPath, bytes };
+  return {
+    path: options.destPath,
+    bytes: await fileSize(options.destPath),
+    sha256: digest,
+    resumed: false,
+  };
 }

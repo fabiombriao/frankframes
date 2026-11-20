@@ -2,5 +2,11 @@
   "name": "Cartão de título",
   "summary": "Abertura editorial de alto contraste com tipografia condensada e régua de metadados.",
   "durationSeconds": 4,
-  "tags": ["abertura", "tipografia", "editorial", "preto"]
+  "tags": [
+    "abertura",
+    "tipografia",
+    "editorial",
+    "preto"
+  ],
+  "sha256": "085564669f61fe416c31ee4c78794d05f7b753b048ce4880acb6d7978efd020b"
 }

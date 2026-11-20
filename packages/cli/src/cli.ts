@@ -2,7 +2,7 @@
 // FrankFrames — proprietário. Ver LICENSE na raiz.
 import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
-import { cp, mkdtemp, rm } from "node:fs/promises";
+import { cp, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { watch } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, extname, join, resolve } from "node:path";
@@ -10,11 +10,12 @@ import { loadComposition } from "@frankframes/contract";
 import { PINNED_BROWSER, assetPath, checkPinnedBrowser, startServer } from "@frankframes/engine";
 import { assertCodecAllowed, assertFfmpegAllowed, containerFor, detectFfmpeg } from "@frankframes/encode";
 import type { Preset, VideoCodec } from "@frankframes/encode";
-import { RenderError, prepare, renderComposition, resolveFfmpeg, toErrorPayload } from "@frankframes/producer";
+import { RenderError, buildCaptionComposition, prepare, renderComposition, resolveFfmpeg, toErrorPayload } from "@frankframes/producer";
 import { installLocalModel, resolveProvider } from "@frankframes/transcribe";
-import { listBlocks, readBlock } from "@frankframes/catalog";
+import { installBlockFromUrl, listBlocks, readBlock } from "@frankframes/catalog";
 import { runDoctor, runInit, runSkillInstall } from "./onboarding.ts";
 import { runSetup } from "./setup.ts";
+import { runUpgrade } from "./upgrade.ts";
 import type { RenderStage } from "@frankframes/producer";
 
 const HELP = `frankframes — vídeo determinístico a partir de HTML
@@ -25,12 +26,14 @@ uso:
                                     [--workers N] [--keep] [--json]
   frankframes preview <arquivo.html> [--open]
   frankframes transcribe <audio> [--provider local|groq|openai-compatible] [--language pt] [--json]
+  frankframes captions <audio> [-o legenda.html] [--size 1920x1080] [--language pt]
   frankframes models install whisper-large-v3-turbo
   frankframes blocks list
   frankframes blocks add <slug> [destino]
   frankframes init [diretório]
   frankframes doctor
   frankframes setup [--check] [--fonts-only]
+  frankframes upgrade [--apply]
   frankframes skill install [--cursor] [diretório]
   frankframes browser check
   frankframes browser install
@@ -72,7 +75,7 @@ function parseCli(argv: string[]): Cli {
     else if (arg === "--provider") cli.provider = argv[++i];
     else if (arg === "--language") cli.language = argv[++i];
     else if (arg.startsWith("-")) {
-      const known = ["--open", "--check", "--fonts-only", "--cursor"];
+      const known = ["--open", "--check", "--fonts-only", "--cursor", "--apply"];
       if (!known.includes(arg)) throw new Error(`opção desconhecida: ${arg}`);
       cli.flags.push(arg);
     }
@@ -156,6 +159,15 @@ async function main(): Promise<void> {
     process.exit(await runSetup({ check: cli.flags.includes("--check"), fontsOnly: cli.flags.includes("--fonts-only") }));
   }
 
+  if (cli.command === "upgrade") {
+    try {
+      process.exit(await runUpgrade({ apply: cli.flags.includes("--apply") }));
+    } catch (error) {
+      process.stderr.write(`erro ao verificar atualização: ${(error as Error).message}\n`);
+      process.exit(1);
+    }
+  }
+
   if (cli.command === "doctor") {
     process.exit(await runDoctor());
   }
@@ -235,6 +247,28 @@ async function main(): Promise<void> {
     }
   }
 
+  if (cli.command === "captions") {
+    const outIndex = process.argv.indexOf("-o");
+    const outPath = resolve(outIndex > 0 ? (process.argv[outIndex + 1] ?? "legenda.html") : "legenda.html");
+    const sizeIndex = process.argv.indexOf("--size");
+    const [width, height] = (sizeIndex > 0 ? (process.argv[sizeIndex + 1] ?? "1920x1080") : "1920x1080").split("x").map(Number);
+    try {
+      const transcriber = await resolveProvider({ language: cli.language });
+      const result = await transcriber.transcribe(entry, { language: cli.language });
+      const html = buildCaptionComposition(result.segments, {
+        ...(Number.isFinite(width) ? { width } : {}),
+        ...(Number.isFinite(height) ? { height } : {}),
+      });
+      await writeFile(outPath, html, "utf8");
+      process.stdout.write(`${outPath} · ${result.segments.length} segmento(s) · ${result.provider}\n`);
+      process.exit(0);
+    } catch (error) {
+      const err = error as { code?: string; message: string };
+      process.stderr.write(`erro ${err.code ?? "E_CAPTIONS"}: ${err.message}\n`);
+      process.exit(1);
+    }
+  }
+
   if (cli.command === "models") {
     if (cli.file !== "install") {
       process.stderr.write(`uso: frankframes models install whisper-large-v3-turbo\n`);
@@ -264,12 +298,22 @@ async function main(): Promise<void> {
         process.stderr.write("uso: frankframes blocks add <slug> [destino]\n");
         process.exit(2);
       }
+      const target = resolve(process.argv[5] ?? "bloco");
+      if (/^https?:\/\//.test(slug)) {
+        try {
+          const installed = await installBlockFromUrl(slug, target);
+          process.stdout.write(`${installed.destination} · ${installed.bytes} bytes · sha256 ${installed.sha256.slice(0, 12)}…\n`);
+          process.exit(0);
+        } catch (error) {
+          process.stderr.write(`falha ao instalar: ${(error as Error).message}\n`);
+          process.exit(1);
+        }
+      }
       const block = listBlocks().find((candidate) => candidate.slug === slug);
       if (!block) {
-        process.stderr.write(`bloco desconhecido: ${slug}\n`);
+        process.stderr.write(`bloco desconhecido: ${slug} (passe um slug local ou uma URL)\n`);
         process.exit(2);
       }
-      const target = resolve(process.argv[5] ?? slug);
       await cp(block.dir, target, { recursive: true });
       process.stdout.write(`${target} (${readBlock(slug).length} bytes de HTML)\n`);
       process.exit(0);

@@ -2,5 +2,11 @@
   "name": "Citação editorial",
   "summary": "Citação em serifa grande sobre papel, com aspas descomunais e atribuição em monoespaçada.",
   "durationSeconds": 4.5,
-  "tags": ["citação", "serifa", "papel", "editorial"]
+  "tags": [
+    "citação",
+    "serifa",
+    "papel",
+    "editorial"
+  ],
+  "sha256": "c4a823a3c065bcbf77074d102a2e2c2d606b5e75c3544746efc4f368aa65daec"
 }

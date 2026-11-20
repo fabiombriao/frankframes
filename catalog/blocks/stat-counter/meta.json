@@ -2,5 +2,11 @@
   "name": "Contador estatístico",
   "summary": "Número gigante com dígitos em odômetro CSS, sublinhado vermelho e leitura de contexto.",
   "durationSeconds": 3.5,
-  "tags": ["dados", "estatística", "número", "odômetro"]
+  "tags": [
+    "dados",
+    "estatística",
+    "número",
+    "odômetro"
+  ],
+  "sha256": "801d25e621827b3f6932f9d1b4b734fbb274bdec7afa9f74aa3295e98f43257e"
 }

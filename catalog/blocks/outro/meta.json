@@ -2,5 +2,11 @@
   "name": "Cartão final",
   "summary": "Encerramento em vermelho com tipografia gigante, monograma preto e assinatura da marca.",
   "durationSeconds": 3,
-  "tags": ["encerramento", "marca", "vermelho", "tipografia"]
+  "tags": [
+    "encerramento",
+    "marca",
+    "vermelho",
+    "tipografia"
+  ],
+  "sha256": "bec5dc9db96d5eeb167962fc1343eb08da78279b5bec5bdb07118e12b4d489d7"
 }

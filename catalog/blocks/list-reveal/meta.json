@@ -2,5 +2,11 @@
   "name": "Lista revelada",
   "summary": "Três notas numeradas entram em sequência sobre verde profundo, separadas por fios finos.",
   "durationSeconds": 4,
-  "tags": ["lista", "revelação", "stagger", "verde"]
+  "tags": [
+    "lista",
+    "revelação",
+    "stagger",
+    "verde"
+  ],
+  "sha256": "f05b57d9e99bcdbefb5762683e41ab6cfccae5d6dff9f184b274a157284bb173"
 }

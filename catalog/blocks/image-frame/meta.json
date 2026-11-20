@@ -2,5 +2,11 @@
   "name": "Moldura de imagem",
   "summary": "Paisagem abstrata em CSS dentro de passe-partout, com legenda de arquivo e marcas de corte.",
   "durationSeconds": 3.5,
-  "tags": ["imagem", "moldura", "paisagem", "arquivo"]
+  "tags": [
+    "imagem",
+    "moldura",
+    "paisagem",
+    "arquivo"
+  ],
+  "sha256": "41989a06ad9f8c3463231d70d4bb8c781958fa66dfe977c1eb59d5c42f958a10"
 }

@@ -57,6 +57,30 @@ export async function captureGolden(
   }
 }
 
+/** Um frame no meio do bloco, como PNG, para thumbnail. */
+export async function captureFrameAt(entry: string, ratio = 0.5): Promise<{ png: Buffer; frame: number; totalFrames: number }> {
+  const prepared = await prepare({ entry });
+  const server = await startServer(prepared.entryDir, {
+    ...(prepared.mediaDir !== undefined ? { mediaRoot: prepared.mediaDir } : {}),
+    ...(prepared.manifest !== undefined ? { manifest: prepared.manifest } : {}),
+    page: { path: basename(prepared.entry), html: prepared.compiledHtml },
+  });
+  const session = await openSession({
+    url: `${server.url}${basename(prepared.entry)}`,
+    viewport: prepared.viewport,
+    gpu: "software",
+  });
+  try {
+    const frame = Math.min(prepared.totalFrames - 1, Math.round(ratio * (prepared.totalFrames - 1)));
+    await session.seekFrame(frame, prepared.fps);
+    const { png } = await session.capture();
+    return { png, frame, totalFrames: prepared.totalFrames };
+  } finally {
+    await session.close();
+    await server.close();
+  }
+}
+
 export async function engineSignature(gpu: GpuMode = "software"): Promise<GoldenManifest["engine"]> {
   const chrome = await resolveChrome();
   return { browser: chrome.version, gpu, viewport: "nativo" };

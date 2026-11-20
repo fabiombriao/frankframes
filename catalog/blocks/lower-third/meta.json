@@ -2,5 +2,11 @@
   "name": "Legenda de identificação",
   "summary": "Faixa amarela de alto contraste para nome e cargo, com entrada deslizada.",
   "durationSeconds": 3,
-  "tags": ["legenda", "entrevista", "amarelo", "identificação"]
+  "tags": [
+    "legenda",
+    "entrevista",
+    "amarelo",
+    "identificação"
+  ],
+  "sha256": "f2cf6110bd76db7aaf1e80fc8d9461103588fe947b1abbb2a4b3c1b348175879"
 }

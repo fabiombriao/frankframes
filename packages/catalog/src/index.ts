@@ -79,3 +79,6 @@ export function readBlock(slug: string, file = "index.html"): string {
   }
   return readFileSync(target, "utf8");
 }
+
+export { installBlockFromUrl, readBlockHtml } from "./remote.ts";
+export type { InstalledBlock } from "./remote.ts";

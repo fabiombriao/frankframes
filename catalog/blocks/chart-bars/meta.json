@@ -2,5 +2,11 @@
   "name": "Gráfico de barras",
   "summary": "Barras horizontais com rótulos fortes e crescimento escalonado sobre grade editorial.",
   "durationSeconds": 4,
-  "tags": ["gráfico", "barras", "dados", "comparação"]
+  "tags": [
+    "gráfico",
+    "barras",
+    "dados",
+    "comparação"
+  ],
+  "sha256": "640e9492d5a02b630dab9e8aaa5bf84dca5606c3021ea4c7de16f9da3f9ace5f"
 }
