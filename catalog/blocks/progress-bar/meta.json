@@ -1,0 +1,11 @@
+{
+  "name": "Barra de progresso",
+  "summary": "Barra que preenche de 0 a 100% com escala, marcação de ticks e legenda técnica de render.",
+  "durationSeconds": 4,
+  "tags": [
+    "progresso",
+    "render",
+    "barra",
+    "interface"
+  ]
+}

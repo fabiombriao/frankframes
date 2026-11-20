@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>pull-quote</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: #14130f; }
+  .stage {
+    position: relative;
+    width: 1920px;
+    height: 1080px;
+    overflow: hidden;
+    background: #14130f;
+    color: #f4f0e6;
+    font-family: "Inter", sans-serif;
+  }
+  .bar {
+    position: absolute;
+    left: 148px;
+    top: 210px;
+    width: 10px;
+    height: 610px;
+    background: #c8412a;
+    transform-origin: top center;
+    animation: bar-in 0.7s cubic-bezier(0.22, 0.8, 0.2, 1) both;
+  }
+  .stamp {
+    position: absolute;
+    right: 126px;
+    top: 132px;
+    font: 400 19px/1.8 "JetBrains Mono", monospace;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    text-align: right;
+    color: rgba(244, 240, 230, 0.45);
+    animation: fade-in 0.7s ease-out 0.1s both;
+  }
+  .stamp b { display: block; font-weight: 400; color: #f2e34c; letter-spacing: 0.1em; }
+  .quote {
+    position: absolute;
+    left: 232px;
+    top: 246px;
+    width: 1440px;
+    font-family: "Playfair Display", serif;
+    font-weight: 700;
+    font-style: italic;
+    font-size: 116px;
+    line-height: 1.08;
+    letter-spacing: -0.02em;
+  }
+  .quote span { display: block; overflow: hidden; }
+  .quote i {
+    display: block;
+    font-style: inherit;
+    animation: line-in 1s cubic-bezier(0.22, 0.8, 0.2, 1) both;
+  }
+  .quote .second i { animation-delay: 0.14s; }
+  .quote .accent { color: #f2e34c; font-style: normal; }
+  .attrib {
+    position: absolute;
+    left: 234px;
+    right: 126px;
+    bottom: 116px;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    animation: fade-in 0.8s ease-out 0.85s both;
+  }
+  .who {
+    font: 400 18px/1.7 "JetBrains Mono", monospace;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: rgba(244, 240, 230, 0.45);
+  }
+  .who strong {
+    display: block;
+    margin-bottom: 6px;
+    font-family: "Inter", sans-serif;
+    font-weight: 700;
+    font-size: 28px;
+    letter-spacing: 0;
+    text-transform: none;
+    color: #f4f0e6;
+  }
+  .source {
+    font: 400 18px/1.7 "JetBrains Mono", monospace;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: rgba(244, 240, 230, 0.4);
+    text-align: right;
+  }
+  .hairline {
+    position: absolute;
+    left: 234px;
+    right: 126px;
+    bottom: 196px;
+    height: 1px;
+    background: rgba(244, 240, 230, 0.22);
+    transform-origin: left center;
+    animation: rule-in 0.9s cubic-bezier(0.22, 0.8, 0.2, 1) 0.7s both;
+  }
+  @keyframes bar-in {
+    from { transform: scaleY(0); }
+    to { transform: scaleY(1); }
+  }
+  @keyframes line-in {
+    from { transform: translateY(110%); }
+    to { transform: translateY(0); }
+  }
+  @keyframes rule-in {
+    from { transform: scaleX(0); }
+    to { transform: scaleX(1); }
+  }
+  @keyframes fade-in {
+    from { opacity: 0; transform: translateY(12px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+</style>
+</head>
+<body>
+<div class="stage" data-composition-id="pull-quote" data-root="true" data-width="1920" data-height="1080" data-fps="30" data-duration="4">
+  <div class="bar" data-clip-id="bar" data-start="0" data-duration="4"></div>
+
+  <div class="stamp" data-clip-id="stamp" data-start="0" data-duration="4">
+    <b>Citação 07</b>
+    Diário de montagem
+  </div>
+
+  <blockquote class="quote" data-clip-id="quote" data-start="0.15" data-duration="3.85">
+    <span class="first"><i>“O corte não é</i></span>
+    <span class="second"><i>onde a cena acaba —</i></span>
+    <span class="third"><i>é onde o <em class="accent">sentido</em> começa.”</i></span>
+  </blockquote>
+
+  <div class="hairline"></div>
+
+  <div class="attrib" data-clip-id="attribution" data-start="0.85" data-duration="3.15">
+    <div class="who">
+      <strong>Nelson Araripe</strong>
+      Editor de som
+    </div>
+    <div class="source">
+      Entrevista · fita 12<br>
+      Estúdio Norte, 2026
+    </div>
+  </div>
+</div>
+</body>
+</html>

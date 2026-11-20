@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>vertical-outro</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: #f4f0e6; }
+  .stage {
+    position: relative;
+    width: 1080px;
+    height: 1920px;
+    overflow: hidden;
+    background: #f4f0e6;
+    color: #14130f;
+    font-family: "Inter", sans-serif;
+  }
+  .frame {
+    position: absolute;
+    left: 60px;
+    right: 60px;
+    top: 60px;
+    bottom: 60px;
+    border: 1px solid rgba(20, 19, 15, 0.18);
+  }
+  .kicker {
+    position: absolute;
+    left: 96px;
+    top: 130px;
+    font: 400 21px/1.7 "JetBrains Mono", monospace;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: rgba(20, 19, 15, 0.5);
+    animation: fade-in 0.6s ease-out both;
+  }
+  .kicker b { display: block; color: #c8412a; font-weight: 400; }
+  .mark {
+    position: absolute;
+    left: 96px;
+    top: 262px;
+    width: 88px;
+    height: 88px;
+    border: 3px solid #14130f;
+    animation: mark-in 0.6s cubic-bezier(0.22, 0.8, 0.2, 1) 0.1s both;
+  }
+  .mark .stem {
+    position: absolute;
+    left: 20px;
+    top: 18px;
+    width: 10px;
+    height: 50px;
+    background: #14130f;
+    transform-origin: top center;
+    animation: stem-in 0.5s cubic-bezier(0.22, 0.8, 0.2, 1) 0.3s both;
+  }
+  .mark .arm {
+    position: absolute;
+    left: 20px;
+    top: 18px;
+    width: 40px;
+    height: 10px;
+    background: #14130f;
+    transform-origin: left center;
+    animation: arm-in 0.45s cubic-bezier(0.22, 0.8, 0.2, 1) 0.42s both;
+  }
+  .mark .dot {
+    position: absolute;
+    right: 12px;
+    bottom: 12px;
+    width: 12px;
+    height: 12px;
+    background: #c8412a;
+    animation: dot-in 0.35s cubic-bezier(0.22, 1.5, 0.4, 1) 0.55s both;
+  }
+  .title {
+    position: absolute;
+    left: 92px;
+    top: 640px;
+    width: 900px;
+    font-family: "Playfair Display", serif;
+    font-weight: 700;
+    font-size: 158px;
+    line-height: 1.02;
+    letter-spacing: -0.035em;
+  }
+  .title span { display: block; overflow: hidden; }
+  .title i {
+    display: block;
+    font-style: normal;
+    animation: line-in 0.9s cubic-bezier(0.22, 0.8, 0.2, 1) both;
+  }
+  .title .l2 i { animation-delay: 0.12s; font-style: italic; color: #c8412a; }
+  .rule {
+    position: absolute;
+    left: 96px;
+    top: 1060px;
+    width: 300px;
+    height: 4px;
+    background: #14130f;
+    transform-origin: left center;
+    animation: rule-in 0.7s cubic-bezier(0.22, 0.8, 0.2, 1) 0.5s both;
+  }
+  .signature {
+    position: absolute;
+    left: 96px;
+    top: 1110px;
+    font-family: "Great Vibes", cursive;
+    font-size: 92px;
+    line-height: 1.1;
+    color: #14130f;
+    animation: fade-in 0.8s ease-out 0.62s both;
+  }
+  .next {
+    position: absolute;
+    left: 96px;
+    top: 1290px;
+    width: 760px;
+    font-size: 32px;
+    line-height: 1.5;
+    color: rgba(20, 19, 15, 0.62);
+    animation: fade-in 0.8s ease-out 0.8s both;
+  }
+  .next strong { color: #14130f; }
+  .foot {
+    position: absolute;
+    left: 96px;
+    right: 96px;
+    bottom: 130px;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    padding-top: 26px;
+    border-top: 1px solid rgba(20, 19, 15, 0.24);
+    font: 400 19px/1.7 "JetBrains Mono", monospace;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: rgba(20, 19, 15, 0.45);
+    animation: fade-in 0.8s ease-out 1s both;
+  }
+  .foot strong { display: block; font-family: "Inter", sans-serif; font-weight: 700; font-size: 28px; letter-spacing: 0; text-transform: none; color: #14130f; }
+  .foot .right { text-align: right; }
+  @keyframes mark-in {
+    from { transform: scale(0.8); opacity: 0; }
+    to { transform: scale(1); opacity: 1; }
+  }
+  @keyframes stem-in {
+    from { transform: scaleY(0); }
+    to { transform: scaleY(1); }
+  }
+  @keyframes arm-in {
+    from { transform: scaleX(0); }
+    to { transform: scaleX(1); }
+  }
+  @keyframes dot-in {
+    from { transform: scale(0); }
+    to { transform: scale(1); }
+  }
+  @keyframes line-in {
+    from { transform: translateY(108%); }
+    to { transform: translateY(0); }
+  }
+  @keyframes rule-in {
+    from { transform: scaleX(0); }
+    to { transform: scaleX(1); }
+  }
+  @keyframes fade-in {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+</style>
+</head>
+<body>
+<div class="stage" data-composition-id="vertical-outro" data-root="true" data-width="1080" data-height="1920" data-fps="30" data-duration="3">
+  <div class="frame"></div>
+
+  <div class="kicker" data-clip-id="kicker" data-start="0" data-duration="3"><b>Fim do capítulo</b>Série Ofício · 04</div>
+
+  <div class="mark" data-clip-id="mark" data-start="0.1" data-duration="2.9">
+    <div class="stem"></div>
+    <div class="arm"></div>
+    <div class="dot"></div>
+  </div>
+
+  <h1 class="title" data-clip-id="title" data-start="0.15" data-duration="2.85">
+    <span class="l1"><i>Até a</i></span>
+    <span class="l2"><i>próxima.</i></span>
+  </h1>
+
+  <div class="rule" data-clip-id="rule" data-start="0.5" data-duration="2.5"></div>
+  <div class="signature" data-clip-id="signature" data-start="0.62" data-duration="2.38">Mara &amp; João</div>
+
+  <p class="next" data-clip-id="next" data-start="0.8" data-duration="2.2">
+    <strong>Episódio 05 — A ilha que some.</strong><br>
+    Estreia na quinta, às 21h.
+  </p>
+
+  <div class="foot" data-clip-id="foot" data-start="1" data-duration="2">
+    <div><strong>@frankframes</strong>frankframes.studio</div>
+    <div class="right"><strong>Porto Alegre</strong>2026</div>
+  </div>
+</div>
+</body>
+</html>

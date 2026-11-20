@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>vertical-chart</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: #101113; }
+  .stage {
+    position: relative;
+    width: 1080px;
+    height: 1920px;
+    overflow: hidden;
+    background: #101113;
+    color: #f2efe6;
+    font-family: "Inter", sans-serif;
+  }
+  .kicker {
+    position: absolute;
+    left: 96px;
+    top: 110px;
+    font: 400 21px/1 "JetBrains Mono", monospace;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: rgba(242, 239, 230, 0.45);
+    animation: fade-in 0.6s ease-out both;
+  }
+  .kicker b { color: #f2e34c; font-weight: 400; margin-right: 14px; }
+  .title {
+    position: absolute;
+    left: 92px;
+    top: 186px;
+    width: 900px;
+    font-size: 82px;
+    font-weight: 700;
+    line-height: 1.02;
+    letter-spacing: -0.04em;
+    animation: rise-in 0.75s cubic-bezier(0.22, 0.8, 0.2, 1) 0.08s both;
+  }
+  .title span { color: rgba(242, 239, 230, 0.4); }
+  .delta {
+    position: absolute;
+    left: 96px;
+    top: 430px;
+    display: flex;
+    align-items: baseline;
+    gap: 18px;
+    font: 400 20px/1 "JetBrains Mono", monospace;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: rgba(242, 239, 230, 0.42);
+    animation: fade-in 0.7s ease-out 0.3s both;
+  }
+  .delta b { font-family: "Inter", sans-serif; font-size: 44px; font-weight: 700; letter-spacing: -0.02em; color: #f2e34c; }
+  .plot {
+    position: absolute;
+    left: 96px;
+    top: 560px;
+    width: 780px;
+    height: 900px;
+  }
+  .grid {
+    position: absolute;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background: rgba(242, 239, 230, 0.12);
+  }
+  .grid.g1 { top: 225px; }
+  .grid.g2 { top: 450px; }
+  .grid.g3 { top: 675px; }
+  .base {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 2px;
+    background: rgba(242, 239, 230, 0.55);
+    transform-origin: left center;
+    animation: rule-in 0.7s cubic-bezier(0.22, 0.8, 0.2, 1) 0.1s both;
+  }
+  .bars {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 100%;
+    display: flex;
+    align-items: flex-end;
+    gap: 62px;
+  }
+  .col {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    align-items: stretch;
+    height: 100%;
+  }
+  .bar {
+    position: relative;
+    background: #2b2e34;
+    transform-origin: bottom center;
+    animation: bar-in 0.85s cubic-bezier(0.22, 0.8, 0.2, 1) both;
+  }
+  .bar.hot { background: #f2e34c; }
+  .bar .value {
+    position: absolute;
+    left: 0;
+    bottom: calc(100% + 14px);
+    width: 100%;
+    text-align: center;
+    font: 400 22px/1 "JetBrains Mono", monospace;
+    letter-spacing: 0.06em;
+    color: rgba(242, 239, 230, 0.55);
+  }
+  .bar.hot .value { color: #f2e34c; }
+  .col:nth-child(1) .bar { height: 378px; animation-delay: 0.15s; }
+  .col:nth-child(2) .bar { height: 603px; animation-delay: 0.27s; }
+  .col:nth-child(3) .bar { height: 522px; animation-delay: 0.39s; }
+  .col:nth-child(4) .bar { height: 792px; animation-delay: 0.51s; }
+  .xlabels {
+    position: absolute;
+    left: 96px;
+    width: 780px;
+    top: 1478px;
+    display: flex;
+    gap: 62px;
+    animation: fade-in 0.7s ease-out 0.5s both;
+  }
+  .xlabels span {
+    flex: 1;
+    text-align: center;
+    font: 400 21px/1 "JetBrains Mono", monospace;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: rgba(242, 239, 230, 0.45);
+  }
+  .ylabels {
+    position: absolute;
+    left: 800px;
+    top: 0;
+    width: 92px;
+    height: 900px;
+    pointer-events: none;
+  }
+  .ylabels span {
+    position: absolute;
+    left: 0;
+    transform: translateY(-50%);
+    padding-left: 8px;
+    font: 400 15px/1 "JetBrains Mono", monospace;
+    color: rgba(242, 239, 230, 0.3);
+  }
+  .note {
+    position: absolute;
+    left: 96px;
+    right: 96px;
+    bottom: 104px;
+    padding-top: 26px;
+    border-top: 1px solid rgba(242, 239, 230, 0.2);
+    display: flex;
+    justify-content: space-between;
+    font: 400 18px/1.6 "JetBrains Mono", monospace;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: rgba(242, 239, 230, 0.4);
+    animation: fade-in 0.8s ease-out 1.1s both;
+  }
+  .note strong { display: block; font-family: "Inter", sans-serif; font-weight: 600; font-size: 25px; letter-spacing: 0; text-transform: none; color: #f2efe6; }
+  .note .right { text-align: right; }
+  @keyframes bar-in {
+    from { transform: scaleY(0); }
+    to { transform: scaleY(1); }
+  }
+  @keyframes rule-in {
+    from { transform: scaleX(0); }
+    to { transform: scaleX(1); }
+  }
+  @keyframes rise-in {
+    from { transform: translateY(26px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+  }
+  @keyframes fade-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+</style>
+</head>
+<body>
+<div class="stage" data-composition-id="vertical-chart" data-root="true" data-width="1080" data-height="1920" data-fps="30" data-duration="4">
+  <div class="kicker" data-clip-id="kicker" data-start="0" data-duration="4"><b>Dados</b>Retenção por trimestre</div>
+  <h1 class="title" data-clip-id="title" data-start="0.08" data-duration="3.92">O último trimestre<br><span>segurou o dobro.</span></h1>
+  <div class="delta" data-clip-id="delta" data-start="0.3" data-duration="3.7"><b>+46%</b> vs. primeiro trimestre</div>
+
+  <div class="plot" data-clip-id="plot" data-start="0.12" data-duration="3.88">
+    <div class="grid g1"></div>
+    <div class="grid g2"></div>
+    <div class="grid g3"></div>
+
+    <div class="ylabels">
+      <span style="top: 0">100%</span>
+      <span style="top: 225px">75</span>
+      <span style="top: 450px">50</span>
+      <span style="top: 675px">25</span>
+    </div>
+
+    <div class="bars">
+      <div class="col"><div class="bar" data-clip-id="bar-q1" data-start="0.15" data-duration="3.85"><span class="value">42%</span></div></div>
+      <div class="col"><div class="bar" data-clip-id="bar-q2" data-start="0.27" data-duration="3.73"><span class="value">67%</span></div></div>
+      <div class="col"><div class="bar" data-clip-id="bar-q3" data-start="0.39" data-duration="3.61"><span class="value">58%</span></div></div>
+      <div class="col"><div class="bar hot" data-clip-id="bar-q4" data-start="0.51" data-duration="3.49"><span class="value">88%</span></div></div>
+    </div>
+
+    <div class="base"></div>
+  </div>
+
+  <div class="xlabels" data-clip-id="xlabels" data-start="0.5" data-duration="3.5">
+    <span>Q1</span><span>Q2</span><span>Q3</span><span>Q4</span>
+  </div>
+
+  <div class="note" data-clip-id="note" data-start="1.1" data-duration="2.9">
+    <div><strong>Seis séries publicadas</strong>média de visualização até o fim</div>
+    <div class="right"><strong>n = 1.840</strong>2024 — 2026</div>
+  </div>
+</div>
+</body>
+</html>

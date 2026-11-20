@@ -98,7 +98,7 @@ if (!stages.at(-1)?.ok) {
 stages.push(await stage("testes rápidos", process.execPath, ["--test", ...FAST_TESTS]));
 
 if (!fast) {
-  const full = await stage("suíte completa", process.execPath, ["--test", "packages/*/test/*.test.ts"]);
+  const full = await stage("suíte completa", process.execPath, ["--test", "--test-concurrency=1", "packages/*/test/*.test.ts"]);
   stages.push(full);
   if (full.ok) {
     stages.push(await stage("doctor", process.execPath, ["packages/cli/src/cli.ts", "doctor"]));

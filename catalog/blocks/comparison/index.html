@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>comparison</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: #efece3; }
+  .stage {
+    position: relative;
+    width: 1920px;
+    height: 1080px;
+    overflow: hidden;
+    background: #efece3;
+    color: #14130f;
+    font-family: "Inter", sans-serif;
+  }
+  .side {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 960px;
+    padding: 96px 104px;
+  }
+  .before {
+    left: 0;
+    background: #ded8c8;
+    color: rgba(20, 19, 15, 0.78);
+  }
+  .after {
+    left: 960px;
+    background: #14130f;
+    color: #f4f0e6;
+  }
+  .tag {
+    font: 400 19px/1 "JetBrains Mono", monospace;
+    letter-spacing: 0.26em;
+    text-transform: uppercase;
+    animation: fade-in 0.55s ease-out both;
+  }
+  .before .tag { color: rgba(20, 19, 15, 0.5); }
+  .after .tag { color: #f2e34c; }
+  .big {
+    position: absolute;
+    top: 168px;
+    font-family: "Bebas Neue", sans-serif;
+    font-size: 268px;
+    line-height: 0.86;
+    letter-spacing: 0.01em;
+    animation: big-in 0.8s cubic-bezier(0.22, 0.8, 0.2, 1) 0.12s both;
+  }
+  .before .big { left: 100px; color: rgba(20, 19, 15, 0.4); }
+  .after .big { left: 104px; color: #c8412a; }
+  .big small {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 30px;
+    letter-spacing: 0.1em;
+    vertical-align: super;
+    margin-left: 8px;
+  }
+  .body {
+    position: absolute;
+    top: 452px;
+    width: 660px;
+    font-size: 34px;
+    line-height: 1.38;
+    letter-spacing: -0.015em;
+    animation: rise-in 0.85s cubic-bezier(0.22, 0.8, 0.2, 1) 0.3s both;
+  }
+  .before .body { left: 100px; }
+  .after .body { left: 104px; font-weight: 500; }
+  .body strong { color: #c8412a; font-weight: 700; }
+  .after .body strong { color: #f2e34c; }
+  .list {
+    position: absolute;
+    left: 100px;
+    right: 100px;
+    bottom: 104px;
+    animation: fade-in 0.7s ease-out 0.75s both;
+  }
+  .list div {
+    display: flex;
+    justify-content: space-between;
+    padding: 18px 0;
+    border-top: 1px solid currentColor;
+    font: 400 17px/1 "JetBrains Mono", monospace;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    opacity: 0.62;
+  }
+  .list div b { font-weight: 400; opacity: 1; }
+  .seam {
+    position: absolute;
+    left: 956px;
+    top: 0;
+    width: 8px;
+    height: 1080px;
+    background: #c8412a;
+    transform-origin: top center;
+    animation: seam-in 0.7s cubic-bezier(0.22, 0.8, 0.2, 1) both;
+  }
+  @keyframes seam-in {
+    from { transform: scaleY(0); }
+    to { transform: scaleY(1); }
+  }
+  @keyframes big-in {
+    from { transform: translateY(40px); opacity: 0; clip-path: inset(0 0 100% 0); }
+    to { transform: translateY(0); opacity: 1; clip-path: inset(0 0 -10% 0); }
+  }
+  @keyframes rise-in {
+    from { transform: translateY(26px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+  }
+  @keyframes fade-in {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+</style>
+</head>
+<body>
+<div class="stage" data-composition-id="comparison" data-root="true" data-width="1920" data-height="1080" data-fps="30" data-duration="4">
+  <section class="side before" data-clip-id="col-before" data-start="0" data-duration="4">
+    <div class="tag">Antes · corte bruto</div>
+    <div class="big">40<small>s</small></div>
+    <p class="body">
+      A cena respirava até o desconforto. O olhar ficava no ar, <strong>sem resposta</strong>, e a fala se repetia.
+    </p>
+    <div class="list">
+      <div><span>planos</span><b>01</b></div>
+      <div><span>pausas</span><b>00</b></div>
+      <div><span>som</span><b>só voz</b></div>
+    </div>
+  </section>
+
+  <div class="seam" data-clip-id="seam" data-start="0" data-duration="4"></div>
+
+  <section class="side after" data-clip-id="col-after" data-start="0.12" data-duration="3.88">
+    <div class="tag">Depois · versão final</div>
+    <div class="big">6<small>s</small></div>
+    <p class="body">
+      O silêncio entra como resposta. Três planos criam a pergunta que a fala <strong>não faz</strong>.
+    </p>
+    <div class="list">
+      <div><span>planos</span><b>03</b></div>
+      <div><span>pausa</span><b>0,4 s</b></div>
+      <div><span>som</span><b>ambiente</b></div>
+    </div>
+  </section>
+</div>
+</body>
+</html>

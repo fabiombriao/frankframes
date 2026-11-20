@@ -26,12 +26,12 @@ function metaOf(slug: string): Meta {
   return JSON.parse(readBlock(slug, "meta.json")) as Meta;
 }
 
-test("catálogo lista os oito blocos em ordem alfabética", () => {
+test("catálogo lista todos os blocos em ordem alfabética", () => {
   const blocks = listBlocks();
-  assert.deepEqual(
-    blocks.map((block) => block.slug),
-    [...SLUGS],
-  );
+  const slugs = blocks.map((block) => block.slug);
+  assert.deepEqual(slugs, [...slugs].sort(), "slugs precisam sair em ordem alfabética");
+  for (const expected of SLUGS) assert.ok(slugs.includes(expected), `${expected} desapareceu do catálogo`);
+  assert.ok(slugs.length >= 24, `catálogo com ${slugs.length} blocos, esperado ao menos 24`);
   for (const block of blocks) {
     assert.ok(isAbsolute(block.dir), `dir de ${block.slug} precisa ser absoluto`);
     assert.ok(block.dir.endsWith(`${sep}catalog${sep}blocks${sep}${block.slug}`), `dir inesperado: ${block.dir}`);
@@ -40,7 +40,7 @@ test("catálogo lista os oito blocos em ordem alfabética", () => {
   }
 });
 
-for (const slug of SLUGS) {
+for (const slug of listBlocks().map((block) => block.slug)) {
   test(`bloco ${slug}: composição válida e sem mídia externa`, () => {
     const html = readBlock(slug);
     const composition = loadComposition(html);
@@ -49,8 +49,12 @@ for (const slug of SLUGS) {
     assert.equal(composition.ok, true, `${slug}: ${errors.map((error) => error.message).join("; ")}`);
     assert.notEqual(composition.duration.kind, "unresolved");
     assert.equal(composition.id, slug);
-    assert.equal(composition.width, 1920);
-    assert.equal(composition.height, 1080);
+    const vertical = slug.startsWith("vertical-");
+    assert.deepEqual(
+      [composition.width, composition.height],
+      vertical ? [1080, 1920] : [1920, 1080],
+      `${slug}: formato esperado ${vertical ? "9:16" : "16:9"}`,
+    );
     assert.deepEqual(composition.fps, { num: 30, den: 1 });
 
     const meta = metaOf(slug);

@@ -63,7 +63,7 @@ packages/producer   pipeline HTML -> MP4 e mixagem de áudio
 packages/transcribe transcrição: local opt-in, Groq, OpenAI-compatible
 packages/catalog    leitura dos blocos do catálogo
 packages/cli        interface de linha de comando
-catalog/blocks      8 composições prontas (title, lower-third, quote, stat, chart, list, frame, outro)
+catalog/blocks      24 composições prontas (8 paisagem 16:9 + 8 vertical 9:16, + variantes)
 skills/frankframes  skill para agente de código
 docs/getting-started.md  do zero ao MP4 em 5 minutos
 docs/contract.md    a especificação (fonte de verdade)

@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>vertical-title</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: #efece3; }
+  .stage {
+    position: relative;
+    width: 1080px;
+    height: 1920px;
+    overflow: hidden;
+    background: #efece3;
+    color: #14130f;
+    font-family: "Inter", sans-serif;
+  }
+  .grid {
+    position: absolute;
+    left: 96px;
+    right: 96px;
+    top: 0;
+    bottom: 0;
+    background-image: linear-gradient(90deg, rgba(20, 19, 15, 0.07) 1px, transparent 1px);
+    background-size: 222px 100%;
+    background-position: 0 0;
+  }
+  .kicker {
+    position: absolute;
+    left: 96px;
+    top: 120px;
+    font: 400 23px/1 "JetBrains Mono", monospace;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: rgba(20, 19, 15, 0.55);
+    animation: fade-in 0.6s ease-out both;
+  }
+  .kicker b { color: #c8412a; font-weight: 400; margin-right: 14px; }
+  .season {
+    position: absolute;
+    right: 96px;
+    top: 104px;
+    font-family: "Bebas Neue", sans-serif;
+    font-size: 132px;
+    line-height: 1;
+    color: rgba(20, 19, 15, 0.14);
+    animation: fade-in 0.7s ease-out 0.1s both;
+  }
+  .rule {
+    position: absolute;
+    left: 96px;
+    right: 96px;
+    top: 200px;
+    height: 2px;
+    background: #14130f;
+    transform-origin: left center;
+    animation: rule-in 0.8s cubic-bezier(0.22, 0.8, 0.2, 1) both;
+  }
+  .title {
+    position: absolute;
+    left: 92px;
+    top: 700px;
+    font-family: "Anton", sans-serif;
+    font-weight: 400;
+    font-size: 202px;
+    line-height: 0.9;
+    letter-spacing: -0.015em;
+    text-transform: uppercase;
+  }
+  .title span { display: block; overflow: hidden; }
+  .title i {
+    display: block;
+    font-style: normal;
+    animation: line-in 0.9s cubic-bezier(0.22, 0.8, 0.2, 1) both;
+  }
+  .title .l2 i { animation-delay: 0.12s; color: #c8412a; }
+  .title .l3 i { animation-delay: 0.24s; }
+  .standfirst {
+    position: absolute;
+    left: 96px;
+    top: 1300px;
+    width: 800px;
+    font-size: 38px;
+    line-height: 1.42;
+    color: rgba(20, 19, 15, 0.68);
+    animation: rise-in 0.8s cubic-bezier(0.22, 0.8, 0.2, 1) 0.7s both;
+  }
+  .meta {
+    position: absolute;
+    left: 96px;
+    right: 96px;
+    bottom: 150px;
+    padding-top: 30px;
+    border-top: 2px solid #14130f;
+    display: flex;
+    justify-content: space-between;
+    font: 400 20px/1.8 "JetBrains Mono", monospace;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: rgba(20, 19, 15, 0.55);
+    animation: fade-in 0.8s ease-out 0.9s both;
+  }
+  .meta strong { display: block; font-family: "Inter", sans-serif; font-weight: 700; font-size: 30px; letter-spacing: -0.01em; text-transform: none; color: #14130f; }
+  .meta .right { text-align: right; }
+  .bars {
+    position: absolute;
+    left: 96px;
+    bottom: 96px;
+    display: flex;
+    gap: 10px;
+    animation: fade-in 0.6s ease-out 1s both;
+  }
+  .bars b { display: block; width: 60px; height: 12px; background: rgba(20, 19, 15, 0.16); }
+  .bars b:first-child { background: #c8412a; }
+  @keyframes rule-in {
+    from { transform: scaleX(0); }
+    to { transform: scaleX(1); }
+  }
+  @keyframes line-in {
+    from { transform: translateY(105%); }
+    to { transform: translateY(0); }
+  }
+  @keyframes rise-in {
+    from { transform: translateY(26px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+  }
+  @keyframes fade-in {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+</style>
+</head>
+<body>
+<div class="stage" data-composition-id="vertical-title" data-root="true" data-width="1080" data-height="1920" data-fps="30" data-duration="3.5">
+  <div class="grid"></div>
+
+  <div class="kicker" data-clip-id="kicker" data-start="0" data-duration="3.5"><b>Episódio 04</b>Série Ofício</div>
+  <div class="season" data-clip-id="season" data-start="0.1" data-duration="3.4">IV</div>
+  <div class="rule" data-clip-id="rule" data-start="0" data-duration="3.5"></div>
+
+  <h1 class="title" data-clip-id="title" data-start="0.15" data-duration="3.35">
+    <span class="l1"><i>A cidade</i></span>
+    <span class="l2"><i>sem</i></span>
+    <span class="l3"><i>rosto</i></span>
+  </h1>
+
+  <p class="standfirst" data-clip-id="standfirst" data-start="0.7" data-duration="2.8">
+    Trinta dias filmando quem atravessa a cidade antes do sol nascer.
+  </p>
+
+  <div class="meta" data-clip-id="meta" data-start="0.9" data-duration="2.6">
+    <div><strong>Documentário</strong>12 min · 2026</div>
+    <div class="right"><strong>Recife · PE</strong>Direção de Mara Uchoa</div>
+  </div>
+
+  <div class="bars"><b></b><b></b><b></b><b></b></div>
+</div>
+</body>
+</html>

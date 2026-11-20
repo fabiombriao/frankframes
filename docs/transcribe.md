@@ -36,6 +36,19 @@ interface Transcriber {
 
 `segments` é obrigatório; `words` degrada (legenda por frase quando o provedor não retorna palavra).
 
+## Estado do modo local
+
+O binário do `whisper.cpp` **não é embarcado**: o projeto não publica binário pré-compilado no release
+(`whisper-bin-x64.zip` responde 404) e compilar exige MSVC/CMake na máquina do usuário. Duas saídas,
+quando isso virar prioridade:
+
+1. compilar `whisper.cpp` no nosso pipeline de release e publicar com SHA-256 (mesmo modelo do FFmpeg);
+2. trocar o runtime local por `sherpa-onnx`, que publica binários prontos (Apache-2.0) e aceita os mesmos
+   modelos em ONNX.
+
+Até lá, o modo local funciona com `FRANKFRAMES_WHISPER_BIN` apontando para um binário do usuário, e o
+modo remoto (Groq / OpenAI-compatible) está completo.
+
 ## Licenças
 
 | Peça | Licença | Observação |

@@ -75,7 +75,7 @@ function parseCli(argv: string[]): Cli {
     else if (arg === "--provider") cli.provider = argv[++i];
     else if (arg === "--language") cli.language = argv[++i];
     else if (arg.startsWith("-")) {
-      const known = ["--open", "--check", "--fonts-only", "--cursor", "--apply"];
+      const known = ["--open", "--check", "--fonts-only", "--cursor", "--apply", "--size"];
       if (!known.includes(arg)) throw new Error(`opção desconhecida: ${arg}`);
       cli.flags.push(arg);
     }

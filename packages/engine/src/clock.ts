@@ -80,7 +80,11 @@ export const CLOCK_SOURCE = `(() => {
   const readyDeferred = Promise.withResolvers();
   const ready = readyDeferred.promise;
   const settle = () => {
+    // Carrega TODA face declarada: texto que só aparece no meio do clip não pode
+    // trocar de fonte durante a captura.
+    const faces = document.fonts ? [...document.fonts].map((face) => face.load().catch(() => {})) : [];
     Promise.all([
+      ...faces,
       document.fonts ? document.fonts.ready : Promise.resolve(),
       ...[...document.images].map((img) =>
         img.decode

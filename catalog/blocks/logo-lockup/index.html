@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>logo-lockup</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: #f4f0e6; }
+  .stage {
+    position: relative;
+    width: 1920px;
+    height: 1080px;
+    overflow: hidden;
+    background: #f4f0e6;
+    color: #14130f;
+    font-family: "Space Grotesk", sans-serif;
+  }
+  .lockup {
+    position: absolute;
+    left: 200px;
+    top: 380px;
+    display: flex;
+    align-items: center;
+    gap: 78px;
+  }
+  .monogram {
+    position: relative;
+    width: 196px;
+    height: 196px;
+    border: 3px solid #14130f;
+    animation: box-in 0.6s cubic-bezier(0.22, 0.8, 0.2, 1) both;
+  }
+  .stem {
+    position: absolute;
+    left: 46px;
+    top: 44px;
+    width: 20px;
+    height: 108px;
+    background: #14130f;
+    transform-origin: top center;
+    animation: stem-in 0.55s cubic-bezier(0.22, 0.8, 0.2, 1) 0.2s both;
+  }
+  .arm-top {
+    position: absolute;
+    left: 46px;
+    top: 44px;
+    width: 88px;
+    height: 20px;
+    background: #14130f;
+    transform-origin: left center;
+    animation: arm-in 0.5s cubic-bezier(0.22, 0.8, 0.2, 1) 0.34s both;
+  }
+  .arm-mid {
+    position: absolute;
+    left: 46px;
+    top: 90px;
+    width: 62px;
+    height: 20px;
+    background: #14130f;
+    transform-origin: left center;
+    animation: arm-in 0.45s cubic-bezier(0.22, 0.8, 0.2, 1) 0.44s both;
+  }
+  .square {
+    position: absolute;
+    right: 26px;
+    bottom: 26px;
+    width: 26px;
+    height: 26px;
+    background: #c8412a;
+    animation: square-in 0.4s cubic-bezier(0.22, 1.5, 0.4, 1) 0.56s both;
+  }
+  .wordmark {
+    font-weight: 700;
+    font-size: 118px;
+    line-height: 0.92;
+    letter-spacing: -0.045em;
+    text-transform: uppercase;
+    animation: word-in 0.8s cubic-bezier(0.22, 0.8, 0.2, 1) 0.18s both;
+  }
+  .wordmark span { color: #c8412a; }
+  .signature {
+    position: absolute;
+    left: 474px;
+    top: 596px;
+    display: flex;
+    align-items: center;
+    gap: 22px;
+    font: 400 19px/1.5 "JetBrains Mono", monospace;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: rgba(20, 19, 15, 0.5);
+    animation: fade-in 0.7s ease-out 0.7s both;
+  }
+  .signature i {
+    display: block;
+    width: 74px;
+    height: 3px;
+    background: #f2e34c;
+    font-style: normal;
+  }
+  .footer {
+    position: absolute;
+    left: 200px;
+    right: 200px;
+    bottom: 104px;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    padding-top: 22px;
+    border-top: 1px solid rgba(20, 19, 15, 0.22);
+    font: 400 17px/1.6 "JetBrains Mono", monospace;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: rgba(20, 19, 15, 0.45);
+    animation: fade-in 0.75s ease-out 0.85s both;
+  }
+  .footer strong { font-family: "Inter", sans-serif; font-weight: 600; font-size: 22px; letter-spacing: 0; text-transform: none; color: #14130f; display: block; }
+  @keyframes box-in {
+    from { transform: scale(0.86); opacity: 0; }
+    to { transform: scale(1); opacity: 1; }
+  }
+  @keyframes stem-in {
+    from { transform: scaleY(0); }
+    to { transform: scaleY(1); }
+  }
+  @keyframes arm-in {
+    from { transform: scaleX(0); }
+    to { transform: scaleX(1); }
+  }
+  @keyframes square-in {
+    from { transform: scale(0); }
+    to { transform: scale(1); }
+  }
+  @keyframes word-in {
+    from { transform: translateX(-34px); opacity: 0; clip-path: inset(0 100% 0 0); }
+    to { transform: translateX(0); opacity: 1; clip-path: inset(0 -2% 0 0); }
+  }
+  @keyframes fade-in {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+</style>
+</head>
+<body>
+<div class="stage" data-composition-id="logo-lockup" data-root="true" data-width="1920" data-height="1080" data-fps="30" data-duration="3">
+  <div class="lockup" data-clip-id="lockup" data-start="0" data-duration="3">
+    <div class="monogram">
+      <div class="stem"></div>
+      <div class="arm-top"></div>
+      <div class="arm-mid"></div>
+      <div class="square"></div>
+    </div>
+    <div class="wordmark">Frank<span>frames</span></div>
+  </div>
+
+  <div class="signature" data-clip-id="signature" data-start="0.7" data-duration="2.3">
+    <i></i>
+    Estúdio de vídeo programático
+  </div>
+
+  <div class="footer" data-clip-id="footer" data-start="0.85" data-duration="2.15">
+    <div><strong>Porto Alegre · RS</strong>Rua da Fábrica, 212</div>
+    <div style="text-align:right"><strong>@frankframes</strong>v. 04 — 2026</div>
+  </div>
+</div>
+</body>
+</html>

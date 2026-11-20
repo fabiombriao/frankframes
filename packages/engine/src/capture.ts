@@ -119,6 +119,8 @@ async function startSession(
   // Primeira captura descartada: força um frame completo antes de qualquer medição.
   await cdp.send("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
 
+  let primed = false;
+
   return {
     seekFrame: async (frame, fps) => {
       const ms = timeOfFrame(frame, fps) * 1000;
@@ -129,6 +131,16 @@ async function startSession(
       }, ms);
     },
     capture: async () => {
+      // A primeira captura de uma sessão pode pegar o frame composto antes do seek.
+      // Descarta uma vez, depois mede.
+      if (!primed) {
+        primed = true;
+        await cdp.send("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
+        await page.evaluate(async () => {
+          const clock = (globalThis as unknown as VirtualClockWindow).__ff!;
+          await (clock as unknown as { settle?: () => Promise<boolean> }).settle?.();
+        });
+      }
       const { data } = await cdp.send("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
       const png = Buffer.from(data, "base64");
       return { png, sha256: createHash("sha256").update(png).digest("hex") };
