@@ -102,10 +102,21 @@ export function resolveDuration(clips: ResolvedClip[], authored: number | undefi
   if (authored !== undefined && authored > 0) return { kind: "authored", seconds: authored };
   if (clips.length === 0) return { kind: "unresolved", reason: "empty", pending: [] };
 
-  const invalid = clips.filter((c) => c.start === undefined).map((c) => c.id);
+  // Filhos de sub-composição também precisam de duração: sem `end`, o clock
+  // mantém o clip visível até o fim da composição pai.
+  const all: ResolvedClip[] = [];
+  const collect = (list: ResolvedClip[]): void => {
+    for (const clip of list) {
+      all.push(clip);
+      collect(clip.children);
+    }
+  };
+  collect(clips);
+
+  const invalid = all.filter((c) => c.start === undefined).map((c) => c.id);
   if (invalid.length > 0) return { kind: "unresolved", reason: "invalid-start", pending: invalid };
 
-  const pending = clips.filter((c) => c.authoredDuration === undefined).map((c) => c.id);
+  const pending = all.filter((c) => c.authoredDuration === undefined).map((c) => c.id);
   if (pending.length > 0) return { kind: "unresolved", reason: "pending-clips", pending };
 
   const seconds = Math.max(...clips.map((c) => (c.end ?? c.start ?? 0)));

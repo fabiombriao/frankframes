@@ -7,8 +7,24 @@ import { promisify } from "node:util";
 
 const run = promisify(execFile);
 
-const MIN_RATE = 0.5;
-const MAX_RATE = 2;
+const MIN_RATE = 0.1;
+const MAX_RATE = 10;
+
+/** `atempo` aceita 0.5–2 por instância: encadeia para cobrir a faixa do contrato. */
+function atempoChain(rate: number): string[] {
+  const chain: string[] = [];
+  let remaining = rate;
+  while (remaining > 2) {
+    chain.push("atempo=2");
+    remaining /= 2;
+  }
+  while (remaining < 0.5) {
+    chain.push("atempo=0.5");
+    remaining /= 0.5;
+  }
+  if (Math.abs(remaining - 1) > 1e-9) chain.push(`atempo=${fmt(remaining)}`);
+  return chain;
+}
 
 export interface AudioClip {
   clipId: string;
@@ -63,11 +79,12 @@ export function buildAudioGraph(clips: AudioClip[], totalSeconds: number, master
     const offset = Math.max(0, clip.offset);
     const delayMs = Math.round(Math.max(0, clip.start) * 1000);
 
+    // `atrim` é no tempo da fonte: acelerar consome `duration * rate` segundos.
     const chain = [
-      `atrim=start=${fmt(offset)}:duration=${fmt(duration)}`,
+      `atrim=start=${fmt(offset)}:duration=${fmt(duration * rate)}`,
       "asetpts=PTS-STARTPTS",
     ];
-    if (rate !== 1) chain.push(`atempo=${fmt(rate)}`);
+    chain.push(...atempoChain(rate));
     chain.push(`volume=${fmt(clip.volume)}`);
 
     if (clip.fadeIn !== undefined && clip.fadeIn > 0) {

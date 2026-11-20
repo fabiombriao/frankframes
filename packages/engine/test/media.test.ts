@@ -104,3 +104,52 @@ test("vídeo fora de banda: <video> vira <img> e o frame é estável", { timeout
   assert.ok(new Set(first.values()).size > 20, "o vídeo precisa mudar de frame, senão o teste não prova nada");
   await mkdir(join(workspace, "done"), { recursive: true });
 });
+
+test("imagem substituta respeita a janela do clip", { timeout: 300_000 }, async (t) => {
+  if (!(await ffmpegAvailable())) return t.skip("ffmpeg não encontrado");
+  try {
+    await resolveChrome();
+  } catch {
+    return t.skip("Chrome não encontrado");
+  }
+
+  const workspace = await mkdtemp(join(tmpdir(), "ff-media-window-"));
+  const video = join(workspace, "clip.mp4");
+  await run(FFMPEG, [
+    "-hide_banner", "-loglevel", "error",
+    "-f", "lavfi", "-i", "testsrc2=size=320x180:rate=30:duration=2",
+    "-c:v", "mpeg4", "-q:v", "3", "-pix_fmt", "yuv420p", "-y", video,
+  ]);
+  const mediaDir = join(workspace, "media");
+  const { frameCount } = await extractFrames({ ffmpeg: FFMPEG, input: video, outDir: join(mediaDir, "v"), fps: FPS });
+
+  const manifest: MediaManifest = {
+    fps: FPS,
+    clips: [{ clipId: "v", start: 1, duration: 1, offset: 0, playbackRate: 1, dir: "v", frameCount }],
+  };
+  await writeFile(
+    join(workspace, "index.html"),
+    `<html><body><div data-composition-id="w" data-duration="2">
+      <video data-clip-id="v" data-start="1" data-duration="1" data-ff-start="1000" data-ff-end="2000"
+             src="clip.mp4" style="position:fixed;left:0;top:0;width:320px;height:180px"></video>
+    </div></body></html>`,
+  );
+
+  const server = await startServer(workspace, { mediaRoot: mediaDir, manifest });
+  const session = await openSession({ url: server.url, viewport: { width: 640, height: 360 }, gpu: "auto" });
+  try {
+    const visibility = () => session.evaluate<string>(`getComputedStyle(document.querySelector("img[data-ff-media]")).visibility`);
+
+    await session.seekFrame(0, FPS);
+    assert.equal(await visibility(), "hidden", "antes do início a imagem não pode aparecer");
+
+    await session.seekFrame(45, FPS);
+    assert.equal(await visibility(), "visible", "dentro da janela precisa aparecer");
+
+    await session.seekFrame(80, FPS);
+    assert.equal(await visibility(), "hidden", "depois do fim a imagem precisa sumir");
+  } finally {
+    await session.close();
+    await server.close();
+  }
+});

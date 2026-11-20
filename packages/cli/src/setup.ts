@@ -30,12 +30,18 @@ async function exists(path: string): Promise<boolean> {
   }
 }
 
-async function download(url: string, destination: string): Promise<number> {
+async function download(url: string, destination: string, validate?: (bytes: Buffer) => void): Promise<number> {
   const response = await fetch(url);
   if (!response.ok) throw new Error(`${url} -> HTTP ${response.status}`);
   const bytes = Buffer.from(await response.arrayBuffer());
   const staging = `${destination}.part`;
   await writeFile(staging, bytes);
+  try {
+    validate?.(bytes);
+  } catch (error) {
+    await rm(staging, { force: true });
+    throw error;
+  }
   await rename(staging, destination);
   return bytes.byteLength;
 }
@@ -76,10 +82,9 @@ export async function ensureFonts(options: { check?: boolean } = {}): Promise<St
   }
   for (const item of missing) {
     const url = `https://cdn.jsdelivr.net/npm/@fontsource/${item.pkg}@${FONT_VERSION}/files/${item.file}`;
-    const destination = join(dir, item.file);
-    bytes += await download(url, destination);
-    const header = (await readFile(destination)).subarray(0, 4).toString("latin1");
-    if (header !== "wOF2") throw new Error(`${item.file} não é woff2`);
+    bytes += await download(url, join(dir, item.file), (buffer) => {
+      if (buffer.subarray(0, 4).toString("latin1") !== "wOF2") throw new Error(`${item.file} não é woff2`);
+    });
   }
   return { name: "fontes", state: "instalado", detail: `${missing.length} arquivo(s), ${(bytes / 1024).toFixed(0)} KB` };
 }
@@ -89,7 +94,19 @@ export async function ensureFfmpeg(options: { check?: boolean } = {}): Promise<S
   const dir = join(assetHome(), "ffmpeg");
   const binary = join(dir, "bin", `ffmpeg${EXE}`);
   if (await exists(binary)) {
-    return { name: "ffmpeg", state: "ok", detail: `${FFMPEG_BUILD.version} em ${dir}` };
+    const manifestPath = join(dir, "manifest.json");
+    if (!(await exists(manifestPath))) {
+      return { name: "ffmpeg", state: "ok", detail: `${FFMPEG_BUILD.version} em ${dir} (sem manifesto para conferir)` };
+    }
+    const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as { ffmpegSha256?: string };
+    const digest = await fileSha256(binary);
+    if (manifest.ffmpegSha256 === digest) {
+      return { name: "ffmpeg", state: "ok", detail: `${FFMPEG_BUILD.version} em ${dir}` };
+    }
+    if (options.check === true) {
+      return { name: "ffmpeg", state: "falhou", detail: `binário não confere com o manifesto (${digest.slice(0, 16)}…); rode \`frankframes setup\`` };
+    }
+    await rm(join(dir, "bin"), { recursive: true, force: true });
   }
   if (options.check === true) return { name: "ffmpeg", state: "ausente", detail: `rode \`frankframes setup\`` };
 
@@ -154,9 +171,10 @@ export async function ensureBrowser(options: { check?: boolean } = {}): Promise<
 
   const vendor = join(assetHome(), "browsers");
   await mkdir(vendor, { recursive: true });
+  const args = ["--yes", "@puppeteer/browsers", "install", `chrome-headless-shell@${PINNED_BROWSER.version}`, "--path", vendor];
   await run(
-    process.platform === "win32" ? "npx.cmd" : "npx",
-    ["--yes", "@puppeteer/browsers", "install", `chrome-headless-shell@${PINNED_BROWSER.version}`, "--path", vendor],
+    process.platform === "win32" ? "cmd" : "npx",
+    process.platform === "win32" ? ["/c", "npx", ...args] : args,
     { maxBuffer: 8 << 20 },
   );
 

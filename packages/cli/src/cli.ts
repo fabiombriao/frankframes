@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 import { cp, rm } from "node:fs/promises";
 import { basename, dirname, extname, resolve } from "node:path";
 import { loadComposition } from "@frankframes/contract";
-import { PINNED_BROWSER, checkPinnedBrowser, startServer } from "@frankframes/engine";
+import { PINNED_BROWSER, assetPath, checkPinnedBrowser, startServer } from "@frankframes/engine";
 import { assertCodecAllowed, assertFfmpegAllowed, containerFor, detectFfmpeg } from "@frankframes/encode";
 import type { Preset, VideoCodec } from "@frankframes/encode";
 import { RenderError, prepare, renderComposition, resolveFfmpeg } from "@frankframes/producer";
@@ -69,7 +69,11 @@ function parseCli(argv: string[]): Cli {
     else if (arg === "--workers") cli.workers = Number(argv[++i]);
     else if (arg === "--provider") cli.provider = argv[++i];
     else if (arg === "--language") cli.language = argv[++i];
-    else if (arg.startsWith("-")) cli.flags.push(arg);
+    else if (arg.startsWith("-")) {
+      const known = ["--open", "--check", "--fonts-only", "--cursor"];
+      if (!known.includes(arg)) throw new Error(`opção desconhecida: ${arg}`);
+      cli.flags.push(arg);
+    }
     else positional.push(arg);
   }
   if (positional.length > 0) cli.command = positional[0]!;
@@ -101,12 +105,18 @@ async function browserCommand(action: string): Promise<never> {
     process.exit(2);
   }
 
-  const vendor = resolve("vendor", "browsers");
+  const vendor = assetPath("browsers");
   const child = spawn(
-    process.platform === "win32" ? "npx.cmd" : "npx",
-    ["--yes", "@puppeteer/browsers", "install", `chrome-headless-shell@${PINNED_BROWSER.version}`, "--path", vendor],
+    process.platform === "win32" ? "cmd" : "npx",
+    process.platform === "win32"
+      ? ["/c", "npx", "--yes", "@puppeteer/browsers", "install", `chrome-headless-shell@${PINNED_BROWSER.version}`, "--path", vendor]
+      : ["--yes", "@puppeteer/browsers", "install", `chrome-headless-shell@${PINNED_BROWSER.version}`, "--path", vendor],
     { stdio: "inherit" },
   );
+  child.on("error", (error) => {
+    process.stderr.write(`falha ao executar npx: ${error.message}\n`);
+    process.exit(1);
+  });
   const exited = Promise.withResolvers<number>();
   child.on("exit", (value) => exited.resolve(value ?? 1));
   const code = await exited.promise;
@@ -281,12 +291,25 @@ async function main(): Promise<void> {
       exec(`${process.platform === "win32" ? "start" : process.platform === "darwin" ? "open" : "xdg-open"} "${url}"`);
     }
     const stop = Promise.withResolvers<never>();
-    process.on("SIGINT", () => {
-      void rm(prepared.workDir, { recursive: true, force: true })
+    let closing = false;
+    const shutdown = (code: number): void => {
+      if (closing) return;
+      closing = true;
+      if (prepared.ownsWorkDir) {
+        void rm(prepared.workDir, { recursive: true, force: true }).catch(() => {});
+      }
+      void server
+        .close()
         .catch(() => {})
-        .finally(() => server.close().finally(() => stop.resolve(process.exit(0) as never)));
-    });
-    await stop.promise;
+        .finally(() => stop.resolve(process.exit(code) as never));
+    };
+    process.on("SIGINT", () => shutdown(0));
+    process.on("SIGTERM", () => shutdown(0));
+    try {
+      await stop.promise;
+    } finally {
+      if (!closing) shutdown(0);
+    }
     return;
   }
 

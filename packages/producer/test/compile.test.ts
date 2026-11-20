@@ -73,3 +73,21 @@ test("anotação grava início/fim em ms e o escopo da sub-composição", async 
   assert.ok(annotated.includes('data-ff-comp-start="2000"'), "host de sub-composição precisa do início do escopo");
   assert.ok(annotated.includes('data-ff-start="2500"'), "clip interno é anotado com tempo absoluto");
 });
+
+test("clip sem data-clip-id recebe tempo anotado", async () => {
+  const { materializeClipIds } = await import("../src/compile.ts");
+  const html = `<div data-composition-id="main" data-root="true" data-duration="4">
+    <div data-start="1" data-duration="1"></div>
+  </div>`;
+  const composition = loadComposition(html);
+  assert.equal(composition.ok, true);
+  assert.equal(composition.clips.length, 1);
+
+  const materialized = materializeClipIds(html);
+  assert.match(materialized, /data-clip-id="div#0"/);
+
+  const { html: annotated, annotations } = annotateTiming(materialized, composition);
+  assert.equal(annotations, 1, "sem id materializado, o clip nunca seria escondido");
+  assert.match(annotated, /data-ff-start="1000"/);
+  assert.match(annotated, /data-ff-end="2000"/);
+});

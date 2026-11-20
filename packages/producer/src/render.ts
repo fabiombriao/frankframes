@@ -1,5 +1,6 @@
 // FrankFrames — proprietário. Ver LICENSE na raiz.
 import { execFile } from "node:child_process";
+import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
@@ -10,7 +11,7 @@ import { buildFrameSequenceArgs, buildMuxArgs, containerFor } from "@frankframes
 import type { Preset, VideoCodec } from "@frankframes/encode";
 import { captureFramesInParallel, extractFrames, probeDuration, retryOnceIfTransient, startServer } from "@frankframes/engine";
 import type { MediaManifest } from "@frankframes/engine";
-import { annotateTiming, mergeSubCompositions } from "./compile.ts";
+import { annotateTiming, materializeClipIds, mergeSubCompositions } from "./compile.ts";
 import { resolveFfmpeg } from "./ffmpeg.ts";
 import { mixAudio } from "./audio.ts";
 import type { AudioClip } from "./audio.ts";
@@ -102,10 +103,11 @@ export async function prepare(options: PrepareOptions): Promise<PreparedComposit
 
   progress("compile", 5, entry);
   const source = await readFile(entry, "utf8");
-  const merged = await mergeSubCompositions(source, entryDir);
+  const merged = await mergeSubCompositions(source, entryDir, entry);
   warnings.push(...merged.warnings);
 
-  const parsed = loadComposition(merged.html);
+  const materialized = materializeClipIds(merged.html);
+  const parsed = loadComposition(materialized);
   if (!parsed.ok) {
     throw new RenderError(
       "E_CONTRACT",
@@ -131,7 +133,7 @@ export async function prepare(options: PrepareOptions): Promise<PreparedComposit
     }
   }
 
-  const composition = loadComposition(merged.html, { mediaDurations });
+  const composition = loadComposition(materialized, { mediaDurations });
   if (!composition.ok) {
     throw new RenderError("E_CONTRACT", "probe", "contrato inválido após ajustar a duração da mídia", composition.diagnostics);
   }
@@ -139,7 +141,7 @@ export async function prepare(options: PrepareOptions): Promise<PreparedComposit
     throw new RenderError("E_DURATION", "probe", `duração não resolvida (${composition.duration.reason})`, composition.diagnostics);
   }
 
-  const compiled = annotateTiming(merged.html, composition);
+  const compiled = annotateTiming(materialized, composition);
   if (compiled.annotations === 0) warnings.push("nenhum clip anotado: a composição não tem clips temporizados");
 
   const seconds = composition.duration.seconds;
@@ -150,13 +152,14 @@ export async function prepare(options: PrepareOptions): Promise<PreparedComposit
 
   let mediaDir: string | undefined;
   let manifest: MediaManifest | undefined;
+  try {
   const videos = timedClips(composition).filter((item) => item.clip.tag === "video" && item.clip.mediaSrc !== undefined);
   if (videos.length > 0) {
     progress("extract", 20);
     mediaDir = join(workDir, "media");
     manifest = { fps, clips: [] };
     for (const { clip, start } of videos) {
-      const dir = clip.id.replace(/[^A-Za-z0-9_.-]/g, "_");
+      const dir = `${clip.id.replace(/[^A-Za-z0-9_-]/g, "_")}_${createHash("sha256").update(clip.id).digest("hex").slice(0, 6)}`;
       const clipDuration = clip.authoredDuration ?? Math.max(0, seconds - start);
       const { frameCount } = await extractFrames({
         ffmpeg,
@@ -176,6 +179,11 @@ export async function prepare(options: PrepareOptions): Promise<PreparedComposit
         frameCount,
       });
     }
+  }
+
+  } catch (error) {
+    if (ownsWorkDir) await rm(workDir, { recursive: true, force: true });
+    throw error;
   }
 
   return {
@@ -306,7 +314,9 @@ export async function renderComposition(options: RenderOptions): Promise<RenderR
     const assembleArgs =
       audioPath === undefined
         ? ["-hide_banner", "-loglevel", "error", "-i", videoPath, "-c", "copy", ...mux, "-y", outPath]
-        : ["-hide_banner", "-loglevel", "error", "-i", videoPath, "-i", audioPath, "-c:v", "copy", "-c:a", "copy", ...mux, "-y", outPath];
+        : container === "webm"
+          ? ["-hide_banner", "-loglevel", "error", "-i", videoPath, "-i", audioPath, "-c:v", "copy", "-c:a", "libopus", "-b:a", "128k", ...mux, "-y", outPath]
+          : ["-hide_banner", "-loglevel", "error", "-i", videoPath, "-i", audioPath, "-c:v", "copy", "-c:a", "copy", ...mux, "-y", outPath];
     await run(ffmpeg, assembleArgs, { maxBuffer: 64 << 20 });
     progress("assemble", 100, outPath);
 

@@ -93,3 +93,32 @@ test("render ponta a ponta: HTML -> MP4 com áudio, 45 frames, dois renders idê
   await stat(join(workspace, "b.mp4"));
   assert.ok((await readFile(entry, "utf8")).length > 0);
 });
+
+test("vp9 com áudio gera WebM com Opus", { timeout: 600_000 }, async (t) => {
+  if (!(await ffmpegAvailable())) return t.skip("ffmpeg/ffprobe não encontrados");
+
+  const workspace = await mkdtemp(join(tmpdir(), "ff-e2e-vp9-"));
+  const entry = join(workspace, "index.html");
+  await writeFile(entry, COMPOSITION);
+  await run(FFMPEG, [
+    "-hide_banner", "-loglevel", "error",
+    "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000:duration=2",
+    "-ac", "2", "-y", join(workspace, "beep.wav"),
+  ]);
+
+  const outPath = join(workspace, "a.webm");
+  const result = await renderComposition({
+    entry,
+    outPath,
+    ffmpeg: FFMPEG,
+    ffprobe: FFPROBE,
+    codec: "vp9",
+    preset: "draft",
+    workers: 1,
+  });
+  assert.equal(result.hasAudio, true);
+
+  const probe = await run(FFPROBE, ["-v", "error", "-show_entries", "stream=codec_name", "-of", "default=nw=1", outPath]);
+  assert.match(probe.stdout, /codec_name=vp9/);
+  assert.match(probe.stdout, /codec_name=opus/, "WebM não aceita AAC; o áudio precisa ser Opus");
+});

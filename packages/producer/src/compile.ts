@@ -1,6 +1,6 @@
 // FrankFrames — proprietário. Ver LICENSE na raiz.
 import { readFile } from "node:fs/promises";
-import { dirname, relative, resolve, sep } from "node:path";
+import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import { parse, serialize } from "parse5";
 import { loadComposition } from "@frankframes/contract";
 import type { Composition, ResolvedClip } from "@frankframes/contract";
@@ -12,10 +12,10 @@ interface P5Node {
   childNodes?: P5Node[];
   content?: { childNodes: P5Node[] };
   value?: string;
-  parentNode?: P5Node;
 }
 
 export const MAX_DEPTH = 20;
+const MEDIA: Record<string, true> = { video: true, audio: true, img: true };
 
 function attr(node: P5Node, name: string): string | undefined {
   for (const a of node.attrs ?? []) if (a.name === name) return a.value;
@@ -40,6 +40,16 @@ function* walk(nodes: P5Node[] | undefined): Generator<P5Node> {
     yield* walk(node.content?.childNodes);
     yield* walk(node.childNodes);
   }
+}
+
+function cloneNode(node: P5Node): P5Node {
+  const copy: P5Node = { nodeName: node.nodeName };
+  if (node.tagName !== undefined) copy.tagName = node.tagName;
+  if (node.value !== undefined) copy.value = node.value;
+  if (node.attrs) copy.attrs = node.attrs.map((a) => ({ ...a }));
+  if (node.childNodes) copy.childNodes = node.childNodes.map(cloneNode);
+  if (node.content) copy.content = { childNodes: node.content.childNodes.map(cloneNode) };
+  return copy;
 }
 
 /** Prefixa URLs relativas com o diretório do arquivo que foi inlinado. */
@@ -67,6 +77,14 @@ interface MergeContext {
   warnings: string[];
 }
 
+/** `<style>`, `<script>` e `<link>` do `<head>` do arquivo inlinado. */
+function headAssets(document: P5Node): P5Node[] {
+  const head = [...walk(document.childNodes)].find((node) => node.nodeName === "head");
+  return (head?.childNodes ?? [])
+    .filter((node) => ["style", "script", "link"].includes(node.nodeName))
+    .map(cloneNode);
+}
+
 async function inlineNode(node: P5Node, ctx: MergeContext): Promise<void> {
   const source = attr(node, "data-composition-src");
   if (source === undefined) {
@@ -75,6 +93,12 @@ async function inlineNode(node: P5Node, ctx: MergeContext): Promise<void> {
   }
 
   const absolute = resolve(ctx.entryDir, source);
+  const relativePath = relative(ctx.entryDir, absolute);
+  if (isAbsolute(source) || relativePath.startsWith("..")) {
+    ctx.warnings.push(`data-composition-src fora do diretório da entrada ignorado: ${source}`);
+    removeAttr(node, "data-composition-src");
+    return;
+  }
   if (ctx.ancestors.includes(absolute)) {
     ctx.warnings.push(`referência circular ignorada: ${source}`);
     removeAttr(node, "data-composition-src");
@@ -89,10 +113,9 @@ async function inlineNode(node: P5Node, ctx: MergeContext): Promise<void> {
   const html = await readFile(absolute, "utf8");
   const document = parse(html) as unknown as P5Node;
   const root = [...walk(document.childNodes)].find((candidate) => candidate.nodeName !== "#text" && attr(candidate, "data-composition-id") !== undefined);
-  const inlined = (root?.childNodes ?? []).map((child) => structuredCloneNode(child));
+  const inlined = [...headAssets(document), ...(root?.childNodes ?? []).map(cloneNode)];
 
-  const fileDir = dirname(absolute);
-  const prefix = relative(ctx.entryDir, fileDir).split(sep).join("/");
+  const prefix = relative(ctx.entryDir, dirname(absolute)).split(sep).join("/");
   rewriteUrls(inlined, prefix === "" ? "" : `${prefix}/`);
 
   await inlineAll(inlined, { ...ctx, depth: ctx.depth + 1, ancestors: [...ctx.ancestors, absolute] });
@@ -101,20 +124,9 @@ async function inlineNode(node: P5Node, ctx: MergeContext): Promise<void> {
   removeAttr(node, "data-composition-src");
 
   const innerDuration = root ? attr(root, "data-duration") : undefined;
-  if (innerDuration !== undefined && attr(node, "data-duration") === undefined) {
-    setAttr(node, "data-duration", innerDuration);
-  }
-}
-
-/** Cópia rasa recursiva: parse5 mistura referências de pai no objeto. */
-function structuredCloneNode(node: P5Node): P5Node {
-  const copy: P5Node = { nodeName: node.nodeName };
-  if (node.tagName !== undefined) copy.tagName = node.tagName;
-  if (node.value !== undefined) copy.value = node.value;
-  if (node.attrs) copy.attrs = node.attrs.map((a) => ({ ...a }));
-  if (node.childNodes) copy.childNodes = node.childNodes.map(structuredCloneNode);
-  if (node.content) copy.content = { childNodes: node.content.childNodes.map(structuredCloneNode) };
-  return copy;
+  if (innerDuration !== undefined && attr(node, "data-duration") === undefined) setAttr(node, "data-duration", innerDuration);
+  const innerStyle = root ? attr(root, "style") : undefined;
+  if (innerStyle !== undefined && attr(node, "style") === undefined) setAttr(node, "style", innerStyle);
 }
 
 async function inlineAll(nodes: P5Node[] | undefined, ctx: MergeContext): Promise<void> {
@@ -143,11 +155,39 @@ export interface MergeResult {
  * inline numa única página, reescrevendo caminhos relativos. Não resolve tempo:
  * isso é o passo de anotação, que precisa do contrato já resolvido.
  */
-export async function mergeSubCompositions(entryHtml: string, entryDir: string): Promise<MergeResult> {
+export async function mergeSubCompositions(entryHtml: string, entryDir: string, entryPath?: string): Promise<MergeResult> {
   const document = parse(entryHtml) as unknown as P5Node;
-  const ctx: MergeContext = { entryDir: resolve(entryDir), depth: 0, ancestors: [resolve(entryDir, "index.html")], warnings: [] };
+  const entry = resolve(entryPath ?? resolve(entryDir, "index.html"));
+  const ctx: MergeContext = { entryDir: resolve(entryDir), depth: 0, ancestors: [entry], warnings: [] };
   await inlineAll(document.childNodes, ctx);
   return { html: serialize(document as never), warnings: ctx.warnings };
+}
+
+/**
+ * Escreve `data-clip-id` nos elementos que o contrato identifica por id gerado
+ * (`<tag>#<n>`). Sem isso, o tempo anotado não teria a quem se ligar no DOM.
+ */
+export function materializeClipIds(html: string): string {
+  const document = parse(html) as unknown as P5Node;
+  const counter = { next: 0 };
+
+  const visit = (node: P5Node): void => {
+    if (node.nodeName === "#text") return;
+    const isCompositionRoot = node.nodeName !== "#document" && attr(node, "data-composition-id") !== undefined;
+    const host = isCompositionRoot || attr(node, "data-composition-src") !== undefined;
+    const timed =
+      attr(node, "data-start") !== undefined ||
+      (attr(node, "data-track") !== undefined && attr(node, "data-duration") !== undefined) ||
+      MEDIA[node.nodeName] === true;
+
+    if ((host || timed) && attr(node, "data-clip-id") === undefined && !isCompositionRoot) {
+      setAttr(node, "data-clip-id", `${node.nodeName}#${counter.next++}`);
+    }
+    if (host || !timed) for (const child of node.childNodes ?? []) visit(child);
+  };
+
+  for (const child of document.childNodes ?? []) visit(child);
+  return serialize(document as never);
 }
 
 interface Timing {
@@ -177,6 +217,9 @@ export interface AnnotateResult {
  * Escreve o tempo resolvido no DOM: `data-ff-start`/`data-ff-end` em ms e
  * `data-ff-comp-start` no host da sub-composição. O runtime só lê esses valores;
  * toda a decisão de tempo fica no compilador.
+ *
+ * Início arredonda para baixo e fim para cima: o clip nunca perde o primeiro ou
+ * o último frame por causa do truncamento de milissegundo.
  */
 export function annotateTiming(html: string, composition: Composition): AnnotateResult {
   const document = parse(html) as unknown as P5Node;
@@ -190,26 +233,28 @@ export function annotateTiming(html: string, composition: Composition): Annotate
     if (id === undefined) continue;
     const timing = timings.get(id);
     if (!timing) continue;
-    setAttr(node, "data-ff-start", String(Math.round(timing.start * 1000)));
-    if (timing.end !== undefined) setAttr(node, "data-ff-end", String(Math.round(timing.end * 1000)));
-    setAttr(node, "data-ff-comp-start", String(Math.round(timing.compStart * 1000)));
+    setAttr(node, "data-ff-start", String(Math.floor(timing.start * 1000)));
+    if (timing.end !== undefined) setAttr(node, "data-ff-end", String(Math.ceil(timing.end * 1000)));
+    setAttr(node, "data-ff-comp-start", String(Math.floor(timing.compStart * 1000)));
     annotations++;
   }
 
   return { html: serialize(document as never), annotations };
 }
 
-/** Conveniência do producer: merge + contrato + anotação numa chamada. */
+/** Conveniência do producer: merge + ids + contrato + anotação numa chamada. */
 export async function compileComposition(options: {
   entryHtml: string;
   entryDir: string;
+  entryPath?: string;
   mediaDurations?: Record<string, number>;
 }): Promise<{ html: string; composition: Composition; warnings: string[]; annotations: number }> {
-  const merged = await mergeSubCompositions(options.entryHtml, options.entryDir);
-  const composition = loadComposition(merged.html, { mediaDurations: options.mediaDurations ?? {} });
+  const merged = await mergeSubCompositions(options.entryHtml, options.entryDir, options.entryPath);
+  const materialized = materializeClipIds(merged.html);
+  const composition = loadComposition(materialized, { mediaDurations: options.mediaDurations ?? {} });
   if (!composition.ok) {
-    return { html: merged.html, composition, warnings: merged.warnings, annotations: 0 };
+    return { html: materialized, composition, warnings: merged.warnings, annotations: 0 };
   }
-  const annotated = annotateTiming(merged.html, composition);
+  const annotated = annotateTiming(materialized, composition);
   return { html: annotated.html, composition, warnings: merged.warnings, annotations: annotated.annotations };
 }

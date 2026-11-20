@@ -58,7 +58,7 @@ test("duas faixas: uma cadeia por clip e amix sem normalização", () => {
   );
   assert.equal(
     lines[1],
-    "[1:a]atrim=start=0:duration=3,asetpts=PTS-STARTPTS,atempo=1.5,volume=1,adelay=2500|2500,apad[a1]",
+    "[1:a]atrim=start=0:duration=4.5,asetpts=PTS-STARTPTS,atempo=1.5,volume=1,adelay=2500|2500,apad[a1]",
   );
   assert.equal(
     lines[2],
@@ -80,12 +80,12 @@ test("fadeOut maior que a duração clampa st em 0 e avisa", () => {
   assert.match(graph.warnings[0] ?? "", /fadeOut.*maior que a duração.*st ajustado para 0/);
 });
 
-test("playbackRate fora da faixa é clampado para 2 e avisa", () => {
-  const graph = buildAudioGraph([clip({ clipId: "rapido", file: "/media/r.wav", playbackRate: 3 })], 1);
+test("playbackRate fora da faixa do contrato é clampado e avisa", () => {
+  const graph = buildAudioGraph([clip({ clipId: "rapido", file: "/media/r.wav", playbackRate: 20 })], 1);
 
-  assert.match(graph.filter, /atempo=2/);
+  assert.match(graph.filter, /atempo=2,atempo=2,atempo=2,atempo=1\.25/);
   assert.equal(graph.warnings.length, 1);
-  assert.match(graph.warnings[0] ?? "", /playbackRate 3 fora de 0\.5–2/);
+  assert.match(graph.warnings[0] ?? "", /playbackRate 20 fora de 0\.1–10/);
 });
 
 test("integração: duas senoides mixadas geram AAC estéreo de 2s", { timeout: 120_000 }, async (t) => {
@@ -138,4 +138,16 @@ test("integração: duas senoides mixadas geram AAC estéreo de 2s", { timeout: 
 
   const duration = Number(probe.format.duration);
   assert.ok(duration >= 1.95 && duration <= 2.05, `duração fora da faixa: ${duration}`);
+});
+
+test("atrim escala a taxa e atempo cobre 3x", async () => {
+  const { buildAudioGraph } = await import("../src/audio.ts");
+  const graph = buildAudioGraph(
+    [{ clipId: "v", file: "v.mp4", start: 0, duration: 2, offset: 1, playbackRate: 3, volume: 1 }],
+    5,
+  );
+  const chain = graph.filter;
+  assert.match(chain, /atrim=start=1:duration=6/, "consumir 6s da fonte para entregar 2s a 3x");
+  assert.match(chain, /atempo=2/);
+  assert.match(chain, /atempo=1\.5/);
 });

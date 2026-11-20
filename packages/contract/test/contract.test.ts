@@ -174,3 +174,40 @@ test("fades de áudio são lidos e valores negativos falham", () => {
   assert.equal(bad.ok, false);
   assert.ok(bad.diagnostics.some((d) => d.code === CODES.FADE_INVALID && d.severity === "error"));
 });
+
+test("<img> não tem áudio; clip interno sem duração deixa a composição pendente", () => {
+  const img = loadComposition(root(`<img data-clip-id="p" data-start="0" data-duration="1" src="a.png">`));
+  assert.equal(img.ok, true);
+  assert.equal(img.clips[0]!.hasAudio, false, "img nunca entra no mixer");
+
+  const nested = loadComposition(
+    root(`
+      <div data-composition-id="a" data-start="0" data-duration="2">
+        <div data-clip-id="child" data-start="0"></div>
+      </div>
+    `),
+  );
+  assert.equal(nested.ok, false, "filho de sub-composição sem duração precisa bloquear");
+  assert.deepEqual(nested.duration, { kind: "unresolved", reason: "pending-clips", pending: ["child"] });
+});
+
+test("ids gerados não colidem entre sub-composições irmãs", () => {
+  const c = loadComposition(
+    root(`
+      <div data-composition-id="a" data-start="0" data-duration="2"><div data-start="0" data-duration="1"></div></div>
+      <div data-composition-id="b" data-start="2" data-duration="2"><div data-start="0" data-duration="1"></div></div>
+    `),
+  );
+  assert.equal(c.ok, true);
+  assert.ok(!c.diagnostics.some((d) => d.code === CODES.DUPLICATE_ID));
+  const ids = [c.clips[0]!.children[0]!.id, c.clips[1]!.children[0]!.id];
+  assert.notEqual(ids[0], ids[1]);
+});
+
+test("atributo numérico inválido é erro, não fallback", () => {
+  for (const attr of ['data-volume="50%"', 'data-offset="1,5"', 'data-playback-rate="1.5x"']) {
+    const c = loadComposition(root(`<div data-clip-id="x" data-start="0" data-duration="1" ${attr}></div>`));
+    assert.equal(c.ok, false, `${attr} deveria falhar`);
+    assert.ok(c.diagnostics.some((d) => d.code === CODES.NUMBER_INVALID), `${attr} sem E_NUMBER_INVALID`);
+  }
+});

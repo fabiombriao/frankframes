@@ -27,6 +27,11 @@ export const MEDIA_SHIM_SOURCE = `(() => {
       const img = document.createElement("img");
       img.src = "/__ff_media/" + clip.dir + "/000000.jpg";
       img.setAttribute("data-ff-media", clip.clipId);
+      // A <img> substituta precisa participar da mesma janela de visibilidade.
+      for (const attribute of ["data-ff-start", "data-ff-end"]) {
+        const value = video.getAttribute(attribute);
+        if (value !== null) img.setAttribute(attribute, value);
+      }
       img.style.cssText =
         "position:fixed;left:" + box.left + "px;top:" + box.top + "px;width:" + box.width + "px;height:" +
         box.height + "px;object-fit:contain;display:block;";
@@ -37,7 +42,12 @@ export const MEDIA_SHIM_SOURCE = `(() => {
   };
 
   const apply = async (ms) => {
-    if (!swapped) { swapped = true; swap(); }
+    if (!swapped) {
+      swapped = true;
+      swap();
+      // A <img> acabou de nascer: precisa da mesma visibilidade deste frame.
+      window.__ff.syncVisibility();
+    }
     const seconds = ms / 1000;
     const pending = [];
     for (const entry of entries) {
@@ -46,7 +56,11 @@ export const MEDIA_SHIM_SOURCE = `(() => {
       if (frame === entry.lastFrame) continue;
       entry.lastFrame = frame;
       entry.img.src = "/__ff_media/" + entry.clip.dir + "/" + String(frame).padStart(6, "0") + ".jpg";
-      pending.push(entry.img.decode().catch(() => {}));
+      pending.push(
+        entry.img.decode().catch(() => {
+          throw new Error("frame de mídia não carregou: " + entry.img.src);
+        }),
+      );
     }
     await Promise.all(pending);
   };

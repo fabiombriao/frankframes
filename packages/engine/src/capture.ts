@@ -7,6 +7,7 @@ import { chromeArgs } from "./args.ts";
 import type { GpuMode, ResolvedGpuMode, Viewport } from "./args.ts";
 import { resolveChrome } from "./launch.ts";
 import { probeRenderer, resolveGpuMode } from "./probe.ts";
+import type { RendererInfo } from "./probe.ts";
 
 /**
  * Browsers vivos deste processo. No Windows um Chrome órfão sobrevive ao Ctrl+C
@@ -72,6 +73,21 @@ export async function openSession(options: SessionOptions): Promise<Session> {
   });
 
   trackBrowser(browser);
+  try {
+    return await startSession(browser, options, gpu, probe);
+  } catch (error) {
+    liveBrowsers.delete(browser);
+    await browser.close().catch(() => {});
+    throw error;
+  }
+}
+
+async function startSession(
+  browser: Browser,
+  options: SessionOptions,
+  gpu: ResolvedGpuMode,
+  probe: RendererInfo | undefined,
+): Promise<Session> {
   const page: Page = await browser.newPage();
   const pageErrors: string[] = [];
   page.on("pageerror", (error) => pageErrors.push(String(error)));

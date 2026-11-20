@@ -74,18 +74,40 @@ export const CLOCK_SOURCE = `(() => {
 
   const ready = Promise.all([
     document.fonts ? document.fonts.ready : Promise.resolve(),
-    ...[...document.images].map((img) => (img.decode ? img.decode().catch(() => {}) : Promise.resolve())),
+    ...[...document.images].map((img) =>
+      img.decode
+        ? img.decode().catch(() => {
+            throw new Error("imagem não decodificou: " + (img.currentSrc || img.src));
+          })
+        : Promise.resolve(),
+    ),
   ]).then(() => true);
+
+  const syncVisibility = () => {
+    for (const element of document.querySelectorAll("[data-ff-start]")) {
+      const start = Number(element.getAttribute("data-ff-start"));
+      const rawEnd = element.getAttribute("data-ff-end");
+      const end = rawEnd === null ? Infinity : Number(rawEnd);
+      element.style.visibility = nowMs >= start && nowMs < end ? "" : "hidden";
+    }
+  };
 
   window.__ff = {
     ready,
+    syncVisibility,
     now: () => nowMs,
     seek(ms) {
       nowMs = ms;
       seed = (0x9e3779b1 ^ (Math.trunc(ms) + 1)) >>> 0;
-      for (const timer of timers) {
-        if (timer.due <= nowMs && timer.every === undefined) {
-          timer.fn(...timer.args);
+      for (const timer of [...timers]) {
+        if (timer.every === undefined) {
+          if (timer.due <= nowMs) timer.fn(...timer.args);
+        } else {
+          let guard = 0;
+          while (timer.due <= nowMs && guard++ < 1000) {
+            timer.fn(...timer.args);
+            timer.due += timer.every;
+          }
         }
       }
       for (let i = timers.length - 1; i >= 0; i--) {
@@ -98,12 +120,7 @@ export const CLOCK_SOURCE = `(() => {
         const target = animation.effect ? animation.effect.target : null;
         animation.currentTime = Math.max(0, nowMs - scopeStart(target));
       }
-      for (const element of document.querySelectorAll("[data-ff-start]")) {
-        const start = Number(element.getAttribute("data-ff-start"));
-        const rawEnd = element.getAttribute("data-ff-end");
-        const end = rawEnd === null ? Infinity : Number(rawEnd);
-        element.style.visibility = nowMs >= start && nowMs < end ? "" : "hidden";
-      }
+      syncVisibility();
       return nowMs;
     },
   };

@@ -79,7 +79,13 @@ function templateRoot(template: P5Node): P5Node {
   return { nodeName: "#fragment", childNodes: template.content?.childNodes ?? [] };
 }
 
-function buildClip(node: P5Node, depth: number, ordinal: number, diagnostics: Diagnostic[]): RawClip | undefined {
+function buildClip(
+  node: P5Node,
+  depth: number,
+  ordinal: number,
+  diagnostics: Diagnostic[],
+  counter: { next: number },
+): RawClip | undefined {
   const tag = node.nodeName;
   const rawId = attr(node, ATTRS.clipId) ?? attr(node, ATTRS.id);
   const id = rawId && rawId.trim() !== "" ? rawId.trim() : `${tag}#${ordinal}`;
@@ -104,6 +110,23 @@ function buildClip(node: P5Node, depth: number, ordinal: number, diagnostics: Di
       }),
     );
     return undefined;
+  }
+
+  for (const [name, raw] of [
+    [ATTRS.offset, attr(node, ATTRS.offset)],
+    [ATTRS.rate, attr(node, ATTRS.rate)],
+    [ATTRS.volume, attr(node, ATTRS.volume)],
+    ["data-fade-in", attr(node, "data-fade-in")],
+    ["data-fade-out", attr(node, "data-fade-out")],
+  ] as const) {
+    if (raw !== undefined && raw.trim() !== "" && !Number.isFinite(Number(raw.trim()))) {
+      diagnostics.push(
+        diag(CODES.NUMBER_INVALID, "error", `${name} não numérico em "${id}": ${JSON.stringify(raw)}`, {
+          clipId: id,
+          hint: "use segundos decimais (1.5) — vírgula e sufixo como \"x\" não são aceitos",
+        }),
+      );
+    }
   }
 
   const offset = num(attr(node, ATTRS.offset)) ?? 0;
@@ -170,10 +193,10 @@ function buildClip(node: P5Node, depth: number, ordinal: number, diagnostics: Di
       const root = templateRoot(template);
       if (root !== node) {
         nestedDuration = num(attr(root, ATTRS.duration));
-        children.push(...collectClips(root, root, depth + 1, diagnostics));
+        children.push(...collectClips(root, root, depth + 1, diagnostics, counter));
       }
     } else {
-      children.push(...collectClips(node, node, depth + 1, diagnostics));
+      children.push(...collectClips(node, node, depth + 1, diagnostics, counter));
     }
   }
 
@@ -198,14 +221,19 @@ function buildClip(node: P5Node, depth: number, ordinal: number, diagnostics: Di
   if (src) clip.src = src;
   const mediaSrc = attr(node, "src");
   if (mediaSrc) clip.mediaSrc = mediaSrc;
-  if (MEDIA[tag] === true) clip.hasAudio = tag === "audio" || attr(node, "data-has-audio") !== "false";
+  if (MEDIA[tag] === true) clip.hasAudio = tag === "audio" || (tag === "video" && attr(node, "data-has-audio") !== "false");
   return clip;
 }
 
 /** Uma linha de timeline por clip; hosts e clips temporizados não são atravessados. */
-export function collectClips(parent: P5Node, root: P5Node, depth: number, diagnostics: Diagnostic[]): RawClip[] {
+export function collectClips(
+  parent: P5Node,
+  root: P5Node,
+  depth: number,
+  diagnostics: Diagnostic[],
+  counter: { next: number } = { next: 0 },
+): RawClip[] {
   const clips: RawClip[] = [];
-  let ordinal = 0;
 
   const visit = (node: P5Node): void => {
     if (depth > MAX_DEPTH) {
@@ -226,7 +254,7 @@ export function collectClips(parent: P5Node, root: P5Node, depth: number, diagno
       for (const child of node.childNodes ?? []) visit(child);
       return;
     }
-    const clip = buildClip(node, depth, ordinal++, diagnostics);
+    const clip = buildClip(node, depth, counter.next++, diagnostics, counter);
     if (clip) clips.push(clip);
   };
 
