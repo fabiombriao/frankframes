@@ -10,9 +10,9 @@
  */
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
-import { link, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { copyFile, link, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { basename, extname, join, resolve } from "node:path";
+import { basename, dirname, extname, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { renderComposition } from "../packages/producer/src/render.ts";
 import { assetPath } from "../packages/engine/src/home.ts";
@@ -119,6 +119,14 @@ try {
     const leaded = [...first.hashes.keys()].filter((frame) => first.hashes.get(frame) === second.hashes.get(frame - 1)).length;
     process.stdout.write(`frames divergentes: ${divergent.slice(0, 12).join(", ")}\n`);
     process.stdout.write(`a[n] == b[n+1] em ${lagged} frame(s); a[n] == b[n-1] em ${leaded} frame(s)\n`);
+  }
+
+  const outFlag = args.indexOf("--out");
+  if (outFlag >= 0 && args[outFlag + 1] !== undefined) {
+    const destination = resolve(args[outFlag + 1]!);
+    await mkdir(dirname(destination), { recursive: true });
+    await copyFile(first.outPath, destination);
+    process.stdout.write(`copia   ${destination}\n`);
   }
 
   const keep = args.includes("--keep");
