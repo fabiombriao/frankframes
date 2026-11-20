@@ -268,6 +268,58 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (command === "comment") {
+    const key = flags.find((flag) => !flag.startsWith("-"));
+    const bodyFlag = flags.indexOf("--body");
+    const fileFlag = flags.indexOf("--body-file");
+    const body =
+      fileFlag >= 0
+        ? readFileSync(flags[fileFlag + 1] ?? "", "utf8")
+        : bodyFlag >= 0
+          ? (flags[bodyFlag + 1] ?? "")
+          : "";
+    if (key === undefined || body === "") {
+      process.stderr.write("uso: node scripts/jira.ts comment <chave> --body-file <arquivo>\n");
+      process.exit(2);
+    }
+    const created = await api<{ id: string }>(`/rest/api/2/issue/${key}/comment`, {
+      method: "POST",
+      body: JSON.stringify({ body }),
+    });
+    process.stdout.write(`comentário ${created.id} em ${key}\n`);
+    return;
+  }
+
+  if (command === "transitions" || command === "move") {
+    const key = flags.find((flag) => !flag.startsWith("-"));
+    if (key === undefined) {
+      process.stderr.write("uso: node scripts/jira.ts transitions|move <chave> [status]\n");
+      process.exit(2);
+    }
+    const available = await api<{ transitions: Array<{ id: string; name: string; to: { name: string } }> }>(
+      `/rest/api/3/issue/${key}/transitions`,
+    );
+    if (command === "transitions") {
+      for (const transition of available.transitions) process.stdout.write(`${transition.id}\t${transition.name} -> ${transition.to.name}\n`);
+      return;
+    }
+    const wanted = flags.filter((flag) => !flag.startsWith("-"))[1];
+    if (wanted === undefined) {
+      process.stderr.write("uso: node scripts/jira.ts move <chave> <status>\n");
+      process.exit(2);
+    }
+    const match = available.transitions.find(
+      (transition) => transition.to.name.toLowerCase() === wanted.toLowerCase() || transition.name.toLowerCase() === wanted.toLowerCase(),
+    );
+    if (!match) {
+      process.stderr.write(`transição \"${wanted}\" indisponível em ${key}; opções: ${available.transitions.map((t) => t.to.name).join(", ")}\n`);
+      process.exit(1);
+    }
+    await api(`/rest/api/3/issue/${key}/transitions`, { method: "POST", body: JSON.stringify({ transition: { id: match.id } }) });
+    process.stdout.write(`${key} -> ${match.to.name}\n`);
+    return;
+  }
+
   if (command === "fields") {
     const fields = await api<Array<{ id: string; name: string; schema?: { type?: string } }>>("/rest/api/3/field");
     const points = fields.filter((field) => /point|estimate/i.test(field.name));

@@ -14,6 +14,9 @@ cp .env.example .env          # preencha JIRA_EMAIL e JIRA_API_TOKEN
 node scripts/jira.ts whoami   # confere autenticação
 node scripts/jira.ts list     # lista o projeto com o épico de cada item
 node scripts/jira.ts show EDT-7
+node scripts/jira.ts comment EDT-7 --body-file <arquivo>
+node scripts/jira.ts transitions EDT-7
+node scripts/jira.ts move EDT-7 Feito
 node scripts/jira.ts seed --dry-run   # plano sem tocar no Jira
 node scripts/jira.ts seed             # cria o que falta (idempotente)
 node scripts/jira.ts sync             # reescreve descrição/rótulos a partir do backlog.json
@@ -47,6 +50,11 @@ Regras do cliente:
 - Tipos: `10261` Subtask, `10262` Epic, `10263` Bug, `10264` Tarefa.
 - Criação de projeto não é exposta por nenhuma das duas vias (Orca nem REST sem permissão global de
   administrador); o EDT foi criado na interface.
+
+## Orca
+
+O conector do Orca perdeu a seleção de site ("No matching connected Jira site") e não é mais necessário:
+comentário e transição agora existem no cliente REST. Use o Orca só se quiser leitura rápida.
 
 ## Orca, quando conveniente
 
