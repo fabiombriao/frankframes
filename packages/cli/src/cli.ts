@@ -2,8 +2,10 @@
 // FrankFrames — proprietário. Ver LICENSE na raiz.
 import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
-import { cp, rm } from "node:fs/promises";
-import { basename, dirname, extname, resolve } from "node:path";
+import { cp, mkdtemp, rm } from "node:fs/promises";
+import { watch } from "node:fs";
+import { tmpdir } from "node:os";
+import { basename, dirname, extname, join, resolve } from "node:path";
 import { loadComposition } from "@frankframes/contract";
 import { PINNED_BROWSER, assetPath, checkPinnedBrowser, startServer } from "@frankframes/engine";
 import { assertCodecAllowed, assertFfmpegAllowed, containerFor, detectFfmpeg } from "@frankframes/encode";
@@ -278,26 +280,69 @@ async function main(): Promise<void> {
 
   if (cli.command === "preview") {
     const pair = await resolveFfmpeg();
-    const prepared = await prepare({ entry, ffmpeg: pair.ffmpeg, ffprobe: pair.ffprobe });
-    const server = await startServer(prepared.entryDir, {
-      ...(prepared.mediaDir !== undefined ? { mediaRoot: prepared.mediaDir } : {}),
+    const workDir = await mkdtemp(join(tmpdir(), "ff-preview-"));
+    let prepared = await prepare({ entry, ffmpeg: pair.ffmpeg, ffprobe: pair.ffprobe, workDir });
+
+    // O servidor lê `page`/`manifest` a cada request: mutar o objeto já recarrega.
+    const page = { path: basename(entry), html: prepared.compiledHtml };
+    const serverOptions: Parameters<typeof startServer>[1] = {
+      page,
+      live: true,
       ...(prepared.manifest !== undefined ? { manifest: prepared.manifest } : {}),
-      page: { path: basename(prepared.entry), html: prepared.compiledHtml },
-    });
+      ...(prepared.mediaDir !== undefined ? { mediaRoot: prepared.mediaDir } : {}),
+    };
+    const server = await startServer(prepared.entryDir, serverOptions);
+
     const url = `${server.url}${basename(entry)}`;
-    process.stdout.write(`preview ${url}\n${prepared.totalFrames} frames · ${prepared.seconds.toFixed(3)}s\nCtrl+C encerra.\n`);
+    process.stdout.write(`preview ${url}\n${prepared.totalFrames} frames · ${prepared.seconds.toFixed(3)}s · Ctrl+C encerra\n`);
     if (cli.flags.includes("--open")) {
       const { exec } = await import("node:child_process");
       exec(`${process.platform === "win32" ? "start" : process.platform === "darwin" ? "open" : "xdg-open"} "${url}"`);
     }
+
+    let recompiling = false;
+    let pending = false;
+    const recompile = async (): Promise<void> => {
+      if (recompiling) {
+        pending = true;
+        return;
+      }
+      recompiling = true;
+      const started = Date.now();
+      try {
+        const next = await prepare({ entry, ffmpeg: pair.ffmpeg, ffprobe: pair.ffprobe, workDir });
+        page.html = next.compiledHtml;
+        serverOptions.manifest = next.manifest;
+        prepared = next;
+        server.notify();
+        process.stdout.write(`recompilado em ${Date.now() - started} ms · ${next.totalFrames} frames\n`);
+      } catch (error) {
+        process.stderr.write(`erro ao recompilar: ${(error as Error).message}\n`);
+      } finally {
+        recompiling = false;
+        if (pending) {
+          pending = false;
+          void recompile();
+        }
+      }
+    };
+
+    const timer: { handle?: NodeJS.Timeout } = {};
+    const watcher = watch(prepared.entryDir, { recursive: true }, (_event, file) => {
+      if (typeof file === "string" && /(^|[\\/])(node_modules|\.git|out)([\\/]|$)/.test(file)) return;
+      if (timer.handle) clearTimeout(timer.handle);
+      timer.handle = setTimeout(() => void recompile(), 120);
+    });
+    watcher.on("error", (error) => process.stderr.write(`watcher: ${error.message}\n`));
+
     const stop = Promise.withResolvers<never>();
     let closing = false;
     const shutdown = (code: number): void => {
       if (closing) return;
       closing = true;
-      if (prepared.ownsWorkDir) {
-        void rm(prepared.workDir, { recursive: true, force: true }).catch(() => {});
-      }
+      watcher.close();
+      if (timer.handle) clearTimeout(timer.handle);
+      void rm(workDir, { recursive: true, force: true }).catch(() => {});
       void server
         .close()
         .catch(() => {})

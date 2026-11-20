@@ -34,6 +34,8 @@ const MIME: Record<string, string> = {
 
 export interface StaticServer {
   url: string;
+  /** Avisa os clientes do preview que o arquivo mudou. */
+  notify: () => void;
   close: () => Promise<void>;
 }
 
@@ -46,6 +48,8 @@ export interface ServerOptions {
   fontsRoot?: string | null;
   /** HTML já compilado que substitui o arquivo de entrada. */
   page?: { path: string; html: string };
+  /** Preview: relógio em tempo real + recarga por SSE. */
+  live?: boolean;
 }
 
 const MEDIA_PREFIX = "/__ff_media/";
@@ -57,6 +61,7 @@ const FONTS_PREFIX = "/__ff_fonts/";
  * as fontes embarcadas e o shim de mídia antes de qualquer script do autor.
  */
 export async function startServer(rootDir: string, options: ServerOptions = {}): Promise<StaticServer> {
+  const clients = new Set<import("node:http").ServerResponse>();
   const roots = {
     site: resolve(rootDir),
     media: options.mediaRoot ? resolve(options.mediaRoot) : undefined,
@@ -66,6 +71,17 @@ export async function startServer(rootDir: string, options: ServerOptions = {}):
   const server = createServer(async (request, response) => {
     try {
       const pathname = new URL(request.url ?? "/", "http://127.0.0.1").pathname;
+      if (pathname === "/__ff_reload") {
+        response.writeHead(200, {
+          "content-type": "text/event-stream",
+          "cache-control": "no-store",
+          connection: "keep-alive",
+        });
+        response.write(": conectado\n\n");
+        clients.add(response);
+        request.on("close", () => clients.delete(response));
+        return;
+      }
       if (pathname === "/favicon.ico") {
         response.writeHead(204).end();
         return;
@@ -103,6 +119,7 @@ export async function startServer(rootDir: string, options: ServerOptions = {}):
               manifest: options.manifest,
               disableMediaShim: options.disableMediaShim,
               fontsBase: roots.fonts ? FONTS_PREFIX.slice(0, -1) : null,
+              ...(options.live === true ? { live: true } : {}),
             }),
           )
         : raw;
@@ -119,7 +136,12 @@ export async function startServer(rootDir: string, options: ServerOptions = {}):
 
   return {
     url: `http://127.0.0.1:${port}/`,
+    notify: () => {
+      for (const client of clients) client.write("data: reload\n\n");
+    },
     close: async () => {
+      for (const client of clients) client.end();
+      clients.clear();
       const closed = Promise.withResolvers<void>();
       server.closeAllConnections();
       server.close((error) => (error ? closed.reject(error) : closed.resolve()));

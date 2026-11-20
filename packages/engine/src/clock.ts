@@ -23,6 +23,8 @@ export const CLOCK_SOURCE = `(() => {
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
 
+  const realNow = performance.now.bind(performance);
+  const realRaf = window.requestAnimationFrame.bind(window);
   const RealDate = Date;
   class VirtualDate extends RealDate {
     constructor(...args) {
@@ -94,6 +96,14 @@ export const CLOCK_SOURCE = `(() => {
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", settle, { once: true });
   else settle();
 
+  const syncAnimations = () => {
+    for (const animation of document.getAnimations()) {
+      animation.pause();
+      const target = animation.effect ? animation.effect.target : null;
+      animation.currentTime = Math.max(0, nowMs - scopeStart(target));
+    }
+  };
+
   const syncVisibility = () => {
     for (const element of document.querySelectorAll("[data-ff-start]")) {
       const start = Number(element.getAttribute("data-ff-start"));
@@ -103,9 +113,45 @@ export const CLOCK_SOURCE = `(() => {
     }
   };
 
+  const liveHooks = [];
+  const liveErrors = [];
+  let liveHandle = null;
+
+  const startLive = (startAtMs) => {
+    if (liveHandle !== null) return;
+    const base = realNow() - (startAtMs || 0);
+    let lastPersist = 0;
+    // Primeiro passe é síncrono: nada de mostrar o estado errado antes do primeiro rAF.
+    nowMs = realNow() - base;
+    syncAnimations();
+    syncVisibility();
+    const tick = () => {
+      nowMs = realNow() - base;
+      try {
+        syncAnimations();
+        syncVisibility();
+        for (const hook of liveHooks) hook(nowMs);
+      } catch (error) {
+        liveErrors.push(String(error && error.message ? error.message : error));
+      }
+      if (nowMs - lastPersist > 250) {
+        lastPersist = nowMs;
+        try {
+          sessionStorage.setItem("__ffTime", String(Math.round(nowMs)));
+        } catch {}
+      }
+      liveHandle = realRaf(tick);
+    };
+    liveHandle = realRaf(tick);
+  };
+
   window.__ff = {
     ready,
     syncVisibility,
+    syncAnimations,
+    startLive,
+    liveHooks,
+    liveErrors,
     now: () => nowMs,
     seek(ms) {
       nowMs = ms;
@@ -126,11 +172,7 @@ export const CLOCK_SOURCE = `(() => {
       }
       const generation = frameQueue.splice(0, frameQueue.length);
       for (const cb of generation) cb(nowMs);
-      for (const animation of document.getAnimations()) {
-        animation.pause();
-        const target = animation.effect ? animation.effect.target : null;
-        animation.currentTime = Math.max(0, nowMs - scopeStart(target));
-      }
+      syncAnimations();
       syncVisibility();
       return nowMs;
     },

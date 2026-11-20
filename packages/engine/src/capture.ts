@@ -53,6 +53,8 @@ export interface Session {
   renderer: string;
   /** Avaliação no contexto da página (sonda de estado em teste). */
   evaluate: <T>(expression: string) => Promise<T>;
+  /** Recarrega a página mantendo o mesmo contexto de sessão (preview). */
+  reload: () => Promise<void>;
   close: () => Promise<void>;
 }
 
@@ -127,6 +129,9 @@ async function startSession(
     },
     pageErrors: () => [...pageErrors],
     evaluate: <T,>(expression: string) => page.evaluate(expression) as Promise<T>,
+    reload: async () => {
+      await page.reload({ waitUntil: "domcontentloaded" });
+    },
     gpu,
     renderer: probe?.renderer ?? "ANGLE SwiftShader (software)",
     close: async () => {

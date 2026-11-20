@@ -10,6 +10,8 @@ export interface Injection {
   disableMediaShim?: boolean;
   /** Base pública das fontes embarcadas; `null` desliga a injeção. */
   fontsBase?: string | null;
+  /** Preview: relógio em tempo real e recarga por SSE. */
+  live?: boolean;
 }
 
 /**
@@ -25,6 +27,11 @@ export function injectionScript(injection: Injection = {}): string {
   if (injection.manifest) {
     parts.push(`<script>window.__ffMedia=${JSON.stringify(injection.manifest)};</script>`);
     if (!injection.disableMediaShim) parts.push(`<script>${MEDIA_SHIM_SOURCE}</script>`);
+  }
+  if (injection.live) {
+    parts.push(
+      `<script>document.addEventListener("DOMContentLoaded",function(){var t=0;try{t=Number(sessionStorage.getItem("__ffTime")||0)}catch(e){}window.__ff.startLive(t||0);var es=new EventSource("/__ff_reload");es.onmessage=function(){location.reload()}});</script>`,
+    );
   }
   return parts.join("");
 }

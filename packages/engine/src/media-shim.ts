@@ -65,6 +65,8 @@ export const MEDIA_SHIM_SOURCE = `(() => {
     await Promise.all(pending);
   };
 
+  if (window.__ff.liveHooks) window.__ff.liveHooks.push((ms) => { void apply(ms); });
+
   const baseSeek = window.__ff.seek;
   window.__ff.seek = async (ms) => {
     baseSeek(ms);

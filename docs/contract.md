@@ -133,6 +133,10 @@ para fonte do sistema.
 anotado, mídia extraída), então o que aparece no navegador é o que sai no MP4 — exceto a garantia de
 pixel, que só existe no render.
 
+No preview o relógio roda em **tempo real** (`__ff.startLive`): animações e visibilidade avançam
+sozinhas, sem seek. Salvar qualquer arquivo do diretório recompila (~4 ms medidos) e recarrega por SSE;
+o instante atual é guardado em `sessionStorage` e retomado após a recarga.
+
 ## 10. Compatibilidade
 
 Composições escritas para outro framework entram por um **importador separado** (`compat-*`), que traduz
