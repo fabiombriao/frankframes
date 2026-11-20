@@ -160,6 +160,41 @@ function buildClip(
     );
   }
 
+  const rawKeyframes = attr(node, "data-keyframes");
+  let keyframes: Array<{ time: number; volume: number }> | undefined;
+  if (rawKeyframes !== undefined && rawKeyframes.trim() !== "") {
+    try {
+      const parsed = JSON.parse(rawKeyframes) as unknown;
+      if (!Array.isArray(parsed)) throw new Error("não é array");
+      keyframes = parsed.map((item) => {
+        const point = item as { time?: unknown; volume?: unknown };
+        const time = Number(point.time);
+        const volume = Number(point.volume);
+        if (!Number.isFinite(time) || !Number.isFinite(volume) || time < 0 || volume < 0) {
+          throw new Error("ponto inválido");
+        }
+        return { time, volume };
+      });
+    } catch {
+      diagnostics.push(
+        diag(CODES.NUMBER_INVALID, "error", `data-keyframes inválido em "${id}"`, {
+          clipId: id,
+          hint: 'use [{"time":0,"volume":1},{"time":2,"volume":0.2}]',
+        }),
+      );
+    }
+  }
+
+  const role = attr(node, "data-audio-role");
+  if (role !== undefined && !["voice", "music", "sfx"].includes(role)) {
+    diagnostics.push(
+      diag(CODES.NUMBER_INVALID, "error", `data-audio-role inválido em "${id}": ${JSON.stringify(role)}`, {
+        clipId: id,
+        hint: "use voice, music ou sfx",
+      }),
+    );
+  }
+
   const fadeIn = num(attr(node, "data-fade-in"));
   const fadeOut = num(attr(node, "data-fade-out"));
   for (const [name, value] of [["data-fade-in", fadeIn], ["data-fade-out", fadeOut]] as const) {
@@ -215,6 +250,8 @@ function buildClip(
   const authored = duration ?? nestedDuration;
   if (authored !== undefined) clip.authoredDuration = authored;
   if (volume !== undefined) clip.volume = volume;
+  if (keyframes !== undefined) clip.keyframes = keyframes;
+  if (role === "voice" || role === "music" || role === "sfx") clip.audioRole = role;
   if (fadeIn !== undefined && fadeIn > 0) clip.fadeIn = fadeIn;
   if (fadeOut !== undefined && fadeOut > 0) clip.fadeOut = fadeOut;
   const src = attr(node, ATTRS.src);

@@ -151,3 +151,121 @@ test("atrim escala a taxa e atempo cobre 3x", async () => {
   assert.match(chain, /atempo=2/);
   assert.match(chain, /atempo=1\.5/);
 });
+
+test("ducking: expressão abaixa a música na janela de voz", async () => {
+  const { duckExpression, DEFAULT_DUCK } = await import("../src/audio.ts");
+  const applied = duckExpression([[1, 2]], 0.5, 3, DEFAULT_DUCK);
+  assert.ok(applied.expression, "deveria gerar expressão");
+  assert.equal(applied.windows, 1);
+  assert.match(applied.expression!, /volume='/);
+  assert.match(applied.expression!, /0\.354813/, "-9 dB = ganho linear 0,3548");
+
+  const none = duckExpression([[10, 11]], 0, 2, DEFAULT_DUCK);
+  assert.equal(none.expression, null, "sem sobreposição não há ducking");
+});
+
+async function meanVolume(file: string, start: number, duration: number): Promise<number> {
+  const result = await run(FFMPEG, [
+    "-hide_banner", "-ss", String(start), "-t", String(duration), "-i", file,
+    "-af", "volumedetect", "-f", "null", "-",
+  ], { encoding: "utf8" }).catch((error: { stderr?: string }) => ({ stderr: error.stderr ?? "" }));
+  const match = /mean_volume: (-?[\d.]+) dB/.exec((result as { stderr: string }).stderr);
+  if (!match) throw new Error("volumedetect não devolveu mean_volume");
+  return Number(match[1]);
+}
+
+test("integração: música abaixa ~9 dB sob a voz, medido no arquivo", { timeout: 300_000 }, async (t) => {
+  if (!(await binaryAvailable(FFMPEG))) return t.skip("ffmpeg não encontrado");
+  const { mixAudio } = await import("../src/audio.ts");
+
+  const workspace = await mkdtemp(join(tmpdir(), "ff-duck-"));
+  const music = join(workspace, "music.wav");
+  const voice = join(workspace, "voice.wav");
+  await run(FFMPEG, ["-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000:duration=2", "-ac", "2", "-y", music]);
+  await run(FFMPEG, ["-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo", "-t", "1", "-y", voice]);
+
+  const out = join(workspace, "mix.m4a");
+  await mixAudio({
+    ffmpeg: FFMPEG,
+    totalSeconds: 2,
+    outPath: out,
+    loudness: false,
+    clips: [
+      { clipId: "music", file: music, start: 0, duration: 2, offset: 0, playbackRate: 1, volume: 1, role: "music" },
+      { clipId: "voice", file: voice, start: 0.5, duration: 1, offset: 0, playbackRate: 1, volume: 1, role: "voice" },
+    ],
+  });
+
+  const before = await meanVolume(out, 0.05, 0.3);
+  const during = await meanVolume(out, 0.8, 0.3);
+  assert.ok(before - during > 6, `esperado ao menos 6 dB de queda, obtido ${(before - during).toFixed(1)} dB`);
+});
+
+test("integração: entrega normalizada em -14 LUFS", { timeout: 300_000 }, async (t) => {
+  if (!(await binaryAvailable(FFMPEG))) return t.skip("ffmpeg não encontrado");
+  const { mixAudio } = await import("../src/audio.ts");
+
+  const workspace = await mkdtemp(join(tmpdir(), "ff-lufs-"));
+  const voice = join(workspace, "voice.wav");
+  await run(FFMPEG, ["-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "sine=frequency=300:sample_rate=48000:duration=2", "-ac", "2", "-y", voice]);
+
+  const out = join(workspace, "mix.m4a");
+  await mixAudio({
+    ffmpeg: FFMPEG,
+    totalSeconds: 2,
+    outPath: out,
+    clips: [{ clipId: "v", file: voice, start: 0, duration: 2, offset: 0, playbackRate: 1, volume: 1, role: "voice" }],
+  });
+
+  const measured = await run(FFMPEG, ["-hide_banner", "-nostats", "-i", out, "-af", "ebur128", "-f", "null", "-"], { encoding: "utf8" })
+    .catch((error: { stderr?: string }) => ({ stderr: error.stderr ?? "" }));
+  // O integrado começa em silêncio e sobe: vale a última leitura (resumo).
+  const readings = [...(measured as { stderr: string }).stderr.matchAll(/I:\s*(-?[\d.]+) LUFS/g)];
+  if (readings.length === 0) throw new Error("ebur128 não devolveu integrado");
+  const integrated = Number(readings.at(-1)![1]);
+  assert.ok(Math.abs(integrated + 14) <= 1, `esperado -14 LUFS ±1, obtido ${integrated}`);
+});
+
+test("keyframes: interpolação e teto de 32 segmentos", async () => {
+  const { keyframeExpression, MAX_VOLUME_SEGMENTS } = await import("../src/audio.ts");
+  const applied = keyframeExpression([{ time: 0, volume: 1 }, { time: 1, volume: 0.2 }, { time: 2, volume: 1 }], 2);
+  assert.equal(applied.segments, 2);
+  assert.equal(applied.dropped, 0);
+  assert.match(applied.expression!, /0\.2/);
+
+  const many = Array.from({ length: 80 }, (_, index) => ({ time: index * 0.1, volume: 0.4 + (index % 5) * 0.1 }));
+  const capped = keyframeExpression(many, 7.9);
+  assert.ok(capped.dropped > 0, "acima do teto precisa descartar pontos");
+  assert.ok(capped.segments <= MAX_VOLUME_SEGMENTS, `segmentos: ${capped.segments}`);
+});
+
+test("integração: automação de volume aplicada, medida no arquivo", { timeout: 300_000 }, async (t) => {
+  if (!(await binaryAvailable(FFMPEG))) return t.skip("ffmpeg não encontrado");
+  const { mixAudio } = await import("../src/audio.ts");
+
+  const workspace = await mkdtemp(join(tmpdir(), "ff-kf-"));
+  const tone = join(workspace, "tone.wav");
+  await run(FFMPEG, ["-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000:duration=2", "-ac", "2", "-y", tone]);
+
+  const out = join(workspace, "mix.m4a");
+  await mixAudio({
+    ffmpeg: FFMPEG,
+    totalSeconds: 2,
+    outPath: out,
+    loudness: false,
+    clips: [{
+      clipId: "voz",
+      file: tone,
+      start: 0,
+      duration: 2,
+      offset: 0,
+      playbackRate: 1,
+      volume: 1,
+      keyframes: [{ time: 0, volume: 1 }, { time: 1, volume: 0.2 }, { time: 2, volume: 1 }],
+    }],
+  });
+
+  const loud = await meanVolume(out, 0.05, 0.3);
+  const quiet = await meanVolume(out, 0.9, 0.2);
+  assert.ok(loud - quiet > 8, `esperado ao menos 8 dB entre topo e vale, obtido ${(loud - quiet).toFixed(1)} dB`);
+});

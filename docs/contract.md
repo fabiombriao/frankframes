@@ -58,6 +58,7 @@ tem `data-track` (sem duração) **não** é clip.
 | `data-offset` | instante dentro da fonte, segundos ≥ 0. **Nome único** para esse conceito |
 | `data-playback-rate` | `[0.1, 10]`; fora da faixa é aviso + clamp |
 | `data-volume` | ganho linear; `1` = 0 dB, `0` = silêncio. Negativo é erro; acima de `4` avisa (+12 dB) |
+| `data-audio-role` | `voice`, `music` ou `sfx`. Música (`music`) abaixa 9 dB sob qualquer `voice`, com 80 ms de ataque e 250 ms de release |
 | `data-fade-in` / `data-fade-out` | segundos ≥ 0; entram no mixer. Fade maior que a duração é ajustado com aviso |
 | `data-track` | **só UI**. O render ignora. Não use para lógica |
 | `class="clip"` | convenção de autoria. **Nunca** governa visibilidade — o runtime usa o atributo `data-start` |

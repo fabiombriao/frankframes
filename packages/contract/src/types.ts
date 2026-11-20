@@ -32,6 +32,10 @@ export interface RawClip {
   offset: number;
   playbackRate: number;
   volume?: number;
+  /** Automação de volume: pontos em segundos e ganho linear. `data-keyframes`. */
+  keyframes?: Array<{ time: number; volume: number }>;
+  /** Papel no mix: voz, música ou efeito. `data-audio-role`. */
+  audioRole?: "voice" | "music" | "sfx";
   /** Fade de entrada, em segundos. */
   fadeIn?: number;
   /** Fade de saída, em segundos. */
