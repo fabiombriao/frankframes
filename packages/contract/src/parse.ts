@@ -128,6 +128,19 @@ function buildClip(node: P5Node, depth: number, ordinal: number, diagnostics: Di
 
   const volume = num(attr(node, ATTRS.volume));
 
+  const fadeIn = num(attr(node, "data-fade-in"));
+  const fadeOut = num(attr(node, "data-fade-out"));
+  for (const [name, value] of [["data-fade-in", fadeIn], ["data-fade-out", fadeOut]] as const) {
+    if (value !== undefined && value < 0) {
+      diagnostics.push(
+        diag(CODES.FADE_INVALID, "error", `${name} negativo em "${id}"`, {
+          clipId: id,
+          hint: "fade é segundos >= 0",
+        }),
+      );
+    }
+  }
+
   const rawTrack = attr(node, ATTRS.track);
   let track = 0;
   if (rawTrack !== undefined) {
@@ -170,6 +183,8 @@ function buildClip(node: P5Node, depth: number, ordinal: number, diagnostics: Di
   const authored = duration ?? nestedDuration;
   if (authored !== undefined) clip.authoredDuration = authored;
   if (volume !== undefined) clip.volume = volume;
+  if (fadeIn !== undefined && fadeIn > 0) clip.fadeIn = fadeIn;
+  if (fadeOut !== undefined && fadeOut > 0) clip.fadeOut = fadeOut;
   const src = attr(node, ATTRS.src);
   if (src) clip.src = src;
   const mediaSrc = attr(node, "src");

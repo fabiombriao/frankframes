@@ -32,6 +32,10 @@ export interface RawClip {
   offset: number;
   playbackRate: number;
   volume?: number;
+  /** Fade de entrada, em segundos. */
+  fadeIn?: number;
+  /** Fade de saída, em segundos. */
+  fadeOut?: number;
   /** Só UI. O render ignora. */
   track: number;
   isMedia: boolean;

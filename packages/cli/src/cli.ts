@@ -11,6 +11,7 @@ import type { Preset, VideoCodec } from "@frankframes/encode";
 import { RenderError, renderComposition, resolveFfmpeg } from "@frankframes/producer";
 import { installLocalModel, resolveProvider } from "@frankframes/transcribe";
 import { listBlocks, readBlock } from "@frankframes/catalog";
+import { runDoctor, runInit, runSkillInstall } from "./onboarding.ts";
 import type { RenderStage } from "@frankframes/producer";
 
 const HELP = `frankframes — vídeo determinístico a partir de HTML
@@ -24,6 +25,9 @@ uso:
   frankframes models install whisper-large-v3-turbo
   frankframes blocks list
   frankframes blocks add <slug> [destino]
+  frankframes init [diretório]
+  frankframes doctor
+  frankframes skill install [--cursor] [diretório]
   frankframes browser check
   frankframes browser install
 
@@ -130,6 +134,26 @@ async function main(): Promise<void> {
   if (cli.command === "browser") {
     await browserCommand(cli.file ?? "check");
     return;
+  }
+
+  if (cli.command === "doctor") {
+    process.exit(await runDoctor());
+  }
+
+  if (cli.command === "init") {
+    await runInit(cli.file ?? ".");
+    process.exit(0);
+  }
+
+  if (cli.command === "skill") {
+    if (cli.file !== "install") {
+      process.stderr.write("uso: frankframes skill install [--cursor] [diretório]\n");
+      process.exit(2);
+    }
+    const cursor = process.argv.includes("--cursor");
+    const destination = process.argv.filter((arg) => !arg.startsWith("-"))[3] ?? ".";
+    await runSkillInstall(cursor ? "cursor" : "claude", destination);
+    process.exit(0);
   }
 
   const entry = cli.file;

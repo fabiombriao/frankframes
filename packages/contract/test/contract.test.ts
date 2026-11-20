@@ -163,3 +163,14 @@ test("sem raiz: E_NO_ROOT", () => {
   assert.equal(c.ok, false);
   assert.equal(c.diagnostics[0]!.code, CODES.NO_ROOT);
 });
+
+test("fades de áudio são lidos e valores negativos falham", () => {
+  const ok = loadComposition(root(`<audio data-clip-id="a" data-start="0" data-duration="2" data-fade-in="0.5" data-fade-out="0.75" src="a.wav"></audio>`));
+  assert.equal(ok.ok, true);
+  assert.equal(ok.clips[0]!.fadeIn, 0.5);
+  assert.equal(ok.clips[0]!.fadeOut, 0.75);
+
+  const bad = loadComposition(root(`<div data-clip-id="b" data-start="0" data-duration="1" data-fade-in="-1"></div>`));
+  assert.equal(bad.ok, false);
+  assert.ok(bad.diagnostics.some((d) => d.code === CODES.FADE_INVALID && d.severity === "error"));
+});

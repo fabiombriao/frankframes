@@ -180,6 +180,8 @@ export async function renderComposition(options: RenderOptions): Promise<RenderR
         offset: clip.offset,
         playbackRate: clip.playbackRate,
         volume: clip.volume ?? 1,
+        ...(clip.fadeIn !== undefined ? { fadeIn: clip.fadeIn } : {}),
+        ...(clip.fadeOut !== undefined ? { fadeOut: clip.fadeOut } : {}),
       });
     }
 

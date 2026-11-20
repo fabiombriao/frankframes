@@ -11,7 +11,7 @@ export interface FfmpegPair {
   warnings: string[];
 }
 
-const VENDOR_BIN = fileURLToPath(new URL("../vendor/ffmpeg/bin/", import.meta.url));
+const VENDOR_BIN = fileURLToPath(new URL("../../../vendor/ffmpeg/bin/", import.meta.url));
 const EXE = process.platform === "win32" ? ".exe" : "";
 
 async function exists(path: string): Promise<boolean> {
