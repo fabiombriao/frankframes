@@ -8,6 +8,8 @@
     "frankframes": "./src/cli.ts"
   },
   "dependencies": {
-    "@frankframes/contract": "*"
+    "@frankframes/contract": "*",
+    "@frankframes/transcribe": "*",
+    "@frankframes/catalog": "*"
   }
 }

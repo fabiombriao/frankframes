@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>title-card</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: #0d0d0c; }
+  .stage {
+    position: relative;
+    width: 1920px;
+    height: 1080px;
+    overflow: hidden;
+    background:
+      linear-gradient(90deg, rgba(244, 241, 232, 0.055) 1px, transparent 1px) 96px 0 / 344px 100%,
+      #0d0d0c;
+    color: #f4f1e8;
+    font-family: "Inter", sans-serif;
+  }
+  .masthead {
+    position: absolute;
+    left: 96px;
+    right: 96px;
+    top: 74px;
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    font: 400 21px/1 "JetBrains Mono", monospace;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+  }
+  .masthead .dot { display: inline-block; width: 10px; height: 10px; margin-right: 14px; background: #e0452b; }
+  .headline {
+    position: absolute;
+    left: 88px;
+    font-family: "Anton", sans-serif;
+    font-weight: 400;
+    font-size: 214px;
+    line-height: 0.86;
+    letter-spacing: -0.015em;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+  .headline.second { color: #e0452b; }
+  .rule {
+    position: absolute;
+    left: 96px;
+    right: 96px;
+    top: 826px;
+    height: 1px;
+    background: #f4f1e8;
+    transform-origin: left center;
+    animation: rule-in 0.9s cubic-bezier(0.22, 0.8, 0.2, 1) both;
+  }
+  .footer {
+    position: absolute;
+    left: 96px;
+    right: 96px;
+    bottom: 78px;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    font: 400 22px/1.4 "JetBrains Mono", monospace;
+    letter-spacing: 0.06em;
+  }
+  .footer .note { max-width: 520px; color: rgba(244, 241, 232, 0.62); text-transform: uppercase; }
+  .footer .index { font-family: "Anton", sans-serif; font-size: 92px; line-height: 0.8; color: #e0452b; }
+  .line {
+    animation: line-in 0.8s cubic-bezier(0.22, 0.8, 0.2, 1) both;
+  }
+  @keyframes line-in {
+    from { transform: translateY(64px); opacity: 0; clip-path: inset(0 0 100% 0); }
+    to { transform: translateY(0); opacity: 1; clip-path: inset(0 0 -10% 0); }
+  }
+  @keyframes rule-in {
+    from { transform: scaleX(0); }
+    to { transform: scaleX(1); }
+  }
+  @keyframes fade-up {
+    from { transform: translateY(18px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+  }
+</style>
+</head>
+<body>
+<div class="stage" data-composition-id="title-card" data-root="true" data-width="1920" data-height="1080" data-fps="30" data-duration="4">
+  <div class="masthead" data-clip-id="masthead" data-start="0" data-duration="4" style="animation: fade-up 0.7s ease-out both">
+    <span><span class="dot"></span>FrankFrames / Reel 01</span>
+    <span>00:00:00:00</span>
+  </div>
+
+  <div class="headline line" data-clip-id="line-one" data-start="0.15" data-duration="3.85" style="top: 286px; animation-delay: 0.15s">Um filme</div>
+  <div class="headline second line" data-clip-id="line-two" data-start="0.35" data-duration="3.65" style="top: 470px; animation-delay: 0.35s">é um arquivo.</div>
+
+  <div class="rule" data-clip-id="rule" data-start="0.85" data-duration="3.15"></div>
+
+  <div class="footer" data-clip-id="footer" data-start="1.05" data-duration="2.95" style="animation: fade-up 0.8s ease-out 1.05s both">
+    <div class="note">Composição determinística<br>1920 × 1080 · 30 fps · 4 s</div>
+    <div class="index">01</div>
+  </div>
+</div>
+</body>
+</html>

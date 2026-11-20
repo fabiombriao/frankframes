@@ -10,6 +10,8 @@ import { buildFrameSequenceArgs, buildMuxArgs, containerFor } from "@frankframes
 import type { Preset, VideoCodec } from "@frankframes/encode";
 import { captureFramesInParallel, extractFrames, probeDuration, retryOnceIfTransient, startServer } from "@frankframes/engine";
 import type { MediaManifest, StaticServer } from "@frankframes/engine";
+import { annotateTiming, mergeSubCompositions } from "./compile.ts";
+import { resolveFfmpeg } from "./ffmpeg.ts";
 import { mixAudio } from "./audio.ts";
 import type { AudioClip } from "./audio.ts";
 
@@ -62,16 +64,19 @@ export interface RenderResult {
 export async function renderComposition(options: RenderOptions): Promise<RenderResult> {
   const entry = resolve(options.entry);
   const entryDir = dirname(entry);
-  const ffmpeg = options.ffmpeg ?? "ffmpeg";
-  const ffprobe = options.ffprobe ?? "ffprobe";
+  const pair = options.ffmpeg !== undefined && options.ffprobe !== undefined ? undefined : await resolveFfmpeg();
+  const ffmpeg = options.ffmpeg ?? pair!.ffmpeg;
+  const ffprobe = options.ffprobe ?? pair!.ffprobe;
   const codec: VideoCodec = options.codec ?? "av1";
   const preset: Preset = options.preset ?? "standard";
   const progress = options.onProgress ?? (() => {});
   const warnings: string[] = [];
 
   progress("compile", 5, entry);
-  const html = await readFile(entry, "utf8");
-  const parsed = loadComposition(html);
+  const source = await readFile(entry, "utf8");
+  const merged = await mergeSubCompositions(source, entryDir);
+  warnings.push(...merged.warnings);
+  const parsed = loadComposition(merged.html);
   if (!parsed.ok) {
     throw new RenderError("E_CONTRACT", "compile", `contrato inválido: ${parsed.diagnostics.filter((d) => d.severity === "error").length} erro(s)`, parsed.diagnostics);
   }
@@ -90,13 +95,16 @@ export async function renderComposition(options: RenderOptions): Promise<RenderR
     }
   }
 
-  const composition = loadComposition(html, { mediaDurations });
+  const composition = loadComposition(merged.html, { mediaDurations });
   if (!composition.ok) {
     throw new RenderError("E_CONTRACT", "probe", "contrato inválido após ajustar a duração da mídia", composition.diagnostics);
   }
   if (composition.duration.kind === "unresolved") {
     throw new RenderError("E_DURATION", "probe", `duração não resolvida (${composition.duration.reason})`, composition.diagnostics);
   }
+
+  const compiled = annotateTiming(merged.html, composition);
+  if (compiled.annotations === 0) warnings.push("nenhum clip anotado: a composição não tem clips temporizados");
 
   const seconds = composition.duration.seconds;
   const fps = composition.fps;
@@ -137,6 +145,7 @@ export async function renderComposition(options: RenderOptions): Promise<RenderR
     const server = await startServer(entryDir, {
       mediaRoot: manifest.clips.length > 0 ? mediaDir : undefined,
       manifest: manifest.clips.length > 0 ? manifest : undefined,
+      page: { path: basename(entry), html: compiled.html },
     });
     started = server;
 

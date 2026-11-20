@@ -62,6 +62,16 @@ export const CLOCK_SOURCE = `(() => {
     };
   }
 
+  const scopeStart = (element) => {
+    let node = element;
+    while (node && node.nodeType === 1) {
+      const value = node.getAttribute("data-ff-comp-start");
+      if (value !== null) return Number(value);
+      node = node.parentNode;
+    }
+    return 0;
+  };
+
   const ready = Promise.all([
     document.fonts ? document.fonts.ready : Promise.resolve(),
     ...[...document.images].map((img) => (img.decode ? img.decode().catch(() => {}) : Promise.resolve())),
@@ -85,7 +95,14 @@ export const CLOCK_SOURCE = `(() => {
       for (const cb of generation) cb(nowMs);
       for (const animation of document.getAnimations()) {
         animation.pause();
-        animation.currentTime = nowMs;
+        const target = animation.effect ? animation.effect.target : null;
+        animation.currentTime = Math.max(0, nowMs - scopeStart(target));
+      }
+      for (const element of document.querySelectorAll("[data-ff-start]")) {
+        const start = Number(element.getAttribute("data-ff-start"));
+        const rawEnd = element.getAttribute("data-ff-end");
+        const end = rawEnd === null ? Infinity : Number(rawEnd);
+        element.style.visibility = nowMs >= start && nowMs < end ? "" : "hidden";
       }
       return nowMs;
     },

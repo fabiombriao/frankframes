@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>quote</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: #efece3; }
+  .stage {
+    position: relative;
+    width: 1920px;
+    height: 1080px;
+    overflow: hidden;
+    background:
+      linear-gradient(90deg, rgba(20, 19, 15, 0.05) 1px, transparent 1px) 0 0 / 240px 100%,
+      #efece3;
+    color: #14130f;
+    font-family: "Playfair Display", serif;
+  }
+  .label {
+    position: absolute;
+    left: 132px;
+    top: 86px;
+    font: 400 20px/1 "JetBrains Mono", monospace;
+    letter-spacing: 0.24em;
+    text-transform: uppercase;
+    color: rgba(20, 19, 15, 0.55);
+  }
+  .label .index { color: #c8412a; margin-right: 18px; }
+  .mega-mark {
+    position: absolute;
+    right: 108px;
+    top: 84px;
+    font-family: "Playfair Display", serif;
+    font-weight: 700;
+    font-size: 700px;
+    line-height: 0.72;
+    color: #c8412a;
+    opacity: 0.13;
+    user-select: none;
+    animation: mark-in 1.2s cubic-bezier(0.22, 0.8, 0.2, 1) both;
+  }
+  .quote {
+    position: absolute;
+    left: 128px;
+    width: 1560px;
+    font-weight: 700;
+    font-size: 118px;
+    line-height: 1.04;
+    letter-spacing: -0.025em;
+  }
+  .quote .accent { color: #c8412a; }
+  .quote.first { top: 300px; }
+  .quote.second { top: 442px; }
+  .reveal {
+    animation: quote-in 0.9s cubic-bezier(0.22, 0.8, 0.2, 1) both;
+  }
+  .attrib {
+    position: absolute;
+    left: 132px;
+    right: 132px;
+    bottom: 108px;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    border-top: 1px solid #14130f;
+    padding-top: 26px;
+    font: 400 20px/1.5 "JetBrains Mono", monospace;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+  .attrib strong { display: block; font-family: "Inter", sans-serif; font-weight: 700; font-size: 25px; letter-spacing: 0.02em; }
+  .attrib .side { color: rgba(20, 19, 15, 0.5); text-align: right; }
+  @keyframes quote-in {
+    from { transform: translateY(34px); opacity: 0; clip-path: inset(0 0 100% 0); }
+    to { transform: translateY(0); opacity: 1; clip-path: inset(0 0 -12% 0); }
+  }
+  @keyframes mark-in {
+    from { transform: scale(0.86); opacity: 0; }
+    to { transform: scale(1); opacity: 0.13; }
+  }
+  @keyframes fade-in {
+    from { opacity: 0; transform: translateY(12px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+</style>
+</head>
+<body>
+<div class="stage" data-composition-id="quote" data-root="true" data-width="1920" data-height="1080" data-fps="30" data-duration="4.5">
+  <div class="label" data-clip-id="label" data-start="0" data-duration="4.5" style="animation: fade-in 0.6s ease-out both">
+    <span class="index">03</span>Notas de campo
+  </div>
+  <div class="mega-mark">&rdquo;</div>
+
+  <div class="quote first reveal" data-clip-id="quote-one" data-start="0.2" data-duration="4.3" style="animation-delay: 0.2s">
+    A câmera não mente.<br>Ela <span class="accent">escolhe.</span>
+  </div>
+  <div class="quote second reveal" data-clip-id="quote-two" data-start="0.55" data-duration="3.95" style="animation-delay: 0.55s; font-size: 82px; font-style: italic; color: rgba(20, 19, 15, 0.72); width: 1280px;">
+    Toda imagem é uma decisão sobre o que fica fora.
+  </div>
+
+  <div class="attrib" data-clip-id="attribution" data-start="1" data-duration="3.5" style="animation: fade-in 0.8s ease-out 1s both">
+    <div><strong>Lina Barreto</strong>Montadora</div>
+    <div class="side">Entrevista · 14 mar 2026<br>Arquivo 03/12</div>
+  </div>
+</div>
+</body>
+</html>

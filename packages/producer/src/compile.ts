@@ -1,0 +1,215 @@
+// FrankFrames — proprietário. Ver LICENSE na raiz.
+import { readFile } from "node:fs/promises";
+import { dirname, relative, resolve, sep } from "node:path";
+import { parse, serialize } from "parse5";
+import { loadComposition } from "@frankframes/contract";
+import type { Composition, ResolvedClip } from "@frankframes/contract";
+
+interface P5Node {
+  nodeName: string;
+  tagName?: string;
+  attrs?: Array<{ name: string; value: string }>;
+  childNodes?: P5Node[];
+  content?: { childNodes: P5Node[] };
+  value?: string;
+  parentNode?: P5Node;
+}
+
+export const MAX_DEPTH = 20;
+
+function attr(node: P5Node, name: string): string | undefined {
+  for (const a of node.attrs ?? []) if (a.name === name) return a.value;
+  return undefined;
+}
+
+function setAttr(node: P5Node, name: string, value: string): void {
+  node.attrs ??= [];
+  const existing = node.attrs.find((a) => a.name === name);
+  if (existing) existing.value = value;
+  else node.attrs.push({ name, value });
+}
+
+function removeAttr(node: P5Node, name: string): void {
+  if (!node.attrs) return;
+  node.attrs = node.attrs.filter((a) => a.name !== name);
+}
+
+function* walk(nodes: P5Node[] | undefined): Generator<P5Node> {
+  for (const node of nodes ?? []) {
+    yield node;
+    yield* walk(node.content?.childNodes);
+    yield* walk(node.childNodes);
+  }
+}
+
+/** Prefixa URLs relativas com o diretório do arquivo que foi inlinado. */
+function rewriteUrls(nodes: P5Node[] | undefined, prefix: string): void {
+  if (prefix === "") return;
+  const isExternal = (value: string): boolean => /^(?:[a-z]+:|\/|#|data:)/i.test(value);
+
+  for (const node of walk(nodes)) {
+    if (node.nodeName === "#text") continue;
+    for (const name of ["src", "href", "poster", "data-src"]) {
+      const value = attr(node, name);
+      if (value !== undefined && !isExternal(value)) setAttr(node, name, prefix + value);
+    }
+    const style = attr(node, "style");
+    if (style?.includes("url(")) {
+      setAttr(node, "style", style.replace(/url\((['"]?)(?!data:|https?:|\/)([^'")]+)\1\)/g, `url($1${prefix}$2$1)`));
+    }
+  }
+}
+
+interface MergeContext {
+  entryDir: string;
+  depth: number;
+  ancestors: string[];
+  warnings: string[];
+}
+
+async function inlineNode(node: P5Node, ctx: MergeContext): Promise<void> {
+  const source = attr(node, "data-composition-src");
+  if (source === undefined) {
+    await inlineAll(node.childNodes, ctx);
+    return;
+  }
+
+  const absolute = resolve(ctx.entryDir, source);
+  if (ctx.ancestors.includes(absolute)) {
+    ctx.warnings.push(`referência circular ignorada: ${source}`);
+    removeAttr(node, "data-composition-src");
+    return;
+  }
+  if (ctx.depth >= MAX_DEPTH) {
+    ctx.warnings.push(`aninhamento acima de ${MAX_DEPTH} níveis ignorado em ${source}`);
+    removeAttr(node, "data-composition-src");
+    return;
+  }
+
+  const html = await readFile(absolute, "utf8");
+  const document = parse(html) as unknown as P5Node;
+  const root = [...walk(document.childNodes)].find((candidate) => candidate.nodeName !== "#text" && attr(candidate, "data-composition-id") !== undefined);
+  const inlined = (root?.childNodes ?? []).map((child) => structuredCloneNode(child));
+
+  const fileDir = dirname(absolute);
+  const prefix = relative(ctx.entryDir, fileDir).split(sep).join("/");
+  rewriteUrls(inlined, prefix === "" ? "" : `${prefix}/`);
+
+  await inlineAll(inlined, { ...ctx, depth: ctx.depth + 1, ancestors: [...ctx.ancestors, absolute] });
+
+  node.childNodes = [...(node.childNodes ?? []).filter((child) => child.nodeName !== "template"), ...inlined];
+  removeAttr(node, "data-composition-src");
+
+  const innerDuration = root ? attr(root, "data-duration") : undefined;
+  if (innerDuration !== undefined && attr(node, "data-duration") === undefined) {
+    setAttr(node, "data-duration", innerDuration);
+  }
+}
+
+/** Cópia rasa recursiva: parse5 mistura referências de pai no objeto. */
+function structuredCloneNode(node: P5Node): P5Node {
+  const copy: P5Node = { nodeName: node.nodeName };
+  if (node.tagName !== undefined) copy.tagName = node.tagName;
+  if (node.value !== undefined) copy.value = node.value;
+  if (node.attrs) copy.attrs = node.attrs.map((a) => ({ ...a }));
+  if (node.childNodes) copy.childNodes = node.childNodes.map(structuredCloneNode);
+  if (node.content) copy.content = { childNodes: node.content.childNodes.map(structuredCloneNode) };
+  return copy;
+}
+
+async function inlineAll(nodes: P5Node[] | undefined, ctx: MergeContext): Promise<void> {
+  if (!nodes) return;
+  for (let i = 0; i < nodes.length; i++) {
+    const node = nodes[i]!;
+    // `<template>` é inerte: o conteúdo vira nós reais do documento.
+    if (node.nodeName === "template" && node.content) {
+      const children = [...node.content.childNodes];
+      await inlineAll(children, ctx);
+      nodes.splice(i, 1, ...children);
+      i += children.length - 1;
+      continue;
+    }
+    await inlineNode(node, ctx);
+  }
+}
+
+export interface MergeResult {
+  html: string;
+  warnings: string[];
+}
+
+/**
+ * Junta sub-composições de arquivo (`data-composition-src`) e `<template>`
+ * inline numa única página, reescrevendo caminhos relativos. Não resolve tempo:
+ * isso é o passo de anotação, que precisa do contrato já resolvido.
+ */
+export async function mergeSubCompositions(entryHtml: string, entryDir: string): Promise<MergeResult> {
+  const document = parse(entryHtml) as unknown as P5Node;
+  const ctx: MergeContext = { entryDir: resolve(entryDir), depth: 0, ancestors: [resolve(entryDir, "index.html")], warnings: [] };
+  await inlineAll(document.childNodes, ctx);
+  return { html: serialize(document as never), warnings: ctx.warnings };
+}
+
+interface Timing {
+  start: number;
+  end?: number;
+  compStart: number;
+}
+
+function collectTiming(clips: ResolvedClip[], compStart: number, into: Map<string, Timing>): void {
+  for (const clip of clips) {
+    const absoluteStart = compStart + (clip.start ?? 0);
+    into.set(clip.id, {
+      start: absoluteStart,
+      end: clip.end === undefined ? undefined : compStart + clip.end,
+      compStart,
+    });
+    collectTiming(clip.children, absoluteStart, into);
+  }
+}
+
+export interface AnnotateResult {
+  html: string;
+  annotations: number;
+}
+
+/**
+ * Escreve o tempo resolvido no DOM: `data-ff-start`/`data-ff-end` em ms e
+ * `data-ff-comp-start` no host da sub-composição. O runtime só lê esses valores;
+ * toda a decisão de tempo fica no compilador.
+ */
+export function annotateTiming(html: string, composition: Composition): AnnotateResult {
+  const document = parse(html) as unknown as P5Node;
+  const timings = new Map<string, Timing>();
+  collectTiming(composition.clips, 0, timings);
+
+  let annotations = 0;
+  for (const node of walk(document.childNodes)) {
+    if (node.nodeName === "#text") continue;
+    const id = attr(node, "data-clip-id") ?? attr(node, "data-composition-id");
+    if (id === undefined) continue;
+    const timing = timings.get(id);
+    if (!timing) continue;
+    setAttr(node, "data-ff-start", String(Math.round(timing.start * 1000)));
+    if (timing.end !== undefined) setAttr(node, "data-ff-end", String(Math.round(timing.end * 1000)));
+    setAttr(node, "data-ff-comp-start", String(Math.round(timing.compStart * 1000)));
+    annotations++;
+  }
+
+  return { html: serialize(document as never), annotations };
+}
+
+/** Conveniência do producer: merge + contrato + anotação numa chamada. */
+export async function compileComposition(options: {
+  entryHtml: string;
+  entryDir: string;
+  mediaDurations?: Record<string, number>;
+}): Promise<{ html: string; composition: Composition; warnings: string[]; annotations: number }> {
+  const merged = await mergeSubCompositions(options.entryHtml, options.entryDir);
+  const composition = loadComposition(merged.html, { mediaDurations: options.mediaDurations ?? {} });
+  if (!composition.ok) {
+    return { html: merged.html, composition, warnings: merged.warnings, annotations: 0 };
+  }
+  const annotated = annotateTiming(merged.html, composition);
+  return { html: annotated.html, composition, warnings: merged.warnings, annotations: annotated.annotations };
+}

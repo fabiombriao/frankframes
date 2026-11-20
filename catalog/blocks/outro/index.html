@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>outro</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: #e0452b; }
+  .stage {
+    position: relative;
+    width: 1920px;
+    height: 1080px;
+    overflow: hidden;
+    background: #e0452b;
+    color: #0d0d0c;
+    font-family: "Anton", sans-serif;
+  }
+  .kicker {
+    position: absolute;
+    left: 104px;
+    top: 82px;
+    font: 400 20px/1 "JetBrains Mono", monospace;
+    letter-spacing: 0.24em;
+    text-transform: uppercase;
+    color: rgba(13, 13, 12, 0.7);
+  }
+  .headline {
+    position: absolute;
+    left: 90px;
+    font-family: "Anton", sans-serif;
+    font-weight: 400;
+    font-size: 248px;
+    line-height: 0.84;
+    letter-spacing: -0.012em;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+  .headline.one { top: 218px; }
+  .headline.two { top: 420px; }
+  .reveal {
+    animation: wipe 0.95s cubic-bezier(0.16, 0.85, 0.25, 1) both;
+  }
+  .mark {
+    position: absolute;
+    right: 78px;
+    top: 118px;
+    width: 360px;
+    height: 360px;
+    background: #0d0d0c;
+    color: #f4f1e8;
+    display: grid;
+    place-items: center;
+    font-family: "Anton", sans-serif;
+    font-size: 190px;
+    line-height: 1;
+    transform-origin: center center;
+    animation: mark-in 0.9s cubic-bezier(0.16, 0.85, 0.25, 1) 0.25s both;
+  }
+  .mark small {
+    position: absolute;
+    bottom: 22px;
+    right: 24px;
+    font: 400 14px/1 "JetBrains Mono", monospace;
+    letter-spacing: 0.12em;
+    color: rgba(244, 241, 232, 0.65);
+  }
+  .bar {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 164px;
+    height: 6px;
+    background: #0d0d0c;
+    transform-origin: left center;
+    animation: draw 0.8s cubic-bezier(0.16, 0.85, 0.25, 1) 0.7s both;
+  }
+  .footer {
+    position: absolute;
+    left: 104px;
+    right: 104px;
+    bottom: 74px;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    font: 400 20px/1.4 "JetBrains Mono", monospace;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: rgba(13, 13, 12, 0.78);
+    animation: fade-up 0.7s ease-out 0.9s both;
+  }
+  .footer .brand { font-family: "Anton", sans-serif; font-size: 42px; letter-spacing: 0.01em; text-transform: none; color: #0d0d0c; }
+  @keyframes wipe {
+    from { transform: translateY(46px); clip-path: inset(0 0 100% 0); }
+    to { transform: translateY(0); clip-path: inset(0 0 -12% 0); }
+  }
+  @keyframes mark-in {
+    from { transform: rotate(-8deg) scale(0.7); opacity: 0; }
+    to { transform: rotate(0deg) scale(1); opacity: 1; }
+  }
+  @keyframes draw {
+    from { transform: scaleX(0); }
+    to { transform: scaleX(1); }
+  }
+  @keyframes fade-up {
+    from { transform: translateY(16px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+  }
+</style>
+</head>
+<body>
+<div class="stage" data-composition-id="outro" data-root="true" data-width="1920" data-height="1080" data-fps="30" data-duration="3">
+  <div class="kicker" data-clip-id="kicker" data-start="0" data-duration="3">Fim da composição</div>
+
+  <div class="headline one reveal" data-clip-id="line-one" data-start="0.05" data-duration="2.95">Até a</div>
+  <div class="headline two reveal" data-clip-id="line-two" data-start="0.22" data-duration="2.78" style="animation-delay: 0.22s">próxima.</div>
+
+  <div class="mark" data-clip-id="mark" data-start="0.3" data-duration="2.7">FF<small>1920/1080</small></div>
+  <div class="bar" data-clip-id="bar" data-start="0.65" data-duration="2.35"></div>
+
+  <div class="footer" data-clip-id="footer" data-start="0.85" data-duration="2.15">
+    <span class="brand">FrankFrames</span>
+    <span>Vídeo é arquivo.<br>Nada é estimado.</span>
+  </div>
+</div>
+</body>
+</html>

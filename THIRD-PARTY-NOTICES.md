@@ -40,6 +40,21 @@ ADEQUAÇÃO A UM FIM ESPECÍFICO. EM NENHUM CASO O DETENTOR DE DIREITOS AUTORAIS
 RESPONSÁVEL POR DANOS DIRETOS, INDIRETOS, INCIDENTAIS, ESPECIAIS, EXEMPLARES OU CONSEQUENCIAIS
 DECORRENTES DO USO DESTE SOFTWARE.
 
+## FFmpeg embarcado (build LGPL)
+
+O produto distribui o build **LGPL** descrito em `vendor/ffmpeg/SOURCE.txt`:
+
+| Campo | Valor |
+|---|---|
+| versão | `n8.1.3-39-g660b5aa7db` |
+| origem | `BtbN/FFmpeg-Builds`, `ffmpeg-n8.1-latest-win64-lgpl-8.1.zip` |
+| SHA-256 do arquivo | `e22cd9184816f0eb912e95a0adc39e4129f38bdff55974d6d21f2037440afde9` |
+| licença | LGPL-2.1-or-later (`vendor/ffmpeg/LICENSE.txt`) |
+
+Obligações cumpridas: texto da licença ao lado do binário, origem e receita de reconstrução em
+`vendor/ffmpeg/SOURCE.txt`, e SHA-256 dos binários em `vendor/ffmpeg/manifest.json`. O FrankFrames
+executa o FFmpeg como processo separado; nenhuma biblioteca é linkada ao nosso código.
+
 ## Executadas como processos externos (não embutidas)
 
 | Componente | Licença | Papel |

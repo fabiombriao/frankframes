@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>image-frame</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: #d6d1c3; }
+  .stage {
+    position: relative;
+    width: 1920px;
+    height: 1080px;
+    overflow: hidden;
+    background:
+      linear-gradient(90deg, rgba(16, 16, 14, 0.07) 1px, transparent 1px) 0 0 / 160px 100%,
+      #d6d1c3;
+    color: #151513;
+    font-family: "Roboto", sans-serif;
+  }
+  .tag {
+    position: absolute;
+    left: 104px;
+    top: 74px;
+    font: 400 19px/1 "JetBrains Mono", monospace;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: rgba(21, 21, 19, 0.6);
+  }
+  .plate {
+    position: absolute;
+    left: 338px;
+    top: 138px;
+    width: 1244px;
+    height: 690px;
+    padding: 28px;
+    background: #f4f1e8;
+    border: 1px solid #151513;
+    box-shadow: 18px 18px 0 rgba(21, 21, 19, 0.12);
+    transform-origin: center center;
+    animation: plate-in 1s cubic-bezier(0.16, 0.85, 0.25, 1) both;
+  }
+  .scene {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background:
+      linear-gradient(180deg, #ccd8cd 0%, #e9e0c7 36%, #235451 36%, #1a4341 55%, #c78e4c 55%, #af7440 66%, #2a2924 66%, #1d1c19 100%);
+    animation: pan 3.5s cubic-bezier(0.2, 0.6, 0.3, 1) both;
+  }
+  .scene::before {
+    content: "";
+    position: absolute;
+    left: 71%;
+    top: 12%;
+    width: 108px;
+    height: 108px;
+    border-radius: 50%;
+    background: #e9b96d;
+  }
+  .scene::after {
+    content: "";
+    position: absolute;
+    left: -8%;
+    bottom: 0;
+    width: 74%;
+    height: 40%;
+    background: #161614;
+    clip-path: polygon(0 100%, 6% 58%, 23% 44%, 41% 58%, 58% 32%, 78% 54%, 100% 40%, 100% 100%);
+  }
+  .ridge {
+    position: absolute;
+    right: -6%;
+    bottom: 0;
+    width: 70%;
+    height: 34%;
+    background: #0f2b29;
+    clip-path: polygon(0 100%, 0 66%, 19% 42%, 38% 57%, 58% 30%, 82% 52%, 100% 38%, 100% 100%);
+  }
+  .water-line {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 55%;
+    height: 2px;
+    background: rgba(233, 224, 199, 0.55);
+  }
+  .caption {
+    position: absolute;
+    left: 348px;
+    bottom: 96px;
+    display: flex;
+    align-items: baseline;
+    gap: 34px;
+  }
+  .caption .fig {
+    font: 400 18px/1 "JetBrains Mono", monospace;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: #c8412a;
+  }
+  .caption .title {
+    font-family: "Playfair Display", serif;
+    font-weight: 400;
+    font-size: 54px;
+    line-height: 1;
+    letter-spacing: -0.02em;
+  }
+  .note {
+    position: absolute;
+    right: 338px;
+    bottom: 106px;
+    text-align: right;
+    font: 400 17px/1.8 "JetBrains Mono", monospace;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: rgba(21, 21, 19, 0.58);
+  }
+  .marks span {
+    position: absolute;
+    width: 34px;
+    height: 34px;
+    border-color: #151513;
+    border-style: solid;
+  }
+  .marks .a { left: 304px; top: 104px; border-width: 2px 0 0 2px; }
+  .marks .b { right: 304px; top: 104px; border-width: 2px 2px 0 0; }
+  .marks .c { left: 304px; bottom: 196px; border-width: 0 0 2px 2px; }
+  .marks .d { right: 304px; bottom: 196px; border-width: 0 2px 2px 0; }
+  @keyframes plate-in {
+    from { transform: scale(0.94); opacity: 0; }
+    to { transform: scale(1); opacity: 1; }
+  }
+  @keyframes pan {
+    from { transform: scale(1.06); }
+    to { transform: scale(1); }
+  }
+  @keyframes fade-up {
+    from { transform: translateY(22px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+  }
+</style>
+</head>
+<body>
+<div class="stage" data-composition-id="image-frame" data-root="true" data-width="1920" data-height="1080" data-fps="30" data-duration="3.5">
+  <div class="tag" data-clip-id="tag" data-start="0" data-duration="3.5">Arquivo visual / 04</div>
+
+  <div class="marks"><span class="a"></span><span class="b"></span><span class="c"></span><span class="d"></span></div>
+
+  <div class="plate" data-clip-id="plate" data-start="0.1" data-duration="3.4">
+    <div class="scene">
+      <div class="water-line"></div>
+      <div class="ridge"></div>
+    </div>
+  </div>
+
+  <div class="caption" data-clip-id="caption" data-start="0.7" data-duration="2.8" style="animation: fade-up 0.8s ease-out 0.7s both">
+    <div class="fig">Fig. 04</div>
+    <div class="title">Maré baixa, 06:12</div>
+  </div>
+
+  <div class="note" data-clip-id="note" data-start="0.95" data-duration="2.55" style="animation: fade-up 0.8s ease-out 0.9s both">
+    Litoral norte · série atlântica<br>
+    negativo 6×7 · 400 ISO
+  </div>
+</div>
+</body>
+</html>

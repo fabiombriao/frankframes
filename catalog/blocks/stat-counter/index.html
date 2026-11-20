@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>stat-counter</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: #e8e4d9; }
+  .stage {
+    position: relative;
+    width: 1920px;
+    height: 1080px;
+    overflow: hidden;
+    background: #e8e4d9;
+    color: #111110;
+    font-family: "Space Grotesk", sans-serif;
+  }
+  .ticks {
+    position: absolute;
+    inset: 0;
+    background:
+      linear-gradient(90deg, rgba(17, 17, 16, 0.12) 1px, transparent 1px) 0 0 / 48px 100%;
+    mask-image: linear-gradient(180deg, transparent 0%, #000 22%, #000 78%, transparent 100%);
+  }
+  .kicker {
+    position: absolute;
+    left: 104px;
+    top: 88px;
+    font: 400 20px/1 "JetBrains Mono", monospace;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: rgba(17, 17, 16, 0.56);
+  }
+  .odometer {
+    position: absolute;
+    left: 96px;
+    top: 268px;
+    display: flex;
+    align-items: flex-end;
+    height: 400px;
+    font-family: "Anton", sans-serif;
+    font-weight: 400;
+    font-size: 400px;
+    line-height: 1;
+    color: #111110;
+  }
+  .digit {
+    position: relative;
+    width: 0.62em;
+    height: 1em;
+    overflow: hidden;
+  }
+  .track { position: absolute; top: 0; left: 0; }
+  .track span { display: block; height: 1em; line-height: 1; }
+  .track.eight { animation: tick-eight 1.45s steps(8, end) 0.2s both; }
+  .track.seven { animation: tick-seven 1.6s steps(7, end) 0.2s both; }
+  .percent {
+    font-family: "Anton", sans-serif;
+    font-size: 176px;
+    line-height: 1;
+    margin: 0 0 46px 18px;
+    color: #d8452e;
+  }
+  .underline {
+    position: absolute;
+    left: 104px;
+    top: 688px;
+    width: 980px;
+    height: 14px;
+    background: #d8452e;
+    transform-origin: left center;
+    animation: draw 0.9s cubic-bezier(0.22, 0.8, 0.2, 1) 1.2s both;
+  }
+  .copy {
+    position: absolute;
+    left: 1190px;
+    top: 330px;
+    width: 610px;
+    font-family: "Space Grotesk", sans-serif;
+    font-weight: 400;
+    font-size: 42px;
+    line-height: 1.25;
+    letter-spacing: -0.015em;
+    animation: fade-up 0.9s cubic-bezier(0.22, 0.8, 0.2, 1) 0.9s both;
+  }
+  .copy strong { font-weight: 700; }
+  .footnote {
+    position: absolute;
+    left: 1190px;
+    top: 764px;
+    width: 610px;
+    border-top: 1px solid rgba(17, 17, 16, 0.45);
+    padding-top: 18px;
+    font: 400 17px/1.7 "JetBrains Mono", monospace;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: rgba(17, 17, 16, 0.55);
+  }
+  @keyframes tick-eight {
+    to { transform: translateY(-3200px); }
+  }
+  @keyframes tick-seven {
+    to { transform: translateY(-2800px); }
+  }
+  @keyframes draw {
+    from { transform: scaleX(0); }
+    to { transform: scaleX(1); }
+  }
+  @keyframes fade-up {
+    from { transform: translateY(26px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+  }
+</style>
+</head>
+<body>
+<div class="stage" data-composition-id="stat-counter" data-root="true" data-width="1920" data-height="1080" data-fps="30" data-duration="3.5">
+  <div class="ticks"></div>
+  <div class="kicker" data-clip-id="kicker" data-start="0" data-duration="3.5">Pesquisa interna · 2026</div>
+
+  <div class="odometer" data-clip-id="number" data-start="0.2" data-duration="3.3" aria-label="87 por cento">
+    <div class="digit"><div class="track eight"><span>0</span><span>1</span><span>2</span><span>3</span><span>4</span><span>5</span><span>6</span><span>7</span><span>8</span><span>9</span></div></div>
+    <div class="digit"><div class="track seven"><span>0</span><span>1</span><span>2</span><span>3</span><span>4</span><span>5</span><span>6</span><span>7</span><span>8</span><span>9</span></div></div>
+    <div class="percent">%</div>
+  </div>
+
+  <div class="underline" data-clip-id="underline" data-start="1.1" data-duration="2.4"></div>
+
+  <div class="copy" data-clip-id="copy" data-start="0.9" data-duration="2.6">
+    das equipes de pós<br><strong>terminam no prazo</strong><br>quando o corte é aprovado antes da trilha.
+  </div>
+
+  <div class="footnote" data-clip-id="footnote" data-start="1.2" data-duration="2.3">
+    41 produções · 6 países<br>margem de erro 3,2 p.p.
+  </div>
+</div>
+</body>
+</html>

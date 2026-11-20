@@ -2,12 +2,15 @@
 // FrankFrames — proprietário. Ver LICENSE na raiz.
 import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
+import { cp } from "node:fs/promises";
 import { basename, dirname, extname, resolve } from "node:path";
 import { loadComposition } from "@frankframes/contract";
 import { PINNED_BROWSER, checkPinnedBrowser, startServer } from "@frankframes/engine";
 import { assertCodecAllowed, assertFfmpegAllowed, containerFor, detectFfmpeg } from "@frankframes/encode";
 import type { Preset, VideoCodec } from "@frankframes/encode";
-import { RenderError, renderComposition } from "@frankframes/producer";
+import { RenderError, renderComposition, resolveFfmpeg } from "@frankframes/producer";
+import { installLocalModel, resolveProvider } from "@frankframes/transcribe";
+import { listBlocks, readBlock } from "@frankframes/catalog";
 import type { RenderStage } from "@frankframes/producer";
 
 const HELP = `frankframes — vídeo determinístico a partir de HTML
@@ -17,6 +20,10 @@ uso:
   frankframes render <arquivo.html> [-o saida.mp4] [--codec av1|vp9|h264] [--preset draft|standard|high]
                                     [--workers N] [--keep] [--json]
   frankframes preview <arquivo.html> [--open]
+  frankframes transcribe <audio> [--provider local|groq|openai-compatible] [--language pt] [--json]
+  frankframes models install whisper-large-v3-turbo
+  frankframes blocks list
+  frankframes blocks add <slug> [destino]
   frankframes browser check
   frankframes browser install
 
@@ -36,6 +43,8 @@ interface Cli {
   preset: Preset;
   workers?: number;
   keep: boolean;
+  provider?: string;
+  language?: string;
 }
 
 function parseCli(argv: string[]): Cli {
@@ -50,6 +59,8 @@ function parseCli(argv: string[]): Cli {
     else if (arg === "--codec") cli.codec = (argv[++i] ?? "av1") as VideoCodec;
     else if (arg === "--preset") cli.preset = (argv[++i] ?? "standard") as Preset;
     else if (arg === "--workers") cli.workers = Number(argv[++i]);
+    else if (arg === "--provider") cli.provider = argv[++i];
+    else if (arg === "--language") cli.language = argv[++i];
     else if (arg.startsWith("-")) throw new Error(`opção desconhecida: ${arg}`);
     else positional.push(arg);
   }
@@ -160,6 +171,69 @@ async function main(): Promise<void> {
     process.exit(composition.ok ? 0 : 1);
   }
 
+  if (cli.command === "transcribe") {
+    try {
+      const transcriber = await resolveProvider({
+        provider: cli.provider as "local" | "groq" | "openai-compatible" | undefined,
+        language: cli.language,
+      });
+      const result = await transcriber.transcribe(entry, { language: cli.language });
+      if (cli.json) {
+        process.stdout.write(`${JSON.stringify({ provider: result.provider, text: result.text, segments: result.segments, words: result.words }, null, 2)}\n`);
+      } else {
+        process.stdout.write(`${result.provider}: ${result.segments.length} segmento(s)\n${result.text}\n`);
+      }
+      process.exit(0);
+    } catch (error) {
+      const err = error as { code?: string; message: string };
+      process.stderr.write(`erro ${err.code ?? "E_TRANSCRIBE"}: ${err.message}\n`);
+      process.exit(1);
+    }
+  }
+
+  if (cli.command === "models") {
+    if (cli.file !== "install") {
+      process.stderr.write(`uso: frankframes models install whisper-large-v3-turbo\n`);
+      process.exit(2);
+    }
+    const dest = resolve("vendor", "models", "ggml-large-v3-turbo.bin");
+    process.stderr.write("baixando ggml-large-v3-turbo (~1.5 GB) — só acontece por este comando\n");
+    const installed = await installLocalModel({
+      modelUrl: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo.bin",
+      destPath: dest,
+    });
+    process.stdout.write(`${installed.path} · ${(installed.bytes / 1e9).toFixed(2)} GB\n`);
+    process.exit(0);
+  }
+
+  if (cli.command === "blocks") {
+    const action = entry;
+    if (action === "list") {
+      for (const block of listBlocks()) {
+        process.stdout.write(`${block.slug.padEnd(16)} ${block.durationSeconds}s  ${block.name} — ${block.summary}\n`);
+      }
+      process.exit(0);
+    }
+    if (action === "add") {
+      const slug = process.argv[4];
+      if (slug === undefined) {
+        process.stderr.write("uso: frankframes blocks add <slug> [destino]\n");
+        process.exit(2);
+      }
+      const block = listBlocks().find((candidate) => candidate.slug === slug);
+      if (!block) {
+        process.stderr.write(`bloco desconhecido: ${slug}\n`);
+        process.exit(2);
+      }
+      const target = resolve(process.argv[5] ?? slug);
+      await cp(block.dir, target, { recursive: true });
+      process.stdout.write(`${target} (${readBlock(slug).length} bytes de HTML)\n`);
+      process.exit(0);
+    }
+    process.stderr.write("uso: frankframes blocks list|add\n");
+    process.exit(2);
+  }
+
   if (cli.command === "preview") {
     const server = await startServer(dirname(resolve(entry)));
     const url = `${server.url}${basename(entry)}`;
@@ -181,9 +255,16 @@ async function main(): Promise<void> {
     process.exit(2);
   }
 
-  const ffmpeg = process.env.FFMPEG_PATH ?? "ffmpeg";
-  const ffprobe = process.env.FFPROBE_PATH ?? "ffprobe";
-  const mode = process.env.FRANKFRAMES_FFMPEG_MODE === "distribution" ? "distribution" : "user-provided";
+  const pair = await resolveFfmpeg();
+  for (const warning of pair.warnings) process.stderr.write(`aviso: ${warning}\n`);
+  const ffmpeg = pair.ffmpeg;
+  const ffprobe = pair.ffprobe;
+  const mode =
+    process.env.FRANKFRAMES_FFMPEG_MODE === "distribution" || process.env.FRANKFRAMES_FFMPEG_MODE === "user-provided"
+      ? (process.env.FRANKFRAMES_FFMPEG_MODE as "distribution" | "user-provided")
+      : pair.source === "vendor"
+        ? "distribution"
+        : "user-provided";
   const outPath = cli.out !== undefined ? resolve(cli.out) : defaultOutput(entry, cli.codec);
 
   try {

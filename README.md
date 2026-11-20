@@ -14,8 +14,10 @@ node packages/cli/src/cli.ts render examples/hello.html -o out/hello.mp4
 | `packages/encode` | ✅ presets AV1/VP9/openh264, guarda de licença (bloqueia GPL/x264) |
 | `packages/engine` | ✅ relógio virtual, seek, captura atômica, vídeo fora de banda, paralelismo, shell pinado, fontes, taxonomia de falha, limpeza de órfão |
 | `packages/producer` | ✅ pipeline completo: compile → probe → extract → capture → audio → encode → assemble |
-| `packages/cli` | ✅ `lint`, `render`, `preview`, `browser check/install` |
-| `packages/transcribe` | ⛔ planejado — opt-in apenas (ver `docs/transcribe.md`) |
+| `packages/cli` | ✅ `lint`, `render`, `preview`, `transcribe`, `blocks`, `models`, `browser` |
+| `packages/transcribe` | ✅ local (opt-in), Groq e OpenAI-compatible — nada baixa sem comando explícito |
+| `catalog/blocks` | ✅ 8 blocos prontos + `frankframes blocks add` |
+| `skills/frankframes` | ✅ skill de agente derivada de `docs/contract.md` |
 
 Determinismo é teste, não promessa:
 
@@ -31,6 +33,7 @@ prometida em `software`; em `hardware` a garantia é "igual nesta máquina".
 ```bash
 npm install
 node scripts/fetch-fonts.ts              # 25 famílias OFL (~1 MB) em vendor/fonts
+node scripts/vendor-ffmpeg.ts            # FFmpeg LGPL pinado (~270 MB) em vendor/ffmpeg
 node packages/cli/src/cli.ts browser install   # shell pinado 158 + verificação de SHA-256
 
 npm test
@@ -38,6 +41,10 @@ node packages/cli/src/cli.ts lint examples/hello.html
 node packages/cli/src/cli.ts preview examples/hello.html --open
 node packages/cli/src/cli.ts render examples/hello.html -o out/hello.mp4 --preset draft --workers 4
 node packages/cli/src/cli.ts render entrada.html --json
+node packages/cli/src/cli.ts blocks list
+node packages/cli/src/cli.ts blocks add title-card ./meu-video
+node packages/cli/src/cli.ts transcribe audio.wav --language pt
+node packages/cli/src/cli.ts models install whisper-large-v3-turbo   # ~1,5 GB, só por este comando
 
 node scripts/check-ffmpeg.ts <caminho-do-ffmpeg>
 node scripts/check-gpu.ts
@@ -53,11 +60,16 @@ packages/contract   contrato puro: nada de DOM, I/O ou browser
 packages/encode     política de codec e args de FFmpeg
 packages/engine     browser pinado, relógio virtual, captura, mídia, fontes
 packages/producer   pipeline HTML -> MP4 e mixagem de áudio
+packages/transcribe transcrição: local opt-in, Groq, OpenAI-compatible
+packages/catalog    leitura dos blocos do catálogo
 packages/cli        interface de linha de comando
+catalog/blocks      8 composições prontas (title, lower-third, quote, stat, chart, list, frame, outro)
+skills/frankframes  skill para agente de código
 docs/contract.md    a especificação (fonte de verdade)
 docs/encode.md      presets e regras de licença
 docs/transcribe.md  política de custo da transcrição
 vendor/fonts        25 famílias OFL-1.1 (Inter é o padrão)
+vendor/ffmpeg       build LGPL pinado + LICENSE + SOURCE (binários fora do versionamento)
 PROVENANCE.md       método e limites de reuso
 ```
 

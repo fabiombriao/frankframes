@@ -1,0 +1,13 @@
+{
+  "name": "@frankframes/catalog",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "SEE LICENSE IN LICENSE",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@frankframes/contract": "0.1.0"
+  }
+}

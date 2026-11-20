@@ -6,3 +6,4 @@ out/
 *.m4a
 .tmp/
 vendor/browsers/
+vendor/ffmpeg/bin/

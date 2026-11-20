@@ -138,6 +138,8 @@ function buildClip(node: P5Node, depth: number, ordinal: number, diagnostics: Di
 
   const isSubComposition = has(node, ATTRS.src) || has(node, ATTRS.id);
 
+  // Host de sub-composição é uma fronteira de escopo: o conteúdo dele (dentro de
+  // `<template>` ou como filhos diretos) é outra composição, com tempo local.
   const children: RawClip[] = [];
   let nestedDuration: number | undefined;
   if (isSubComposition) {
@@ -148,6 +150,8 @@ function buildClip(node: P5Node, depth: number, ordinal: number, diagnostics: Di
         nestedDuration = num(attr(root, ATTRS.duration));
         children.push(...collectClips(root, root, depth + 1, diagnostics));
       }
+    } else {
+      children.push(...collectClips(node, node, depth + 1, diagnostics));
     }
   }
 

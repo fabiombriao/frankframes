@@ -44,6 +44,8 @@ export interface ServerOptions {
   disableMediaShim?: boolean;
   /** Diretório das fontes embarcadas servido em `/__ff_fonts/`. `null` desliga. */
   fontsRoot?: string | null;
+  /** HTML já compilado que substitui o arquivo de entrada. */
+  page?: { path: string; html: string };
 }
 
 const MEDIA_PREFIX = "/__ff_media/";
@@ -92,8 +94,9 @@ export async function startServer(rootDir: string, options: ServerOptions = {}):
         return;
       }
 
-      const raw = await readFile(file);
-      const type = MIME[extname(file).toLowerCase()] ?? "application/octet-stream";
+      const isEntry = options.page !== undefined && (pathname === "/" || pathname === `/${options.page.path}`);
+      const raw = isEntry ? Buffer.from(options.page!.html) : await readFile(file);
+      const type = isEntry ? "text/html; charset=utf-8" : (MIME[extname(file).toLowerCase()] ?? "application/octet-stream");
       const body = type.startsWith("text/html")
         ? Buffer.from(
             injectEngine(raw.toString("utf8"), {

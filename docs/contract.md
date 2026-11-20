@@ -63,8 +63,8 @@ tem `data-track` (sem duração) **não** é clip.
 
 ## 5. Sub-composições
 
-- Inline: `<template>` dentro do host, contendo um elemento com `data-composition-id`. Os clips
-  internos são resolvidos no próprio escopo e **não** vazam para a raiz.
+- Inline: `<template>` dentro do host **ou** filhos diretos do host. Um host de sub-composição é uma
+  fronteira de escopo: o conteúdo interno é outra composição, com tempo local, e **não** vaza para a raiz.
 - Externa: `data-composition-src="card.html"`.
 - Profundidade máxima 20; ids de clip são **únicos em toda a árvore** (referências atravessam escopos).
 - Duração do host: `data-duration` do host; senão `data-duration` da raiz interna; senão indefinida.
