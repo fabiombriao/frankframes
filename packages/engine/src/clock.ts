@@ -169,8 +169,9 @@ export const CLOCK_SOURCE = `(() => {
         done = true;
         resolve(true);
       };
-      realRaf(() => realRaf(finish));
-      realSetTimeout(finish, 60);
+      // rAF roda ANTES do paint: o setTimeout depois do segundo rAF cai após ele.
+      realRaf(() => realRaf(() => realSetTimeout(finish, 0)));
+      realSetTimeout(finish, 80);
     });
 
   window.__ff = {

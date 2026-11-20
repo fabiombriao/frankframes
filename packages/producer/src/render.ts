@@ -207,6 +207,8 @@ export async function prepare(options: PrepareOptions): Promise<PreparedComposit
 export interface RenderOptions {
   entry: string;
   outPath: string;
+  /** `auto` (padrão) usa GPU quando existe; `software` garante pixel entre máquinas. */
+  gpu?: "auto" | "software" | "hardware";
   ffmpeg?: string;
   ffprobe?: string;
   codec?: VideoCodec;
@@ -247,6 +249,15 @@ export async function renderComposition(options: RenderOptions): Promise<RenderR
   const ffmpeg = options.ffmpeg ?? pair.ffmpeg;
   const { workDir, totalFrames, fps, viewport, seconds, entryDir, composition, warnings } = prepared;
 
+  // Composição com vídeo fora de banda usa uma camada <img>; o compositor de GPU
+  // atrasa a textura de forma não determinística. Nesses casos, software.
+  const requested = options.gpu ?? "auto";
+  const gpu =
+    requested === "hardware" || prepared.manifest === undefined ? requested : "software";
+  if (requested === "auto" && gpu === "software" && prepared.manifest !== undefined) {
+    warnings.push("composição com vídeo: render forçado em software para manter o frame determinístico");
+  }
+
   // Ctrl+C não executa `finally`: o handler de exit remove o diretório de frames.
   const cleanup = (): void => {
     try {
@@ -274,7 +285,7 @@ export async function renderComposition(options: RenderOptions): Promise<RenderR
         captureFramesInParallel({
           url: `${server.url}${basename(prepared.entry)}`,
           viewport,
-          gpu: "auto",
+          gpu,
           fps,
           frames,
           ...(options.workers !== undefined ? { workers: options.workers } : {}),

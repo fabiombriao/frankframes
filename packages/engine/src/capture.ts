@@ -131,19 +131,38 @@ async function startSession(
       }, ms);
     },
     capture: async () => {
-      // A primeira captura de uma sessão pode pegar o frame composto antes do seek.
-      // Descarta uma vez, depois mede.
-      if (!primed) {
-        primed = true;
-        await cdp.send("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
+      const shot = async (): Promise<Buffer> => {
+        const { data } = await cdp.send("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
+        return Buffer.from(data, "base64");
+      };
+      const settlePaint = async (): Promise<void> => {
         await page.evaluate(async () => {
           const clock = (globalThis as unknown as VirtualClockWindow).__ff!;
           await (clock as unknown as { settle?: () => Promise<boolean> }).settle?.();
         });
+      };
+
+      // A primeira captura de uma sessão pode pegar o frame composto antes do seek.
+      if (!primed) {
+        primed = true;
+        await shot();
+        await settlePaint();
       }
-      const { data } = await cdp.send("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
-      const png = Buffer.from(data, "base64");
-      return { png, sha256: createHash("sha256").update(png).digest("hex") };
+
+      // Três capturas consecutivas iguais = o compositor assentou. Uma camada
+      // atrasada pode repetir o mesmo frame velho duas vezes; três é improvável.
+      let previous = await shot();
+      let identical = 0;
+      for (let attempt = 0; attempt < 5; attempt += 1) {
+        await settlePaint();
+        const current = await shot();
+        identical = current.equals(previous) ? identical + 1 : 0;
+        previous = current;
+        if (identical >= 2) {
+          return { png: current, sha256: createHash("sha256").update(current).digest("hex") };
+        }
+      }
+      return { png: previous, sha256: createHash("sha256").update(previous).digest("hex") };
     },
     pageErrors: () => [...pageErrors],
     evaluate: <T,>(expression: string) => page.evaluate(expression) as Promise<T>,

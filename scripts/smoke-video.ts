@@ -99,7 +99,9 @@ try {
   const entry = join(workspace, "index.html");
   await writeFile(entry, composition);
 
-  const renderOptions = { entry, ffmpeg, ffprobe, codec: "av1" as const, preset: "draft" as const, workers: 2 };
+  const gpuFlag = args.indexOf("--gpu");
+  const gpu = gpuFlag >= 0 ? (args[gpuFlag + 1] as "auto" | "software" | "hardware") : "auto";
+  const renderOptions = { entry, ffmpeg, ffprobe, codec: "av1" as const, preset: "draft" as const, workers: 2, gpu };
   const first = await renderComposition({ ...renderOptions, outPath: join(workspace, "a.mp4") });
   const second = await renderComposition({ ...renderOptions, outPath: join(workspace, "b.mp4") });
 
@@ -112,7 +114,12 @@ try {
   process.stdout.write(`frames  ${first.frames} · ${first.durationSeconds.toFixed(3)}s · áudio no MP4: ${first.hasAudio ? "sim" : "não"}\n`);
   process.stdout.write(`saída   ${(output.size / 1e6).toFixed(2)} MB\n${outputProbe.stdout.trim().split("\n").map((line) => `        ${line}`).join("\n")}\n`);
   process.stdout.write(`determinismo  ${divergent.length === 0 ? "2 renders idênticos" : `${divergent.length} frame(s) divergentes`}\n`);
-  if (divergent.length > 0) process.stdout.write(`frames divergentes: ${divergent.slice(0, 12).join(", ")}\n`);
+  if (divergent.length > 0) {
+    const lagged = [...first.hashes.keys()].filter((frame) => first.hashes.get(frame) === second.hashes.get(frame + 1)).length;
+    const leaded = [...first.hashes.keys()].filter((frame) => first.hashes.get(frame) === second.hashes.get(frame - 1)).length;
+    process.stdout.write(`frames divergentes: ${divergent.slice(0, 12).join(", ")}\n`);
+    process.stdout.write(`a[n] == b[n+1] em ${lagged} frame(s); a[n] == b[n-1] em ${leaded} frame(s)\n`);
+  }
 
   const keep = args.includes("--keep");
   if (keep) process.stdout.write(`mantido em ${workspace}\n`);
