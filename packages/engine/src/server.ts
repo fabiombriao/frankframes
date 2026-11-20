@@ -2,8 +2,11 @@
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
 import { extname, join, normalize, resolve, sep } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { AddressInfo } from "node:net";
 import { injectClock } from "./clock.ts";
+
+const DEFAULT_FONTS = fileURLToPath(new URL("../../../vendor/fonts", import.meta.url));
 
 const MIME: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
@@ -25,6 +28,7 @@ const MIME: Record<string, string> = {
   ".woff2": "font/woff2",
   ".woff": "font/woff",
   ".ttf": "font/ttf",
+  ".txt": "text/plain; charset=utf-8",
 };
 
 export interface StaticServer {
@@ -32,13 +36,20 @@ export interface StaticServer {
   close: () => Promise<void>;
 }
 
+const MEDIA_PREFIX = "/__ff_media/";
+const FONTS_PREFIX = "/__ff_fonts/";
+
 /**
  * Serve a composição por HTTP: `file://` não carrega fonte/mídia com as mesmas
- * regras e não permite trocar mídia depois. Todo HTML recebe o relógio virtual
- * antes de qualquer script do autor.
+ * regras e não permite trocar mídia depois. Todo HTML recebe o relógio virtual,
+ * as fontes embarcadas e o shim de mídia antes de qualquer script do autor.
  */
 export async function startServer(rootDir: string): Promise<StaticServer> {
-  const root = resolve(rootDir);
+  const roots = {
+    site: resolve(rootDir),
+    media: options.mediaRoot ? resolve(options.mediaRoot) : undefined,
+    fonts: options.fontsRoot === null ? undefined : resolve(options.fontsRoot ?? DEFAULT_FONTS),
+  };
 
   const server = createServer(async (request, response) => {
     try {
