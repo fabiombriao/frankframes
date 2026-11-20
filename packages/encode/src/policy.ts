@@ -11,6 +11,8 @@ export interface FfmpegFacts {
 export type Preset = "draft" | "standard" | "high";
 export type VideoCodec = "av1" | "vp9" | "h264";
 
+export const POLICY_CODES = ["E_FFMPEG_GPL", "E_GPL_ENCODER", "E_ENCODER_MISSING", "E_H264_NOT_OPTED_IN", "E_CODEC_UNSUPPORTED"] as const;
+
 export type PolicyCode =
   | "E_FFMPEG_GPL"
   | "E_GPL_ENCODER"

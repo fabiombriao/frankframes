@@ -3,6 +3,7 @@ export {
   PRESETS,
   CODECS,
   GPL_ENCODERS,
+  POLICY_CODES,
   EncodePolicyError,
   parseFacts,
   policyViolations,
