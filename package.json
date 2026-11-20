@@ -16,7 +16,8 @@
     "typecheck": "tsc --noEmit",
     "ci": "node scripts/ci.ts",
     "ci:fast": "node scripts/ci.ts --fast",
-    "ci:release": "node scripts/ci.ts --release"
+    "ci:release": "node scripts/ci.ts --release",
+    "check:policy": "node scripts/check-policy.ts"
   },
   "devDependencies": {
     "@types/node": "^26.6.6",

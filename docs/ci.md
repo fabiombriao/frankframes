@@ -2,6 +2,10 @@
 
 O gate roda **na máquina de desenvolvimento**. Sem GitHub Actions, sem serviço externo, sem container.
 
+> **Proibição registrada.** GitHub Actions é vedado neste repositório (`.omp/RULES.md`). A regra não é
+> só texto: `scripts/check-policy.ts` reprova o gate se `.github/workflows/` existir. Verificado com um
+> workflow de teste — o gate saiu com 1 violação e código 1.
+
 ## Por quê
 
 | Opção | Custo real | Veredito |
@@ -16,6 +20,7 @@ O motivo decisivo: o produto depende de assets **pinados e já presentes** (shel
 
 | Etapa | Tempo medido | O que reprova |
 |---|---:|---|
+| política | 0,2 s | workflow de Actions, dependência GPL/GSAP, CDN no render, `.env` versionado, licença/spec ausente |
 | typecheck | 3,0 s | erro de tipo |
 | testes rápidos | 1,0 s | contrato, encode, transcrição, catálogo, compilador |
 | suíte completa | 36,0 s | qualquer teste, incluindo determinismo e render ponta a ponta |
@@ -38,6 +43,7 @@ O hook fica em `.git/hooks/pre-push` e não é versionado — cada clone instala
 
 ## Regras
 
+- O gate começa pela política: ela é a primeira etapa e para a fila em caso de violação.
 - O gate **não** usa `.env` nem chama a rede: Jira, upload e IA ficam fora.
 - Toda etapa falha alto e para a sequência.
 - Teste que depende de Chrome ou FFmpeg faz `skip` explícito quando o binário não existe — nunca passa em silêncio.
@@ -46,3 +52,6 @@ O hook fica em `.git/hooks/pre-push` e não é versionado — cada clone instala
 ## Quando migrar para servidor
 
 Existe uma pendência real para CI remoto: publicar e cachear um **FFmpeg Linux LGPL** e as bibliotecas do Chrome headless. Só vale quando o build precisar acontecer sem esta máquina — aí o caminho é um runner próprio (Woodpecker ou Drone em VPS), não um serviço de terceiro com o workflow no repositório.
+
+Forja e CI são decisões separadas: manter o código no GitHub é aceitável; usar o Actions, não. Kamal
+**não é CI** — é deploy de containers por SSH; ele entraria depois do build, nunca no lugar do gate.

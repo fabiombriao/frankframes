@@ -83,6 +83,12 @@ async function ffprobeSummary(): Promise<StageResult> {
 const stages: StageResult[] = [];
 await mkdir(join(ROOT, "out"), { recursive: true });
 
+stages.push(await stage("política", process.execPath, ["scripts/check-policy.ts"]));
+if (!stages.at(-1)?.ok) {
+  process.stderr.write("\nparando na política\n");
+  process.exit(1);
+}
+
 stages.push(await stage("typecheck", "npx", ["tsc", "--noEmit"]));
 if (!stages.at(-1)?.ok) {
   process.stderr.write("\nparando no typecheck\n");
