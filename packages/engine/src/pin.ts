@@ -2,8 +2,8 @@
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { access } from "node:fs/promises";
-import { fileURLToPath } from "node:url";
 import { join } from "node:path";
+import { assetPath } from "./home.ts";
 
 /**
  * Shell pinado. Versão e digest são a garantia de que a rasterização não muda
@@ -16,10 +16,8 @@ export const PINNED_BROWSER = {
   relative: "chrome-headless-shell/win64-158.0.8127.36/chrome-headless-shell-win64/chrome-headless-shell.exe",
 } as const;
 
-const VENDOR_ROOT = fileURLToPath(new URL("../../../vendor/browsers/", import.meta.url));
-
 export function pinnedBrowserPath(): string {
-  return process.env.FRANKFRAMES_BROWSER_PATH ?? join(VENDOR_ROOT, PINNED_BROWSER.relative);
+  return process.env.FRANKFRAMES_BROWSER_PATH ?? assetPath("browsers", PINNED_BROWSER.relative);
 }
 
 export async function fileSha256(path: string): Promise<string> {

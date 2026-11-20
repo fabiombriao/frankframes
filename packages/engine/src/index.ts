@@ -5,6 +5,7 @@ export { chromeArgs, gpuFlags } from "./args.ts";
 export type { GpuMode, ResolvedGpuMode, Viewport } from "./args.ts";
 export { resolveChrome } from "./launch.ts";
 export type { ResolvedChrome } from "./launch.ts";
+export { assetHome, assetPath } from "./home.ts";
 export { PINNED_BROWSER, checkPinnedBrowser, pinnedBrowserPath, fileSha256 } from "./pin.ts";
 export type { PinCheck } from "./pin.ts";
 export { DEFAULT_FONT, FONT_BASE_URL, expectedFontFiles, fontFaceCss } from "./fonts.ts";

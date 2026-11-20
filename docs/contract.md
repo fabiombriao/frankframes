@@ -57,7 +57,8 @@ tem `data-track` (sem duração) **não** é clip.
 | `data-clip-id` | identidade estável, alvo de `data-start`; padrão `<tag>#<n>` |
 | `data-offset` | instante dentro da fonte, segundos ≥ 0. **Nome único** para esse conceito |
 | `data-playback-rate` | `[0.1, 10]`; fora da faixa é aviso + clamp |
-| `data-volume` | ganho linear; `1` = 0 dB |
+| `data-volume` | ganho linear; `1` = 0 dB, `0` = silêncio. Negativo é erro; acima de `4` avisa (+12 dB) |
+| `data-fade-in` / `data-fade-out` | segundos ≥ 0; entram no mixer. Fade maior que a duração é ajustado com aviso |
 | `data-track` | **só UI**. O render ignora. Não use para lógica |
 | `class="clip"` | convenção de autoria. **Nunca** governa visibilidade — o runtime usa o atributo `data-start` |
 
@@ -125,6 +126,12 @@ Merriweather, Great Vibes, Dancing Script, Caveat, Lobster, JetBrains Mono.
 O autor usa o nome real da família (`font-family: "Poppins"`). Nenhuma fonte de CDN: o CSS injetado
 só aponta para o servidor local. `html` recebe `Inter` como padrão, então `sans-serif` nunca resolve
 para fonte do sistema.
+
+## 9c. Preview
+
+`frankframes preview` compila a mesma página que o `render` (sub-composições inlinadas, tempo
+anotado, mídia extraída), então o que aparece no navegador é o que sai no MP4 — exceto a garantia de
+pixel, que só existe no render.
 
 ## 10. Compatibilidade
 

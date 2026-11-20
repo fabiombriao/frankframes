@@ -2,8 +2,9 @@
 import { mkdir, readdir, writeFile } from "node:fs/promises";
 import { copyFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
+import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { checkPinnedBrowser } from "@frankframes/engine";
+import { checkPinnedBrowser, assetHome } from "@frankframes/engine";
 import { expectedFontFiles } from "@frankframes/engine";
 import { listBlocks } from "@frankframes/catalog";
 import { assertFfmpegAllowed, detectFfmpeg } from "@frankframes/encode";
@@ -42,14 +43,19 @@ export async function runInit(target: string): Promise<void> {
   process.stdout.write(`\npróximos:\n  frankframes preview ${join(dir, "index.html")} --open\n  frankframes render ${join(dir, "index.html")} -o out/video.mp4\n`);
 }
 
-const SKILL_SOURCE = fileURLToPath(new URL("../../../skills/frankframes/SKILL.md", import.meta.url));
+/** Skill dentro do pacote (publicado) ou no monorepo. */
+function skillSource(): string {
+  const packaged = fileURLToPath(new URL("../skill/SKILL.md", import.meta.url));
+  const monorepo = fileURLToPath(new URL("../../../skills/frankframes/SKILL.md", import.meta.url));
+  return existsSync(packaged) ? packaged : monorepo;
+}
 
 /** Instala a skill no diretório de agente do projeto atual. */
 export async function runSkillInstall(target: "claude" | "cursor", destination: string): Promise<void> {
   const dir = target === "claude" ? join(resolve(destination), ".claude", "skills", "frankframes") : join(resolve(destination), ".cursor", "rules");
   await mkdir(dir, { recursive: true });
   const file = target === "claude" ? join(dir, "SKILL.md") : join(dir, "frankframes.mdc");
-  await copyFile(SKILL_SOURCE, file);
+  await copyFile(skillSource(), file);
   process.stdout.write(`skill instalada em ${file}\n`);
 }
 
@@ -80,7 +86,7 @@ export async function runDoctor(): Promise<number> {
     line("ffmpeg", (error as Error).message);
   }
 
-  const fontsPresent = new Set(await readdir(fileURLToPath(new URL("../../../vendor/fonts/", import.meta.url))).catch(() => []));
+  const fontsPresent = new Set(await readdir(join(assetHome(), "fonts")).catch(() => []));
   const missingFonts = expectedFontFiles().filter((file) => !fontsPresent.has(file));
   line("fontes", missingFonts.length === 0 ? `${expectedFontFiles().length} arquivos` : `${missingFonts.length} ausentes — rode \`node scripts/fetch-fonts.ts\``);
   if (missingFonts.length > 0) failed = true;

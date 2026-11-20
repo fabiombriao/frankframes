@@ -16,3 +16,4 @@ export {
 } from "./policy.ts";
 export type { FfmpegFacts, Preset, VideoCodec, PolicyCode, CodecChoice } from "./policy.ts";
 export { detectFfmpeg } from "./detect.ts";
+export { FFMPEG_BUILD } from "./ffmpeg-build.ts";

@@ -2,16 +2,17 @@
 // FrankFrames — proprietário. Ver LICENSE na raiz.
 import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
-import { cp } from "node:fs/promises";
+import { cp, rm } from "node:fs/promises";
 import { basename, dirname, extname, resolve } from "node:path";
 import { loadComposition } from "@frankframes/contract";
 import { PINNED_BROWSER, checkPinnedBrowser, startServer } from "@frankframes/engine";
 import { assertCodecAllowed, assertFfmpegAllowed, containerFor, detectFfmpeg } from "@frankframes/encode";
 import type { Preset, VideoCodec } from "@frankframes/encode";
-import { RenderError, renderComposition, resolveFfmpeg } from "@frankframes/producer";
+import { RenderError, prepare, renderComposition, resolveFfmpeg } from "@frankframes/producer";
 import { installLocalModel, resolveProvider } from "@frankframes/transcribe";
 import { listBlocks, readBlock } from "@frankframes/catalog";
 import { runDoctor, runInit, runSkillInstall } from "./onboarding.ts";
+import { runSetup } from "./setup.ts";
 import type { RenderStage } from "@frankframes/producer";
 
 const HELP = `frankframes — vídeo determinístico a partir de HTML
@@ -27,6 +28,7 @@ uso:
   frankframes blocks add <slug> [destino]
   frankframes init [diretório]
   frankframes doctor
+  frankframes setup [--check] [--fonts-only]
   frankframes skill install [--cursor] [diretório]
   frankframes browser check
   frankframes browser install
@@ -49,10 +51,12 @@ interface Cli {
   keep: boolean;
   provider?: string;
   language?: string;
+  /** Flags booleanas reconhecidas por comando (`--open`, `--check`, `--cursor`…). */
+  flags: string[];
 }
 
 function parseCli(argv: string[]): Cli {
-  const cli: Cli = { command: "help", json: false, codec: "av1", preset: "standard", keep: false };
+  const cli: Cli = { command: "help", json: false, codec: "av1", preset: "standard", keep: false, flags: [] };
   const positional: string[] = [];
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]!;
@@ -65,7 +69,7 @@ function parseCli(argv: string[]): Cli {
     else if (arg === "--workers") cli.workers = Number(argv[++i]);
     else if (arg === "--provider") cli.provider = argv[++i];
     else if (arg === "--language") cli.language = argv[++i];
-    else if (arg.startsWith("-")) throw new Error(`opção desconhecida: ${arg}`);
+    else if (arg.startsWith("-")) cli.flags.push(arg);
     else positional.push(arg);
   }
   if (positional.length > 0) cli.command = positional[0]!;
@@ -136,6 +140,10 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (cli.command === "setup") {
+    process.exit(await runSetup({ check: cli.flags.includes("--check"), fontsOnly: cli.flags.includes("--fonts-only") }));
+  }
+
   if (cli.command === "doctor") {
     process.exit(await runDoctor());
   }
@@ -150,7 +158,7 @@ async function main(): Promise<void> {
       process.stderr.write("uso: frankframes skill install [--cursor] [diretório]\n");
       process.exit(2);
     }
-    const cursor = process.argv.includes("--cursor");
+    const cursor = cli.flags.includes("--cursor");
     const destination = process.argv.filter((arg) => !arg.startsWith("-"))[3] ?? ".";
     await runSkillInstall(cursor ? "cursor" : "claude", destination);
     process.exit(0);
@@ -259,16 +267,24 @@ async function main(): Promise<void> {
   }
 
   if (cli.command === "preview") {
-    const server = await startServer(dirname(resolve(entry)));
+    const pair = await resolveFfmpeg();
+    const prepared = await prepare({ entry, ffmpeg: pair.ffmpeg, ffprobe: pair.ffprobe });
+    const server = await startServer(prepared.entryDir, {
+      ...(prepared.mediaDir !== undefined ? { mediaRoot: prepared.mediaDir } : {}),
+      ...(prepared.manifest !== undefined ? { manifest: prepared.manifest } : {}),
+      page: { path: basename(prepared.entry), html: prepared.compiledHtml },
+    });
     const url = `${server.url}${basename(entry)}`;
-    process.stdout.write(`preview ${url}\nCtrl+C encerra.\n`);
-    if (process.argv.includes("--open")) {
+    process.stdout.write(`preview ${url}\n${prepared.totalFrames} frames · ${prepared.seconds.toFixed(3)}s\nCtrl+C encerra.\n`);
+    if (cli.flags.includes("--open")) {
       const { exec } = await import("node:child_process");
       exec(`${process.platform === "win32" ? "start" : process.platform === "darwin" ? "open" : "xdg-open"} "${url}"`);
     }
     const stop = Promise.withResolvers<never>();
     process.on("SIGINT", () => {
-      server.close().finally(() => stop.resolve(process.exit(0) as never));
+      void rm(prepared.workDir, { recursive: true, force: true })
+        .catch(() => {})
+        .finally(() => server.close().finally(() => stop.resolve(process.exit(0) as never)));
     });
     await stop.promise;
     return;

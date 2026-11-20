@@ -2,12 +2,12 @@
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
 import { extname, join, normalize, resolve, sep } from "node:path";
-import { fileURLToPath } from "node:url";
+import { assetPath } from "./home.ts";
 import type { AddressInfo } from "node:net";
 import { injectEngine } from "./inject.ts";
 import type { MediaManifest } from "./media.ts";
 
-const DEFAULT_FONTS = fileURLToPath(new URL("../../../vendor/fonts", import.meta.url));
+const DEFAULT_FONTS = assetPath("fonts");
 
 const MIME: Record<string, string> = {
   ".html": "text/html; charset=utf-8",

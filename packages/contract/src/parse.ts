@@ -127,6 +127,15 @@ function buildClip(node: P5Node, depth: number, ordinal: number, diagnostics: Di
   }
 
   const volume = num(attr(node, ATTRS.volume));
+  if (volume !== undefined && volume < 0) {
+    diagnostics.push(
+      diag(CODES.VOLUME_INVALID, "error", `data-volume negativo em "${id}"`, { clipId: id, hint: "ganho linear: 0 = silêncio, 1 = 0 dB" }),
+    );
+  } else if (volume !== undefined && volume > 4) {
+    diagnostics.push(
+      diag(CODES.VOLUME_HIGH, "warning", `data-volume ${volume} em "${id}" amplifica +12 dB ou mais`, { clipId: id }),
+    );
+  }
 
   const fadeIn = num(attr(node, "data-fade-in"));
   const fadeOut = num(attr(node, "data-fade-out"));

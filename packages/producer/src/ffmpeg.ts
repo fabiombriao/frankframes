@@ -1,7 +1,7 @@
 // FrankFrames — proprietário. Ver LICENSE na raiz.
 import { access } from "node:fs/promises";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { assetPath } from "@frankframes/engine";
 
 export interface FfmpegPair {
   ffmpeg: string;
@@ -11,7 +11,7 @@ export interface FfmpegPair {
   warnings: string[];
 }
 
-const VENDOR_BIN = fileURLToPath(new URL("../../../vendor/ffmpeg/bin/", import.meta.url));
+const VENDOR_BIN = `${assetPath("ffmpeg", "bin")}/`;
 const EXE = process.platform === "win32" ? ".exe" : "";
 
 async function exists(path: string): Promise<boolean> {

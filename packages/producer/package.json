@@ -11,5 +11,14 @@
     "@frankframes/contract": "*",
     "@frankframes/encode": "*",
     "@frankframes/engine": "*"
+  },
+  "files": [
+    "src"
+  ],
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "prepack": "node ../../scripts/prepack.mjs"
   }
 }

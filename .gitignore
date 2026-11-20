@@ -9,3 +9,5 @@ vendor/browsers/
 vendor/ffmpeg/bin/
 
 .env
+packages/*/LICENSE
+packages/*/THIRD-PARTY-NOTICES.md

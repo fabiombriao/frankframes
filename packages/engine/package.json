@@ -10,5 +10,14 @@
   "dependencies": {
     "@frankframes/contract": "*",
     "puppeteer-core": "^25.18.1"
+  },
+  "files": [
+    "src"
+  ],
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "prepack": "node ../../scripts/prepack.mjs"
   }
 }

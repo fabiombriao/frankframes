@@ -11,5 +11,8 @@
     "@frankframes/contract": "*",
     "@frankframes/transcribe": "*",
     "@frankframes/catalog": "*"
+  },
+  "scripts": {
+    "prepack": "node ../../scripts/prepack.mjs"
   }
 }
