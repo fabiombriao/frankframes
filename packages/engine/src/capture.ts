@@ -68,10 +68,9 @@ export async function openSession(options: SessionOptions): Promise<Session> {
 
   return {
     seekFrame: async (frame, fps) => {
-      const ms = timeOfFrame(frame, fps);
-      await page.evaluate((value) => {
         (globalThis as unknown as VirtualClockWindow).__ff!.seek(value);
-      }, ms);
+      const ms = timeOfFrame(frame, fps) * 1000;
+      await page.evaluate((value) => (globalThis as unknown as VirtualClockWindow).__ff!.seek(value), ms);
     },
     capture: async () => {
       const { data } = await cdp.send("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
