@@ -23,7 +23,8 @@ const HELP = `frankframes — vídeo determinístico a partir de HTML
 uso:
   frankframes lint <arquivo.html> [--json]
   frankframes render <arquivo.html> [-o saida.mp4] [--codec av1|vp9|h264] [--preset draft|standard|high]
-                                    [--workers N] [--keep] [--json]
+                                    [--workers N] [--gpu auto|software|hardware] [--no-loudness]
+                                    [--keep] [--json]
   frankframes preview <arquivo.html> [--open]
   frankframes transcribe <audio> [--provider local|groq|openai-compatible] [--language pt] [--json]
   frankframes captions <audio> [-o legenda.html] [--size 1920x1080] [--language pt]
@@ -56,6 +57,7 @@ interface Cli {
   keep: boolean;
   provider?: string;
   language?: string;
+  gpu?: "auto" | "software" | "hardware";
   /** Flags booleanas reconhecidas por comando (`--open`, `--check`, `--cursor`…). */
   flags: string[];
 }
@@ -74,8 +76,9 @@ function parseCli(argv: string[]): Cli {
     else if (arg === "--workers") cli.workers = Number(argv[++i]);
     else if (arg === "--provider") cli.provider = argv[++i];
     else if (arg === "--language") cli.language = argv[++i];
+    else if (arg === "--gpu") cli.gpu = (argv[++i] ?? "auto") as "auto" | "software" | "hardware";
     else if (arg.startsWith("-")) {
-      const known = ["--open", "--check", "--fonts-only", "--cursor", "--apply", "--size"];
+      const known = ["--open", "--check", "--fonts-only", "--cursor", "--apply", "--size", "--no-loudness"];
       if (!known.includes(arg)) throw new Error(`opção desconhecida: ${arg}`);
       cli.flags.push(arg);
     }
@@ -435,6 +438,8 @@ async function main(): Promise<void> {
       preset: cli.preset,
       ...(cli.workers !== undefined ? { workers: cli.workers } : {}),
       keepWorkDir: cli.keep,
+      ...(cli.gpu !== undefined ? { gpu: cli.gpu } : {}),
+      ...(cli.flags.includes("--no-loudness") ? { loudness: false } : {}),
       onProgress: (stage: RenderStage, percent: number, message?: string) => {
         if (cli.json) return;
         process.stderr.write(`[${stage}] ${percent}%${message ? ` ${message}` : ""}\n`);

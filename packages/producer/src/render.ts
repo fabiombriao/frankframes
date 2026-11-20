@@ -210,6 +210,8 @@ export interface RenderOptions {
   outPath: string;
   /** `auto` (padrão) usa GPU quando existe; `software` garante pixel entre máquinas. */
   gpu?: "auto" | "software" | "hardware";
+  /** `false` entrega o mix sem normalizar para −14 LUFS. */
+  loudness?: false;
   ffmpeg?: string;
   ffprobe?: string;
   codec?: VideoCodec;
@@ -322,7 +324,13 @@ export async function renderComposition(options: RenderOptions): Promise<RenderR
     if (audioInputs.length > 0) {
       progress("audio", 78, `${audioInputs.length} faixa(s)`);
       audioPath = join(workDir, "audio.m4a");
-      const mixed = await mixAudio({ ffmpeg, clips: audioInputs, totalSeconds: seconds, outPath: audioPath });
+      const mixed = await mixAudio({
+        ffmpeg,
+        clips: audioInputs,
+        totalSeconds: seconds,
+        outPath: audioPath,
+        ...(options.loudness === false ? { loudness: false } : {}),
+      });
       warnings.push(...mixed.warnings);
     }
 
