@@ -108,8 +108,12 @@ O contrato promete isto ao autor, e o engine tem que cumprir:
 6. **Captura atômica**: layout+paint+composite num round-trip.
 7. **Prova**: SHA-256 por frame amostrado, versionado no repositório. Divergência falha o CI.
 
-Verificado em `2026-11-20`: 30 frames 720p, duas execuções e ordem invertida → 30/30 hashes idênticos,
-~97 ms/frame (caminho ingênuo de screenshot).
+**GPU:** o padrão é `auto` — hardware quando existe, SwiftShader como fallback. Igualdade byte-a-byte
+entre *máquinas diferentes* só é prometida em `software`; em `hardware` a promessa é "igual nesta
+máquina" (o pixel depende do driver).
+
+Verificado em `2026-11-20`: 60 frames 720p × 2 execuções + 1 em ordem invertida, nos modos `auto`
+(RTX 4060 via D3D11) e `software` (SwiftShader) → todos os hashes idênticos por frame.
 
 ## 10. Compatibilidade
 

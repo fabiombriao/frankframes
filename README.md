@@ -9,11 +9,16 @@ Vídeo determinístico a partir de HTML. Sem React, sem bundler, sem GSAP, sem e
 | `packages/contract` | ✅ parser + resolução de tempo + duração + diagnósticos + testes |
 | `packages/encode` | ✅ presets, args de FFmpeg, guarda de licença (bloqueia GPL/x264) |
 | `packages/cli` | ✅ `lint` (humano e `--json`) |
-| `packages/engine` | ⛔ não existe — próximo passo (captura determinística) |
+| `packages/engine` | 🟡 E1–E4: sessão, relógio virtual, seek, captura atômica, vídeo fora de banda (extração + `<img>`), gate de determinismo. Falta: shell pinado por hash, paralelismo, taxonomia de falha, fontes embarcadas |
 | `packages/producer` | ⛔ não existe |
+| `packages/transcribe` | ⛔ planejado (local, Groq, OpenAI-compatible) |
 
-Determinismo já provado fora do repositório: 30 frames, duas execuções e ordem invertida → hashes
-idênticos. O teste versionado entra junto com o engine.
+Determinismo é teste, não promessa: `packages/engine/test/determinism.test.ts` roda 60 frames ×
+2 execuções + 1 em ordem invertida, no caminho padrão (`auto`) e em software. GPU é o padrão; se não
+existir GPU utilizável, cai para SwiftShader.
+
+`packages/engine/test/media.test.ts` gera um MP4 de teste, extrai os frames por FFmpeg e prova que o
+`<video>` é substituído por `<img>` e que a captura continua estável.
 
 ## Uso
 
@@ -23,6 +28,7 @@ npm test
 node packages/cli/src/cli.ts lint examples/hello.html
 node packages/cli/src/cli.ts lint examples/hello.html --json
 node scripts/check-ffmpeg.ts <caminho-do-ffmpeg>
+node scripts/check-gpu.ts
 ```
 
 Requer Node ≥ 22.18 (executa TypeScript direto, sem build).
