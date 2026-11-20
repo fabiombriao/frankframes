@@ -1,0 +1,91 @@
+{
+  "project": {
+    "name": "FrankFrames",
+    "key": "FF",
+    "template": "Scrum",
+    "description": "Vídeo determinístico a partir de HTML. Motor próprio, licença proprietária, sem GPL e sem GSAP."
+  },
+  "epics": [
+    {
+      "name": "Empacotamento e distribuição",
+      "summary": "Transformar o monorepo em produto instalável",
+      "priority": "Highest",
+      "stories": [
+        { "summary": "Build do pacote e binário `frankframes`", "points": 5, "labels": ["plataforma"], "acceptance": "`npm pack` gera pacote com dist compilado para Node 20+, `bin` funcional em Windows e Linux, LICENSE e THIRD-PARTY-NOTICES incluídos." },
+        { "summary": "postinstall idempotente com verificação de hash", "points": 5, "labels": ["plataforma"], "acceptance": "Baixa fontes, shell pinado e FFmpeg LGPL só se ausentes; hash divergente falha com instrução; segunda execução não baixa nada." },
+        { "summary": "Comando `frankframes upgrade`", "points": 3, "labels": ["plataforma"], "acceptance": "Verifica versão publicada, baixa e substitui o pacote, preserva vendor/ e reporta a versão final." },
+        { "summary": "Doctor em VM Windows limpa", "points": 3, "labels": ["plataforma", "qa"], "acceptance": "Em VM sem Node global, sem Chrome e sem FFmpeg, `frankframes doctor` aponta exatamente o que instalar e o `init` + `render` funciona após o postinstall." }
+      ]
+    },
+    {
+      "name": "Preview e iteração",
+      "summary": "Reduzir o ciclo de edição de minutos para segundos",
+      "priority": "High",
+      "stories": [
+        { "summary": "Live reload no `preview`", "points": 3, "labels": ["dx"], "acceptance": "Salvar o HTML recarrega a página em menos de 300 ms via SSE; alteração em sub-composição também recarrega." },
+        { "summary": "Preservar tempo ao recarregar", "points": 2, "labels": ["dx"], "acceptance": "Ao recarregar, o preview volta ao mesmo instante em que estava, sem pular para o frame 0." },
+        { "summary": "Barra de controle do preview", "points": 5, "labels": ["dx"], "acceptance": "Play/pause, scrub por frame e leitura de tempo/frame; estado refletido na URL para compartilhar um instante." }
+      ]
+    },
+    {
+      "name": "Regressão visual",
+      "summary": "Congelar o que já renderiza certo",
+      "priority": "High",
+      "stories": [
+        { "summary": "Manifest de hashes dos blocos do catálogo", "points": 3, "labels": ["qa"], "acceptance": "Cada bloco tem manifest versionado com SHA-256 dos frames amostrados; gerado por comando e revisado no diff." },
+        { "summary": "Comparação no teste com diagnóstico por frame", "points": 3, "labels": ["qa"], "acceptance": "Divergência falha o teste nomeando bloco, frame e hash esperado/obtido; sem depender de PSNR." },
+        { "summary": "Gate em duas máquinas em modo software", "points": 5, "labels": ["qa"], "acceptance": "Mesmo manifest passa em duas máquinas distintas com SwiftShader; diferença documentada quando GPU entra." }
+      ]
+    },
+    {
+      "name": "Catálogo de blocos",
+      "summary": "Crescer o ativo editorial e permitir instalação remota",
+      "priority": "High",
+      "stories": [
+        { "summary": "`frankframes blocks add <url>` com hash", "points": 3, "labels": ["catalogo"], "acceptance": "Baixa o bloco, confere SHA-256 declarado, recusa conteúdo sem hash e grava em diretório informado." },
+        { "summary": "16 novos blocos, incluindo vertical 1080x1920", "points": 8, "labels": ["catalogo"], "acceptance": "Cada bloco passa no contrato, usa só fontes do catálogo, sem JS e sem URL externa; thumbnails geradas." },
+        { "summary": "Thumbnails por bloco no build", "points": 3, "labels": ["catalogo"], "acceptance": "Thumbnail é o frame do meio do bloco; regenerada quando o HTML muda; usada no `blocks list`." }
+      ]
+    },
+    {
+      "name": "Transcrição local",
+      "summary": "Legendas sem depender de serviço externo",
+      "priority": "Medium",
+      "stories": [
+        { "summary": "Embarcar whisper.cpp (MIT) com licença e hash", "points": 5, "labels": ["transcricao"], "acceptance": "Binário pinado por SHA-256, LICENSE ao lado, modo local funciona sem compilação do usuário." },
+        { "summary": "`models install` com SHA-256 e retomada", "points": 3, "labels": ["transcricao"], "acceptance": "Download interrompido retoma; hash errado apaga o arquivo e falha; nada baixa sem o comando." },
+        { "summary": "Legendas geradas a partir de segments", "points": 5, "labels": ["transcricao", "catalogo"], "acceptance": "Comando gera composição de legenda com um clip por segmento, `data-start`/`data-duration` corretos e legenda que não estoura a largura segura." }
+      ]
+    },
+    {
+      "name": "Áudio de entrega",
+      "summary": "Mix que passa em plataforma, não só que toca",
+      "priority": "Medium",
+      "stories": [
+        { "summary": "Ducking de música sob voz", "points": 5, "labels": ["audio"], "acceptance": "Música abaixa de 6 a 9 dB enquanto há voz, com ataque e release configuráveis; medido no output, não no filter graph." },
+        { "summary": "Loudness −14 LUFS e true peak −1 dBTP", "points": 3, "labels": ["audio"], "acceptance": "Medição por ebur128 no arquivo final; resultado dentro de ±0,5 LUFS do alvo." },
+        { "summary": "Automação de volume por `data-keyframes`", "points": 8, "labels": ["audio"], "acceptance": "Envelope com até 32 segmentos; erro claro quando passar do teto; valor aplicado conferido por medição." }
+      ]
+    },
+    {
+      "name": "Robustez",
+      "summary": "Falhas previsíveis, sem surpresa silenciosa",
+      "priority": "Medium",
+      "stories": [
+        { "summary": "Teste de vídeo dentro de sub-composição", "points": 3, "labels": ["engine", "qa"], "acceptance": "Sub-composição com `<video>` extrai, serve e renderiza igual a um vídeo de primeiro nível; caminho reescrito conferido." },
+        { "summary": "Cancelamento limpa tudo", "points": 3, "labels": ["engine"], "acceptance": "Ctrl+C durante capture encerra browser, servidor e workDir; nenhum processo órfão no Windows." },
+        { "summary": "Códigos de erro estáveis no `render --json`", "points": 2, "labels": ["dx"], "acceptance": "Allowlist de códigos, sem path nem mensagem crua; documentado em docs/contract.md." }
+      ]
+    },
+    {
+      "name": "Documentação",
+      "summary": "Onboarding em cinco minutos e referência confiável",
+      "priority": "Low",
+      "stories": [
+        { "summary": "Getting started em 5 minutos", "points": 3, "labels": ["docs"], "acceptance": "Do zero ao MP4 em cinco minutos numa máquina limpa, seguindo só o documento." },
+        { "summary": "Referência do contrato gerada de docs/contract.md", "points": 3, "labels": ["docs"], "acceptance": "Tabela de atributos e códigos de erro gerada do código; CI falha se divergir da spec." },
+        { "summary": "Guia de licenciamento", "points": 2, "labels": ["docs"], "acceptance": "Explica LGPL, AV1, patentes de H.264, marcas e o que o usuário pode distribuir." }
+      ]
+    }
+  ]
+}
