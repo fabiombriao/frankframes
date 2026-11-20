@@ -1,0 +1,38 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      html, body { margin: 0; background: #0b0b0f; overflow: hidden; }
+      #stage { position: relative; width: 1280px; height: 720px; }
+      .box {
+        position: absolute; top: 100px; left: 0; width: 160px; height: 160px;
+        background: #ff2d55; animation: slide 2s linear infinite;
+      }
+      @keyframes slide { from { transform: translateX(0); } to { transform: translateX(900px); } }
+      .readout { position: absolute; left: 40px; color: #fff; font: 26px monospace; }
+    </style>
+  </head>
+  <body>
+    <div id="stage" data-composition-id="fixture" data-root="true" data-width="1280" data-height="720" data-fps="30">
+      <div class="box"></div>
+      <div class="readout" id="time" style="top: 320px">t=0</div>
+      <div class="readout" id="random" style="top: 370px">r=0</div>
+      <div class="readout" id="pretty" style="top: 420px">d=0</div>
+    </div>
+    <script>
+      const time = document.getElementById("time");
+      const random = document.getElementById("random");
+      const pretty = document.getElementById("pretty");
+
+      function tick(ts) {
+        time.textContent = "t=" + ts.toFixed(2);
+        random.textContent = "r=" + Math.random().toFixed(10);
+        pretty.textContent = "d=" + new Date().toISOString() + " n=" + Number(1234.5).toLocaleString();
+        requestAnimationFrame(tick);
+      }
+      requestAnimationFrame(tick);
+      document.getAnimations().forEach((animation) => animation.pause());
+    </script>
+  </body>
+</html>

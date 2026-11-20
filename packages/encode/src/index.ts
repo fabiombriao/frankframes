@@ -5,6 +5,8 @@ export {
   GPL_ENCODERS,
   EncodePolicyError,
   parseFacts,
+  policyViolations,
+  assertFfmpegAllowed,
   assertDistributionSafe,
   assertCodecAllowed,
   containerFor,

@@ -1,0 +1,14 @@
+{
+  "name": "@frankframes/engine",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "SEE LICENSE IN LICENSE",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@frankframes/contract": "*",
+    "puppeteer-core": "^25.18.1"
+  }
+}

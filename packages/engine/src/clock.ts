@@ -1,0 +1,112 @@
+// FrankFrames — proprietário. Ver LICENSE na raiz.
+/**
+ * Relógio virtual. Roda DENTRO da página, antes de qualquer script da composição.
+ *
+ * Regras que este arquivo garante (docs/contract.md §9):
+ *  - Date, performance.now, rAF, timers, Math.random e crypto são do host;
+ *  - nada avança entre seeks;
+ *  - exatamente UMA geração de rAF por frame;
+ *  - PRNG re-semeado por frame a partir do tempo.
+ *
+ * O código é uma string de propósito: é injetado inline no HTML servido, sem
+ * caminho de arquivo para errar.
+ */
+export const CLOCK_SOURCE = `(() => {
+  let nowMs = 0;
+  let seed = 0x9e3779b1 >>> 0;
+
+  const random = () => {
+    seed = (seed + 0x6d2b79f5) >>> 0;
+    let t = seed;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+
+  const RealDate = Date;
+  class VirtualDate extends RealDate {
+    constructor(...args) {
+      if (args.length === 0) super(nowMs);
+      else super(...args);
+    }
+    static now() { return nowMs; }
+  }
+  window.Date = VirtualDate;
+  Object.defineProperty(performance, "now", { value: () => nowMs, configurable: true, writable: true });
+
+  const frameQueue = [];
+  window.requestAnimationFrame = (cb) => { frameQueue.push(cb); return frameQueue.length; };
+  window.cancelAnimationFrame = () => {};
+
+  const timers = [];
+  let timerSeq = 0;
+  window.setTimeout = (fn, ms = 0, ...args) => {
+    timers.push({ id: ++timerSeq, fn, args, due: nowMs + Math.max(ms, 1) });
+    return timerSeq;
+  };
+  window.setInterval = (fn, ms = 0, ...args) => {
+    timers.push({ id: ++timerSeq, fn, args, due: nowMs + Math.max(ms, 1), every: Math.max(ms, 1) });
+    return timerSeq;
+  };
+  window.clearTimeout = window.clearInterval = (id) => {
+    const i = timers.findIndex((t) => t.id === id);
+    if (i >= 0) timers.splice(i, 1);
+  };
+  window.queueMicrotask = (fn) => Promise.resolve().then(fn);
+
+  Math.random = random;
+  if (window.crypto) {
+    crypto.getRandomValues = (arr) => {
+      for (let i = 0; i < arr.length; i++) arr[i] = (random() * 256) | 0;
+      return arr;
+    };
+  }
+
+  const ready = Promise.all([
+    document.fonts ? document.fonts.ready : Promise.resolve(),
+    ...[...document.images].map((img) => (img.decode ? img.decode().catch(() => {}) : Promise.resolve())),
+  ]).then(() => true);
+
+  window.__ff = {
+    ready,
+    now: () => nowMs,
+    seek(ms) {
+      nowMs = ms;
+      seed = (0x9e3779b1 ^ (Math.trunc(ms) + 1)) >>> 0;
+      for (const timer of timers) {
+        if (timer.due <= nowMs && timer.every === undefined) {
+          timer.fn(...timer.args);
+        }
+      }
+      for (let i = timers.length - 1; i >= 0; i--) {
+        if (timers[i].every === undefined && timers[i].due <= nowMs) timers.splice(i, 1);
+      }
+      const generation = frameQueue.splice(0, frameQueue.length);
+      for (const cb of generation) cb(nowMs);
+      for (const animation of document.getAnimations()) {
+        animation.pause();
+        animation.currentTime = nowMs;
+      }
+      return nowMs;
+    },
+  };
+})();`;
+
+/**
+ * Injeta o relógio como PRIMEIRO script do documento — antes de qualquer script
+ * da composição, inclusive os do `<head>`.
+ */
+export function injectClock(html: string): string {
+  const tag = `<script>${CLOCK_SOURCE}</script>`;
+  const head = /<head[^>]*>/i.exec(html);
+  if (head) {
+    const at = head.index + head[0].length;
+    return `${html.slice(0, at)}${tag}${html.slice(at)}`;
+  }
+  const htmlTag = /<html[^>]*>/i.exec(html);
+  if (htmlTag) {
+    const at = htmlTag.index + htmlTag[0].length;
+    return `${html.slice(0, at)}${tag}${html.slice(at)}`;
+  }
+  return `${tag}${html}`;
+}

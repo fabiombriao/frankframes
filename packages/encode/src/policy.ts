@@ -62,26 +62,55 @@ export function parseFacts(binary: string, versionText: string, encodersText: st
   return { binary, version, configuration, encoders };
 }
 
+export interface PolicyViolation {
+  code: PolicyCode;
+  message: string;
+}
+
 /**
- * Recusa qualquer configuração que torne o produto indefensável na distribuição.
- * Chamado antes do primeiro encode, em todo processo, inclusive nos testes.
+ * Violações puras, sem lançar. `distribution` = nós entregamos o binário.
+ * `user-provided` = o usuário instalou o FFmpeg dele: não distribuímos nada,
+ * então não há obrigação nossa; o uso é dele.
  */
-export function assertDistributionSafe(facts: FfmpegFacts): void {
+export function policyViolations(facts: FfmpegFacts): PolicyViolation[] {
+  const violations: PolicyViolation[] = [];
   if (facts.configuration.includes("--enable-gpl")) {
-    throw new EncodePolicyError(
-      "E_FFMPEG_GPL",
-      `${facts.binary} foi compilado com --enable-gpl (versão ${facts.version}); distribuir esse binário impõe GPL ao produto`,
-      { cause: { configuration: facts.configuration.filter((f) => f.startsWith("--enable-gpl") || f.startsWith("--enable-libx")) } },
-    );
+    violations.push({
+      code: "E_FFMPEG_GPL",
+      message: `${facts.binary} foi compilado com --enable-gpl (versão ${facts.version}); distribuir esse binário impõe GPL ao produto`,
+    });
   }
   for (const encoder of GPL_ENCODERS) {
     if (facts.encoders.includes(encoder)) {
-      throw new EncodePolicyError(
-        "E_GPL_ENCODER",
-        `${facts.binary} expõe o encoder ${encoder}, que é GPL; use libsvtav1, libvpx-vp9 ou libopenh264`,
-      );
+      violations.push({
+        code: "E_GPL_ENCODER",
+        message: `${facts.binary} expõe o encoder ${encoder}, que é GPL; use libsvtav1, libvpx-vp9 ou libopenh264`,
+      });
     }
   }
+  return violations;
+}
+
+export type ExecutionMode = "distribution" | "user-provided";
+
+/**
+ * `distribution` recusa e lança. `user-provided` devolve avisos e segue:
+ * o binário é do usuário, o render é local, o produto não o redistribui.
+ */
+export function assertFfmpegAllowed(facts: FfmpegFacts, mode: ExecutionMode = "distribution"): string[] {
+  const violations = policyViolations(facts);
+  if (mode === "distribution" && violations.length > 0) {
+    const first = violations[0]!;
+    throw new EncodePolicyError(first.code, first.message);
+  }
+  return violations.map((v) => `${v.code}: ${v.message}`);
+}
+
+/** Recusa qualquer configuração que torne o produto indefensável na distribuição. */
+export function assertDistributionSafe(facts: FfmpegFacts): void {
+  const violations = policyViolations(facts);
+  const first = violations[0];
+  if (first) throw new EncodePolicyError(first.code, first.message);
 }
 
 export interface CodecChoice {
