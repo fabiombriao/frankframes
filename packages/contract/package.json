@@ -1,0 +1,13 @@
+{
+  "name": "@frankframes/contract",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "SEE LICENSE IN LICENSE",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "parse5": "^8.0.0"
+  }
+}
