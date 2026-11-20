@@ -72,16 +72,27 @@ export const CLOCK_SOURCE = `(() => {
     return 0;
   };
 
-  const ready = Promise.all([
-    document.fonts ? document.fonts.ready : Promise.resolve(),
-    ...[...document.images].map((img) =>
-      img.decode
-        ? img.decode().catch(() => {
-            throw new Error("imagem não decodificou: " + (img.currentSrc || img.src));
-          })
-        : Promise.resolve(),
-    ),
-  ]).then(() => true);
+  // O script roda no <head>: document.images só existe depois do parse.
+  // Prontidão = DOM completo + fontes + toda imagem decodificada.
+  const readyDeferred = Promise.withResolvers();
+  const ready = readyDeferred.promise;
+  const settle = () => {
+    Promise.all([
+      document.fonts ? document.fonts.ready : Promise.resolve(),
+      ...[...document.images].map((img) =>
+        img.decode
+          ? img.decode().catch(() => {
+              throw new Error("imagem não decodificou: " + (img.currentSrc || img.src));
+            })
+          : Promise.resolve(),
+      ),
+    ]).then(
+      () => readyDeferred.resolve(true),
+      (error) => readyDeferred.reject(error),
+    );
+  };
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", settle, { once: true });
+  else settle();
 
   const syncVisibility = () => {
     for (const element of document.querySelectorAll("[data-ff-start]")) {
