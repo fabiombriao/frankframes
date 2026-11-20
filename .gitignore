@@ -7,3 +7,5 @@ out/
 .tmp/
 vendor/browsers/
 vendor/ffmpeg/bin/
+
+.env

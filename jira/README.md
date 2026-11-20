@@ -1,8 +1,31 @@
 # Backlog FrankFrames no Jira
 
 Projeto: **EDT — Editor IA** (`https://ia2bhub.atlassian.net/jira/software/projects/EDT`).
-Backlog importado: **8 épicos + 25 tarefas** (`EDT-1` … `EDT-33`). `jira/backlog.json` é a fonte de
+Backlog sincronizado: **8 épicos + 25 tarefas** (`EDT-1` … `EDT-33`). `jira/backlog.json` é a fonte de
 verdade e carrega o `jiraKey` de cada item.
+
+## Tooling: REST via `.env` (preferido)
+
+A CLI do Orca só cria e comenta — não edita, não apaga e o `search` dela devolve vazio. Para manter o
+backlog, use o cliente REST do repo:
+
+```bash
+cp .env.example .env          # preencha JIRA_EMAIL e JIRA_API_TOKEN
+node scripts/jira.ts whoami   # confere autenticação
+node scripts/jira.ts list     # lista o projeto com o épico de cada item
+node scripts/jira.ts show EDT-7
+node scripts/jira.ts seed --dry-run   # plano sem tocar no Jira
+node scripts/jira.ts seed             # cria o que falta (idempotente)
+node scripts/jira.ts sync             # reescreve descrição/rótulos a partir do backlog.json
+node scripts/jira.ts fields           # procura campo de estimativa
+node scripts/jira.ts self-test        # valida o planejamento offline
+```
+
+Regras do cliente:
+
+- credenciais só de `.env` (ignorado pelo git) ou do ambiente — nunca em arquivo versionado;
+- `seed` e `sync` são idempotentes: casam por `jiraKey` e, na falta, por `summary`;
+- `sync` grava de volta o `jiraKey` em `jira/backlog.json`.
 
 ## Mapa
 
@@ -17,27 +40,15 @@ verdade e carrega o `jiraKey` de cada item.
 | Robustez | EDT-26 | EDT-27 … EDT-29 |
 | Documentação | EDT-30 | EDT-31 … EDT-33 |
 
-## Criar item novo pela CLI do Orca
+## Limitações do projeto EDT
 
-```bash
-orca jira project fields --project EDT --type 10264      # campos do create
-orca jira create --project EDT --type 10264 \
-  --title "<título>" --body-file <arquivo> \
-  --fields-json '{"parent":{"key":"EDT-26"},"labels":["engine"]}' --json
-```
+- **Não existe campo de Story Points** (verificado em `/rest/api/3/field`). A estimativa fica no corpo
+  da tarefa como `Estimativa: N pontos.` — total atual: 96 pontos.
+- Tipos: `10261` Subtask, `10262` Epic, `10263` Bug, `10264` Tarefa.
+- Criação de projeto não é exposta por nenhuma das duas vias (Orca nem REST sem permissão global de
+  administrador); o EDT foi criado na interface.
 
-Tipos no projeto: `10261` Subtask, `10262` Epic, `10263` Bug, `10264` Tarefa.
+## Orca, quando conveniente
 
-Limitações observadas nesta CLI (20/11/2026):
-
-- não existe criação de projeto (`project list|types|fields` apenas);
-- não existe update nem delete de issue — descrição errada só se corrige recriando ou por comentário;
-- o projeto **não tem campo de Story Points** no create: a estimativa vai no corpo (`Estimativa: N pontos.`);
-- `orca jira search` devolve vazio mesmo com JQL válida; consulte por chave (`orca jira issue EDT-7`).
-
-## Concluído (fora do backlog)
-
-Contrato, engine determinístico (relógio virtual, seek, captura atômica, vídeo fora de banda,
-paralelismo, shell pinado, fontes embarcadas, taxonomia de falha), producer com áudio e compilador de
-sub-composições, transcrição por API, FFmpeg LGPL embarcado, 8 blocos de catálogo, skill e onboarding
-(`init`, `doctor`, `skill install`).
+Leitura rápida e comentário continuam funcionando pelo conector (`orca jira issue`, `orca jira comment
+add <chave> --body-file <arquivo>`). Para qualquer escrita em lote, use `scripts/jira.ts`.
