@@ -4,6 +4,7 @@ import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { basename, dirname, extname, resolve } from "node:path";
 import { loadComposition } from "@frankframes/contract";
+import { PINNED_BROWSER, checkPinnedBrowser, startServer } from "@frankframes/engine";
 import { assertCodecAllowed, assertFfmpegAllowed, containerFor, detectFfmpeg } from "@frankframes/encode";
 import type { Preset, VideoCodec } from "@frankframes/encode";
 import { RenderError, renderComposition } from "@frankframes/producer";
@@ -15,6 +16,9 @@ uso:
   frankframes lint <arquivo.html> [--json]
   frankframes render <arquivo.html> [-o saida.mp4] [--codec av1|vp9|h264] [--preset draft|standard|high]
                                     [--workers N] [--keep] [--json]
+  frankframes preview <arquivo.html> [--open]
+  frankframes browser check
+  frankframes browser install
 
 ambiente:
   FFMPEG_PATH / FFPROBE_PATH     binários usados no render
@@ -58,23 +62,25 @@ function defaultOutput(entry: string, codec: VideoCodec): string {
   return resolve("out", `${basename(entry, extname(entry))}.${containerFor(codec)}`);
 }
 
-uso:
-  frankframes lint <arquivo.html> [--json]
+async function browserCommand(action: string): Promise<never> {
+  if (action === "check") {
+    const pin = await checkPinnedBrowser();
+    if (!pin.present) {
+      process.stderr.write("shell pinado ausente: rode `frankframes browser install`\n");
+      process.exit(1);
+    }
+    if (!pin.matches) {
+      process.stderr.write(`digest não confere em ${pin.path}\nesperado ${PINNED_BROWSER.sha256}\nobtido   ${pin.digest}\n`);
+      process.exit(1);
+    }
+    process.stdout.write(`ok ${PINNED_BROWSER.version} · ${pin.path}\n`);
+    process.exit(0);
+  }
 
-lint sai com código 1 quando existe diagnóstico de severidade "error".
-O contrato está em docs/contract.md.`;
-
-const args = parseArgs(process.argv.slice(2));
-
-if (args.command === "help" || args.command === "") {
-  process.stdout.write(`${HELP}\n`);
-  process.exit(0);
-}
-
-if (args.command !== "lint" || !args.file) {
-  process.stderr.write(`comando desconhecido ou arquivo ausente\n\n${HELP}\n`);
-  process.exit(2);
-}
+  if (action !== "install") {
+    process.stderr.write(`ação desconhecida: ${action}\n\n${HELP}\n`);
+    process.exit(2);
+  }
 
   const vendor = resolve("vendor", "browsers");
   const child = spawn(
@@ -152,6 +158,22 @@ async function main(): Promise<void> {
       }
     }
     process.exit(composition.ok ? 0 : 1);
+  }
+
+  if (cli.command === "preview") {
+    const server = await startServer(dirname(resolve(entry)));
+    const url = `${server.url}${basename(entry)}`;
+    process.stdout.write(`preview ${url}\nCtrl+C encerra.\n`);
+    if (process.argv.includes("--open")) {
+      const { exec } = await import("node:child_process");
+      exec(`${process.platform === "win32" ? "start" : process.platform === "darwin" ? "open" : "xdg-open"} "${url}"`);
+    }
+    const stop = Promise.withResolvers<never>();
+    process.on("SIGINT", () => {
+      server.close().finally(() => stop.resolve(process.exit(0) as never));
+    });
+    await stop.promise;
+    return;
   }
 
   if (cli.command !== "render") {

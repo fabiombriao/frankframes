@@ -1,12 +1,15 @@
 // FrankFrames — proprietário. Ver LICENSE na raiz.
 import { CLOCK_SOURCE } from "./clock.ts";
 import { MEDIA_SHIM_SOURCE } from "./media-shim.ts";
+import { fontFaceCss } from "./fonts.ts";
 import type { MediaManifest } from "./media.ts";
 
 export interface Injection {
   manifest?: MediaManifest;
   /** Desliga a substituição de vídeo (testes do relógio isolado). */
   disableMediaShim?: boolean;
+  /** Base pública das fontes embarcadas; `null` desliga a injeção. */
+  fontsBase?: string | null;
 }
 
 /**
@@ -14,7 +17,11 @@ export interface Injection {
  * 1. relógio virtual; 2. manifesto de mídia; 3. shim de `<video>`.
  */
 export function injectionScript(injection: Injection = {}): string {
-  const parts = [`<script>${CLOCK_SOURCE}</script>`];
+  const parts: string[] = [];
+  if (injection.fontsBase !== null) {
+    parts.push(`<style>${fontFaceCss(injection.fontsBase ?? "/__ff_fonts")}</style>`);
+  }
+  parts.push(`<script>${CLOCK_SOURCE}</script>`);
   if (injection.manifest) {
     parts.push(`<script>window.__ffMedia=${JSON.stringify(injection.manifest)};</script>`);
     if (!injection.disableMediaShim) parts.push(`<script>${MEDIA_SHIM_SOURCE}</script>`);

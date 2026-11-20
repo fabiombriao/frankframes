@@ -73,6 +73,8 @@ test("vídeo fora de banda: <video> vira <img> e o frame é estável", { timeout
     try {
       for (const frame of order) {
         await session.seekFrame(frame, FPS);
+        const clock = await session.evaluate<number>("window.__ff.now()");
+        assert.ok(Math.abs(clock - (frame * 1000) / 30) < 1e-3, `clock em ${clock} ms no frame ${frame}: seek precisa ser em ms`);
         hashes.set(frame, (await session.capture()).sha256);
       }
       const dom = await session.evaluate<{ images: number; videoHidden: boolean }>(`(() => {

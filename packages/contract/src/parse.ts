@@ -168,6 +168,9 @@ function buildClip(node: P5Node, depth: number, ordinal: number, diagnostics: Di
   if (volume !== undefined) clip.volume = volume;
   const src = attr(node, ATTRS.src);
   if (src) clip.src = src;
+  const mediaSrc = attr(node, "src");
+  if (mediaSrc) clip.mediaSrc = mediaSrc;
+  if (MEDIA[tag] === true) clip.hasAudio = tag === "audio" || attr(node, "data-has-audio") !== "false";
   return clip;
 }
 

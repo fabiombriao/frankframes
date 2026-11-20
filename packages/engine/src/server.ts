@@ -4,7 +4,8 @@ import { readFile } from "node:fs/promises";
 import { extname, join, normalize, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { AddressInfo } from "node:net";
-import { injectClock } from "./clock.ts";
+import { injectEngine } from "./inject.ts";
+import type { MediaManifest } from "./media.ts";
 
 const DEFAULT_FONTS = fileURLToPath(new URL("../../../vendor/fonts", import.meta.url));
 
@@ -36,6 +37,15 @@ export interface StaticServer {
   close: () => Promise<void>;
 }
 
+export interface ServerOptions {
+  /** Diretório servido em `/__ff_media/` com os frames já extraídos. */
+  mediaRoot?: string;
+  manifest?: MediaManifest;
+  disableMediaShim?: boolean;
+  /** Diretório das fontes embarcadas servido em `/__ff_fonts/`. `null` desliga. */
+  fontsRoot?: string | null;
+}
+
 const MEDIA_PREFIX = "/__ff_media/";
 const FONTS_PREFIX = "/__ff_fonts/";
 
@@ -44,7 +54,7 @@ const FONTS_PREFIX = "/__ff_fonts/";
  * regras e não permite trocar mídia depois. Todo HTML recebe o relógio virtual,
  * as fontes embarcadas e o shim de mídia antes de qualquer script do autor.
  */
-export async function startServer(rootDir: string): Promise<StaticServer> {
+export async function startServer(rootDir: string, options: ServerOptions = {}): Promise<StaticServer> {
   const roots = {
     site: resolve(rootDir),
     media: options.mediaRoot ? resolve(options.mediaRoot) : undefined,
@@ -58,16 +68,41 @@ export async function startServer(rootDir: string): Promise<StaticServer> {
         response.writeHead(204).end();
         return;
       }
-      const relative = decodeURIComponent(pathname === "/" ? "/index.html" : pathname);
-      const file = normalize(join(root, relative));
-      if (file !== root && !file.startsWith(root + sep)) {
+
+      const isMedia = pathname.startsWith(MEDIA_PREFIX);
+      const isFont = pathname.startsWith(FONTS_PREFIX);
+      const base = isMedia ? roots.media : isFont ? roots.fonts : roots.site;
+      if (!base) {
+        response.writeHead(404).end("rota não configurada");
+        return;
+      }
+
+      const relative = decodeURIComponent(
+        isMedia
+          ? pathname.slice(MEDIA_PREFIX.length - 1)
+          : isFont
+            ? pathname.slice(FONTS_PREFIX.length - 1)
+            : pathname === "/"
+              ? "/index.html"
+              : pathname,
+      );
+      const file = normalize(join(base, relative));
+      if (file !== base && !file.startsWith(base.endsWith(sep) ? base : base + sep)) {
         response.writeHead(403).end("fora da raiz");
         return;
       }
 
       const raw = await readFile(file);
       const type = MIME[extname(file).toLowerCase()] ?? "application/octet-stream";
-      const body = type.startsWith("text/html") ? Buffer.from(injectClock(raw.toString("utf8"))) : raw;
+      const body = type.startsWith("text/html")
+        ? Buffer.from(
+            injectEngine(raw.toString("utf8"), {
+              manifest: options.manifest,
+              disableMediaShim: options.disableMediaShim,
+              fontsBase: roots.fonts ? FONTS_PREFIX.slice(0, -1) : null,
+            }),
+          )
+        : raw;
       response.writeHead(200, { "content-type": type, "cache-control": "no-store" }).end(body);
     } catch {
       response.writeHead(404).end("não encontrado");

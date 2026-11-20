@@ -8,6 +8,30 @@ import type { GpuMode, ResolvedGpuMode, Viewport } from "./args.ts";
 import { resolveChrome } from "./launch.ts";
 import { probeRenderer, resolveGpuMode } from "./probe.ts";
 
+/**
+ * Browsers vivos deste processo. No Windows um Chrome órfão sobrevive ao Ctrl+C
+ * e trava a porta de depuração do próximo render; matar no exit cobre isso.
+ */
+const liveBrowsers = new Set<Browser>();
+let exitHookInstalled = false;
+
+function trackBrowser(browser: Browser): void {
+  if (!exitHookInstalled) {
+    exitHookInstalled = true;
+    process.once("exit", () => {
+      for (const tracked of liveBrowsers) {
+        try {
+          tracked.process()?.kill("SIGKILL");
+        } catch {
+          /* processo já morto */
+        }
+      }
+      liveBrowsers.clear();
+    });
+  }
+  liveBrowsers.add(browser);
+}
+
 export interface SessionOptions {
   url: string;
   viewport: Viewport;
@@ -26,11 +50,14 @@ export interface Session {
   gpu: ResolvedGpuMode;
   /** Renderer real reportado pelo Chrome. */
   renderer: string;
+  /** Avaliação no contexto da página (sonda de estado em teste). */
+  evaluate: <T>(expression: string) => Promise<T>;
   close: () => Promise<void>;
 }
 
 interface VirtualClockWindow {
-  __ff?: { ready: Promise<boolean>; seek: (ms: number) => number };
+  __ff?: { ready: Promise<boolean>; seek: (ms: number) => number | Promise<number> };
+  __ffMediaReady?: Promise<boolean>;
 }
 
 export async function openSession(options: SessionOptions): Promise<Session> {
@@ -44,6 +71,7 @@ export async function openSession(options: SessionOptions): Promise<Session> {
     defaultViewport: { ...options.viewport, deviceScaleFactor: 1 },
   });
 
+  trackBrowser(browser);
   const page: Page = await browser.newPage();
   const pageErrors: string[] = [];
   page.on("pageerror", (error) => pageErrors.push(String(error)));
@@ -64,11 +92,15 @@ export async function openSession(options: SessionOptions): Promise<Session> {
     throw new Error(`relógio virtual não disponível (${clockReady}): o HTML não foi servido pelo engine`);
   }
 
+  await page.evaluate(async () => {
+    const scope = globalThis as unknown as { __ffMediaReady?: Promise<boolean> };
+    if (scope.__ffMediaReady) await scope.__ffMediaReady;
+  });
+
   const cdp: CDPSession = await page.createCDPSession();
 
   return {
     seekFrame: async (frame, fps) => {
-        (globalThis as unknown as VirtualClockWindow).__ff!.seek(value);
       const ms = timeOfFrame(frame, fps) * 1000;
       await page.evaluate((value) => (globalThis as unknown as VirtualClockWindow).__ff!.seek(value), ms);
     },
@@ -78,8 +110,12 @@ export async function openSession(options: SessionOptions): Promise<Session> {
       return { png, sha256: createHash("sha256").update(png).digest("hex") };
     },
     pageErrors: () => [...pageErrors],
+    evaluate: <T,>(expression: string) => page.evaluate(expression) as Promise<T>,
     gpu,
     renderer: probe?.renderer ?? "ANGLE SwiftShader (software)",
-    close: () => browser.close(),
+    close: async () => {
+      liveBrowsers.delete(browser);
+      await browser.close();
+    },
   };
 }

@@ -1,11 +1,25 @@
 // FrankFrames — proprietário. Ver LICENSE na raiz.
 export { CLOCK_SOURCE, injectClock } from "./clock.ts";
+export { injectionScript, injectEngine } from "./inject.ts";
 export { chromeArgs, gpuFlags } from "./args.ts";
 export type { GpuMode, ResolvedGpuMode, Viewport } from "./args.ts";
-export { resolveChrome, defaultChromeCandidates } from "./launch.ts";
+export { resolveChrome } from "./launch.ts";
+export type { ResolvedChrome } from "./launch.ts";
+export { PINNED_BROWSER, checkPinnedBrowser, pinnedBrowserPath, fileSha256 } from "./pin.ts";
+export type { PinCheck } from "./pin.ts";
+export { DEFAULT_FONT, FONT_BASE_URL, expectedFontFiles, fontFaceCss } from "./fonts.ts";
+export { FONT_CATALOG, fontFileName } from "./font-catalog.ts";
+export type { FontFamily } from "./font-catalog.ts";
 export { probeRenderer, resolveGpuMode } from "./probe.ts";
 export type { RendererInfo } from "./probe.ts";
 export { startServer } from "./server.ts";
-export type { StaticServer } from "./server.ts";
+export type { ServerOptions, StaticServer } from "./server.ts";
+export { extractFrames, probeDuration } from "./media.ts";
+export type { ExtractOptions, MediaManifest, MediaManifestEntry } from "./media.ts";
+export { MEDIA_SHIM_SOURCE } from "./media-shim.ts";
+export { captureFramesInParallel, splitIntoChunks } from "./parallel.ts";
+export type { ParallelCaptureOptions } from "./parallel.ts";
+export { classifyFailure, retryOnceIfTransient } from "./failures.ts";
+export type { ClassifiedFailure, FailureKind } from "./failures.ts";
 export { openSession } from "./capture.ts";
 export type { Session, SessionOptions } from "./capture.ts";

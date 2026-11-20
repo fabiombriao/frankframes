@@ -38,6 +38,10 @@ export interface RawClip {
   isSubComposition: boolean;
   /** `data-composition-src`, quando a sub-composição vem de outro arquivo. */
   src?: string;
+  /** Atributo HTML `src` de `<video>`/`<audio>`/`<img>`. */
+  mediaSrc?: string;
+  /** `<audio>`, ou `<video>` sem `data-has-audio="false"`. */
+  hasAudio?: boolean;
   depth: number;
   /** Clips da sub-composição inline (`<template>`), resolvidos no mesmo escopo. */
   children: RawClip[];

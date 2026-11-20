@@ -115,6 +115,17 @@ máquina" (o pixel depende do driver).
 Verificado em `2026-11-20`: 60 frames 720p × 2 execuções + 1 em ordem invertida, nos modos `auto`
 (RTX 4060 via D3D11) e `software` (SwiftShader) → todos os hashes idênticos por frame.
 
+## 9b. Fontes
+
+25 famílias SIL OFL-1.1 ficam em `vendor/fonts` e são servidas em `/__ff_fonts/`: Inter (padrão),
+Poppins, Montserrat, Roboto, Assistant, DM Sans, Manrope, Nunito, Raleway, Space Grotesk, Oswald,
+Bebas Neue, Anton, Alfa Slab One, Bangers, Righteous, Permanent Marker, Playfair Display, Lora,
+Merriweather, Great Vibes, Dancing Script, Caveat, Lobster, JetBrains Mono.
+
+O autor usa o nome real da família (`font-family: "Poppins"`). Nenhuma fonte de CDN: o CSS injetado
+só aponta para o servidor local. `html` recebe `Inter` como padrão, então `sans-serif` nunca resolve
+para fonte do sistema.
+
 ## 10. Compatibilidade
 
 Composições escritas para outro framework entram por um **importador separado** (`compat-*`), que traduz
