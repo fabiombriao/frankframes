@@ -1,6 +1,7 @@
 // FrankFrames — proprietário. Ver LICENSE na raiz.
 import { basename } from "node:path";
 import { openSession, resolveChrome, startServer } from "@frankframes/engine";
+import type { Session } from "@frankframes/engine";
 import type { GpuMode } from "@frankframes/engine";
 import { prepare } from "./render.ts";
 
@@ -39,15 +40,17 @@ export async function captureGolden(
     ...(prepared.manifest !== undefined ? { manifest: prepared.manifest } : {}),
     page: { path: basename(prepared.entry), html: prepared.compiledHtml },
   });
-  const session = await openSession({
-    url: `${server.url}${basename(prepared.entry)}`,
-    viewport: prepared.viewport,
-    gpu: options.gpu ?? "software",
-    // Goldens são verificação, não caminho de velocidade: exigem frames estáveis.
-    captureShots: shots,
-  });
-
+  // O servidor já está de pé: qualquer rejeição daqui para baixo (inclusive do openSession) o fecha.
+  let session: Session | undefined;
   try {
+    session = await openSession({
+      url: `${server.url}${basename(prepared.entry)}`,
+      viewport: prepared.viewport,
+      gpu: options.gpu ?? "software",
+      // Goldens são verificação, não caminho de velocidade: exigem frames estáveis.
+      captureShots: shots,
+      serverFailures: server.failures,
+    });
     const frames: GoldenFrame[] = [];
     const samples = sampleFrames(prepared.totalFrames);
 
@@ -66,8 +69,11 @@ export async function captureGolden(
     if (errors.length > 0) throw new Error(`erros na página em ${entry}: ${errors[0]}`);
     return { name: basename(prepared.entryDir), durationSeconds: prepared.seconds, frames };
   } finally {
-    await session.close();
-    await server.close();
+    try {
+      await session?.close();
+    } finally {
+      await server.close();
+    }
   }
 }
 
@@ -79,20 +85,25 @@ export async function captureFrameAt(entry: string, ratio = 0.5): Promise<{ png:
     ...(prepared.manifest !== undefined ? { manifest: prepared.manifest } : {}),
     page: { path: basename(prepared.entry), html: prepared.compiledHtml },
   });
-  const session = await openSession({
-    url: `${server.url}${basename(prepared.entry)}`,
-    viewport: prepared.viewport,
-    gpu: "software",
-    captureShots: 3,
-  });
+  let session: Session | undefined;
   try {
+    session = await openSession({
+      url: `${server.url}${basename(prepared.entry)}`,
+      viewport: prepared.viewport,
+      gpu: "software",
+      captureShots: 3,
+      serverFailures: server.failures,
+    });
     const frame = Math.min(prepared.totalFrames - 1, Math.round(ratio * (prepared.totalFrames - 1)));
     await session.seekFrame(frame, prepared.fps);
     const { png } = await session.capture();
     return { png, frame, totalFrames: prepared.totalFrames };
   } finally {
-    await session.close();
-    await server.close();
+    try {
+      await session?.close();
+    } finally {
+      await server.close();
+    }
   }
 }
 

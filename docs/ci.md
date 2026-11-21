@@ -48,6 +48,12 @@ O hook fica em `.git/hooks/pre-push` e não é versionado — cada clone instala
 - O gate começa pela política: ela é a primeira etapa e para a fila em caso de violação.
 - O gate **não** usa `.env` nem chama a rede: Jira, upload e IA ficam fora.
 - Toda etapa falha alto e para a sequência.
+- **Toda etapa tem prazo** (`scripts/ci.ts`, `TIMEOUTS`): política 1 min, typecheck e testes rápidos 5 min,
+  suíte completa 25 min, doctor 3 min, render de fumaça 10 min, `npm pack` 3 min. Estourou: a etapa
+  reprova, o fim da saída dela vai para o terminal, e a árvore de processos inteira (runner de testes e
+  Chrome) é encerrada (`taskkill /T /F` no Windows, grupo do processo no POSIX). Um teste que vaza um
+  handle aberto aparece como a causa, não como um gate que nunca termina. `--test-force-exit` não é usado:
+  esconderia o vazamento.
 - Teste que depende de Chrome ou FFmpeg faz `skip` explícito quando o binário não existe — nunca passa em silêncio.
 - A promessa de pixel só é verificada no modo `software` (SwiftShader); em `hardware` a garantia é por máquina.
 - Goldens comparam hash e, quando diverge, PSNR contra `catalog/goldens/<bloco>/<frame>.png`

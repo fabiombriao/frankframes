@@ -3,7 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { openSession, resolveChrome, startServer } from "../src/index.ts";
+import { openSession, openSessionFor, resolveChrome, startServer } from "../src/index.ts";
 import type { GpuMode, ResolvedGpuMode } from "../src/args.ts";
 
 const FIXTURES = join(dirname(fileURLToPath(import.meta.url)), "fixtures");
@@ -18,7 +18,7 @@ interface Run {
 
 async function captureRun(order: number[], gpu: GpuMode): Promise<Run> {
   const server = await startServer(FIXTURES);
-  const session = await openSession({ url: server.url, viewport: { width: 1280, height: 720 }, gpu });
+  const session = await openSessionFor(server, { url: server.url, viewport: { width: 1280, height: 720 }, gpu });
   const hashes = new Map<number, string>();
   try {
     for (const frame of order) {

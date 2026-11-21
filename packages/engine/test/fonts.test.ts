@@ -3,13 +3,13 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { openSession, resolveChrome, startServer } from "../src/index.ts";
+import { openSession, openSessionFor, resolveChrome, startServer } from "../src/index.ts";
 
 const FIXTURES = join(dirname(fileURLToPath(import.meta.url)), "fixtures");
 
 async function firstFrame(page: string): Promise<{ hash: string; check: boolean }> {
   const server = await startServer(FIXTURES);
-  const session = await openSession({ url: `${server.url}${page}`, viewport: { width: 640, height: 360 }, gpu: "auto" });
+  const session = await openSessionFor(server, { url: `${server.url}${page}`, viewport: { width: 640, height: 360 }, gpu: "auto" });
   try {
     await session.seekFrame(0, { num: 30, den: 1 });
     const check = await session.evaluate<boolean>(`document.fonts.check('600 32px "Poppins"')`);

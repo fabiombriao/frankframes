@@ -140,3 +140,12 @@ test("render real: fonte que não carrega para na etapa capture com E_FONT_LOAD;
   const done = await renderComposition({ entry, outPath: join(workspace, "b.mp4"), ffmpeg, ffprobe, codec: "av1", preset: "draft", workers: 1 });
   assert.equal(done.frames, 30);
 });
+
+test("E_BROWSER_CLOSED e E_BROWSER_TIMEOUT são códigos de render publicados", () => {
+  for (const code of ["E_BROWSER_CLOSED", "E_BROWSER_TIMEOUT"]) {
+    assert.ok(RENDER_ERROR_CODES.includes(code as (typeof RENDER_ERROR_CODES)[number]), code);
+    const payload = toErrorPayload({ code, stage: "capture", message: `${code}: x (hint)` });
+    assert.equal(payload.code, code);
+    assert.equal(payload.stage, "capture");
+  }
+});

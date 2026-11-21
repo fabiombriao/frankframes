@@ -1,7 +1,8 @@
 // FrankFrames — proprietário. Ver LICENSE na raiz.
 import { availableParallelism, totalmem } from "node:os";
 import { openSession } from "./capture.ts";
-import type { Session } from "./capture.ts";
+import type { Session, SessionTimeouts } from "./capture.ts";
+import type { ServerFailure } from "./server.ts";
 import type { GpuMode, Viewport } from "./args.ts";
 
 export interface ParallelCaptureOptions {
@@ -15,6 +16,10 @@ export interface ParallelCaptureOptions {
   workers?: number;
   /** Chamado no worker logo após cada captura, antes do próximo frame. */
   onFrame?: (frame: number, png: Buffer) => void | Promise<void>;
+  /** Limites de espera de cada sessão (veja `SessionTimeouts`). */
+  timeouts?: SessionTimeouts;
+  /** Falhas do servidor da página (`StaticServer.failures`): entram na mensagem quando uma sessão falha. */
+  serverFailures?: () => ServerFailure[];
 }
 
 /**
@@ -69,6 +74,8 @@ export async function captureFramesInParallel(options: ParallelCaptureOptions): 
           url: options.url,
           viewport: options.viewport,
           gpu: options.gpu,
+          ...(options.timeouts !== undefined ? { timeouts: options.timeouts } : {}),
+          ...(options.serverFailures !== undefined ? { serverFailures: options.serverFailures } : {}),
         });
         sessions.push(session);
 

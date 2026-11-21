@@ -10,7 +10,7 @@ import { loadComposition } from "@frankframes/contract";
 import type { Composition, Diagnostic, RawClip, ResolvedClip } from "@frankframes/contract";
 import { buildFrameSequenceArgs, buildMuxArgs, containerFor } from "@frankframes/encode";
 import type { Preset, VideoCodec } from "@frankframes/encode";
-import { assetPath, captureFramesInParallel, extractFramesCached, probeDuration, retryOnceIfTransient, startServer } from "@frankframes/engine";
+import { BrowserError, assetPath, captureFramesInParallel, extractFramesCached, probeDuration, retryOnceIfTransient, startServer } from "@frankframes/engine";
 import type { MediaManifest } from "@frankframes/engine";
 import { annotateCompiled, materializeClipIds, mergeSubCompositions } from "./compile.ts";
 import { resolveFfmpeg } from "./ffmpeg.ts";
@@ -62,6 +62,15 @@ function motionFailure(error: unknown): RenderError | undefined {
   const message = error instanceof Error ? error.message : String(error);
   const match = /E_MOTION_[A-Z_]+: [^\r\n]*/.exec(message);
   return match === null ? undefined : new RenderError("E_MOTION_RUNTIME", "capture", match[0]);
+}
+
+/**
+ * O Chrome caiu ou parou de responder durante a captura: o código já vem do engine
+ * (`BrowserError`), com o hint dentro da mensagem.
+ */
+function browserFailure(error: unknown): RenderError | undefined {
+  if (!(error instanceof BrowserError)) return undefined;
+  return new RenderError(error.code, "capture", error.message);
 }
 
 /**
@@ -311,6 +320,7 @@ export async function renderComposition(options: RenderOptions): Promise<RenderR
           gpu,
           fps,
           frames,
+          serverFailures: server.failures,
           ...(options.workers !== undefined ? { workers: options.workers } : {}),
           onFrame: async (frame, png) => {
             await writeFile(join(framesDir, `frame_${String(frame + 1).padStart(6, "0")}.png`), png);
@@ -318,7 +328,7 @@ export async function renderComposition(options: RenderOptions): Promise<RenderR
         }),
       );
     } catch (error) {
-      throw motionFailure(error) ?? fontFailure(error) ?? error;
+      throw motionFailure(error) ?? fontFailure(error) ?? browserFailure(error) ?? error;
     } finally {
       await server.close();
     }

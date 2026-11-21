@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { openSession, resolveChrome, startServer } from "../src/index.ts";
+import { openSession, openSessionFor, resolveChrome, startServer } from "../src/index.ts";
 
 const FPS = { num: 30, den: 1 };
 const VIEWPORT = { width: 640, height: 360 };
@@ -42,7 +42,7 @@ async function chromeOrSkip(t: TestContext): Promise<boolean> {
 /** Abre a página, espera `idleMs` de tempo real e captura os frames pedidos. */
 async function capture(dir: string, idleMs: number, frames: number[]): Promise<string[]> {
   const server = await startServer(dir, { page: { path: "index.html", html: HTML } });
-  const session = await openSession({ url: `${server.url}index.html`, viewport: VIEWPORT, gpu: "software", captureShots: 3 });
+  const session = await openSessionFor(server, { url: `${server.url}index.html`, viewport: VIEWPORT, gpu: "software", captureShots: 3 });
   try {
     await new Promise((resolve) => setTimeout(resolve, idleMs));
     const hashes: string[] = [];
@@ -73,7 +73,7 @@ test("a prontidão pausa as animações em 0 antes do primeiro seek", { timeout:
 
   const dir = await mkdtemp(join(tmpdir(), "ff-anim-paused-"));
   const server = await startServer(dir, { page: { path: "index.html", html: HTML } });
-  const session = await openSession({ url: `${server.url}index.html`, viewport: VIEWPORT, gpu: "software" });
+  const session = await openSessionFor(server, { url: `${server.url}index.html`, viewport: VIEWPORT, gpu: "software" });
   try {
     await new Promise((resolve) => setTimeout(resolve, 1500));
     const states = await session.evaluate<Array<[string, number]>>(

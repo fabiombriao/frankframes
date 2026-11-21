@@ -7,7 +7,7 @@ import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import { openSession, resolveChrome, startServer } from "@frankframes/engine";
+import { openSession, openSessionFor, resolveChrome, startServer } from "@frankframes/engine";
 import { compileComposition } from "../src/compile.ts";
 import { RenderError, renderComposition } from "../src/render.ts";
 
@@ -56,7 +56,7 @@ test("o motion anima pelo relógio e seek fora de ordem dá o mesmo frame", { ti
   assert.ok(compiled.html.includes("data-ff-motion"));
 
   const server = await startServer(dir, { page: { path: "index.html", html: compiled.html } });
-  const session = await openSession({ url: `${server.url}index.html`, viewport: VIEWPORT, gpu: "auto" });
+  const session = await openSessionFor(server, { url: `${server.url}index.html`, viewport: VIEWPORT, gpu: "auto" });
   try {
     const probe = async (frame: number): Promise<Probe> => {
       await session.seekFrame(frame, FPS);
@@ -114,7 +114,7 @@ test("clip dentro de sub-composição anima a partir do início do host", { time
   assert.equal(compiled.composition.ok, true, JSON.stringify(compiled.composition.diagnostics));
 
   const server = await startServer(dir, { page: { path: "index.html", html: compiled.html } });
-  const session = await openSession({ url: `${server.url}index.html`, viewport: VIEWPORT, gpu: "auto" });
+  const session = await openSessionFor(server, { url: `${server.url}index.html`, viewport: VIEWPORT, gpu: "auto" });
   try {
     const opacity = async (frame: number): Promise<number> => {
       await session.seekFrame(frame, FPS);

@@ -10,10 +10,10 @@
  */
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
-import { createWriteStream } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { runCommand } from "./stage.ts";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const fast = process.argv.includes("--fast");
@@ -51,34 +51,46 @@ function commandLine(command: string, args: string[]): { file: string; args: str
   return { file: command, args, shell: false };
 }
 
-async function stage(name: string, command: string, args: string[], logFile?: string): Promise<StageResult> {
+/** Prazos por etapa, em ms. Estourar um deles reprova a etapa e mata a árvore de processos dela. */
+const MINUTE = 60_000;
+const TIMEOUTS = {
+  política: 1 * MINUTE,
+  typecheck: 5 * MINUTE,
+  "testes rápidos": 5 * MINUTE,
+  "suíte completa": 25 * MINUTE,
+  doctor: 3 * MINUTE,
+  "render de fumaça": 10 * MINUTE,
+  pack: 3 * MINUTE,
+} as const;
+
+async function stage(
+  name: string,
+  command: string,
+  args: string[],
+  timeoutMs: number,
+  logFile?: string,
+): Promise<StageResult> {
   const started = Date.now();
   const { file, args: spawnArgs } = commandLine(command, args);
   process.stdout.write(`\n▶ ${name}\n`);
 
-  const finished = Promise.withResolvers<number>();
-  const sink = logFile === undefined ? undefined : createWriteStream(join(ROOT, logFile));
-  const child = spawn(file, spawnArgs, {
+  const run = await runCommand({
+    file,
+    args: spawnArgs,
     cwd: ROOT,
-    stdio: sink === undefined ? "inherit" : ["inherit", "pipe", "pipe"],
     env: { ...process.env, FORCE_COLOR: "1" },
+    timeoutMs,
+    ...(logFile === undefined ? {} : { logFile: join(ROOT, logFile) }),
   });
-  if (sink !== undefined) {
-    child.stdout?.on("data", (chunk: Buffer) => {
-      process.stdout.write(chunk);
-      sink.write(chunk);
-    });
-    child.stderr?.on("data", (chunk: Buffer) => {
-      process.stderr.write(chunk);
-      sink.write(chunk);
-    });
-    child.on("exit", () => sink.end());
-  }
-  child.on("error", () => finished.resolve(127));
-  child.on("exit", (value) => finished.resolve(value ?? 1));
-  const code = await finished.promise;
 
-  return { name, ok: code === 0, ms: Date.now() - started, ...(code === 0 ? {} : { detail: `exit ${code}` }) };
+  if (run.timedOut) {
+    const seconds = Math.round(timeoutMs / 1000);
+    process.stderr.write(
+      `\n✖ ${name}: prazo de ${seconds} s esgotado; árvore de processos encerrada. Fim da saída da etapa:\n${run.tail}\n`,
+    );
+    return { name, ok: false, ms: Date.now() - started, detail: `prazo de ${seconds} s esgotado${logFile === undefined ? "" : ` (log completo em ${logFile})`}` };
+  }
+  return { name, ok: run.code === 0, ms: Date.now() - started, ...(run.code === 0 ? {} : { detail: `exit ${run.code}` }) };
 }
 
 async function ffprobeSummary(): Promise<StageResult> {
@@ -106,33 +118,33 @@ async function ffprobeSummary(): Promise<StageResult> {
 const stages: StageResult[] = [];
 await mkdir(join(ROOT, "out"), { recursive: true });
 
-stages.push(await stage("política", process.execPath, ["scripts/check-policy.ts"]));
+stages.push(await stage("política", process.execPath, ["scripts/check-policy.ts"], TIMEOUTS.política));
 if (!stages.at(-1)?.ok) {
   process.stderr.write("\nparando na política\n");
   process.exit(1);
 }
 
-stages.push(await stage("typecheck", "npx", ["tsc", "--noEmit"]));
+stages.push(await stage("typecheck", "npx", ["tsc", "--noEmit"], TIMEOUTS.typecheck));
 if (!stages.at(-1)?.ok) {
   process.stderr.write("\nparando no typecheck\n");
   process.exit(1);
 }
 
-stages.push(await stage("testes rápidos", process.execPath, ["--test", ...FAST_TESTS]));
+stages.push(await stage("testes rápidos", process.execPath, ["--test", ...FAST_TESTS], TIMEOUTS["testes rápidos"]));
 
 if (!fast) {
-  const full = await stage("suíte completa", process.execPath, ["--test", "--test-concurrency=1", "packages/*/test/*.test.ts"], "out/ci-suite.log");
+  const full = await stage("suíte completa", process.execPath, ["--test", "--test-concurrency=1", "packages/*/test/*.test.ts"], TIMEOUTS["suíte completa"], "out/ci-suite.log");
   stages.push(full);
   if (full.ok) {
-    stages.push(await stage("doctor", process.execPath, ["packages/cli/src/cli.ts", "doctor"]));
-    stages.push(await stage("render de fumaça", process.execPath, ["packages/cli/src/cli.ts", "render", "examples/hello.html", "-o", "out/ci.mp4", "--preset", "draft", "--workers", "2"]));
+    stages.push(await stage("doctor", process.execPath, ["packages/cli/src/cli.ts", "doctor"], TIMEOUTS.doctor));
+    stages.push(await stage("render de fumaça", process.execPath, ["packages/cli/src/cli.ts", "render", "examples/hello.html", "-o", "out/ci.mp4", "--preset", "draft", "--workers", "2"], TIMEOUTS["render de fumaça"]));
     if (stages.at(-1)?.ok) stages.push(await ffprobeSummary());
   }
 }
 
 if (release) {
   for (const workspace of ["contract", "encode", "engine", "producer", "transcribe", "catalog", "cli"]) {
-    stages.push(await stage(`pack ${workspace}`, "npm", ["pack", "--dry-run", "-w", `@frankframes/${workspace}`]));
+    stages.push(await stage(`pack ${workspace}`, "npm", ["pack", "--dry-run", "-w", `@frankframes/${workspace}`], TIMEOUTS.pack));
   }
 }
 

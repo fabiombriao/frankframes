@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { openSession, resolveChrome, startServer } from "../src/index.ts";
+import { openSession, openSessionFor, resolveChrome, startServer } from "../src/index.ts";
 
 const COMPOSITION = `<html><head><style>
   .b { position: fixed; top: 0; left: 0; width: 50px; height: 50px; background: #f00; animation: m 4s linear infinite; }
@@ -38,7 +38,7 @@ test("preview roda em tempo real e respeita a janela dos clips", { timeout: 120_
   await writeFile(join(dir, "index.html"), COMPOSITION);
 
   const server = await startServer(dir, { live: true });
-  const session = await openSession({ url: server.url, viewport: { width: 640, height: 360 }, gpu: "auto" });
+  const session = await openSessionFor(server, { url: server.url, viewport: { width: 640, height: 360 }, gpu: "auto" });
   try {
     const visibility = await session.evaluate<string>(
       `getComputedStyle(document.querySelector('[data-clip-id="late"]')).visibility`,
@@ -82,7 +82,7 @@ test("falha ao gravar o instante em sessionStorage vai para liveErrors, uma vez 
   await writeFile(join(dir, "index.html"), COMPOSITION);
 
   const server = await startServer(dir, { live: true });
-  const session = await openSession({ url: server.url, viewport: { width: 640, height: 360 }, gpu: "auto" });
+  const session = await openSessionFor(server, { url: server.url, viewport: { width: 640, height: 360 }, gpu: "auto" });
   try {
     // Storage cheio/bloqueado: o setItem passa a lançar, e o relógio recomeça já com isso.
     await session.evaluate(

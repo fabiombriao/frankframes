@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { openSession, resolveChrome, startServer } from "../src/index.ts";
+import { openSession, openSessionFor, resolveChrome, startServer } from "../src/index.ts";
 
 const COMPOSITION = `<html><head><style>
   .b { position: fixed; top: 0; left: 0; width: 40px; height: 40px; background: #ff2d55; animation: m 3s linear infinite; }
@@ -32,7 +32,7 @@ async function withShortPreview(
   const dir = await mkdtemp(join(tmpdir(), "ff-ui-short-"));
   await writeFile(join(dir, "index.html"), SHORT);
   const server = await startServer(dir, { live: true, preview: { fps: { num: 30, den: 1 }, frames: 15 } });
-  const session = await openSession({ url: server.url, viewport: { width: 480, height: 270 }, gpu: "auto" });
+  const session = await openSessionFor(server, { url: server.url, viewport: { width: 480, height: 270 }, gpu: "auto" });
   try {
     await run(session);
   } finally {
@@ -95,7 +95,7 @@ test("barra do preview: pausa, scrub por frame e #f na URL", { timeout: 120_000 
   await writeFile(join(dir, "index.html"), COMPOSITION);
 
   const server = await startServer(dir, { live: true, preview: { fps: { num: 30, den: 1 }, frames: 90 } });
-  const session = await openSession({ url: server.url, viewport: { width: 480, height: 270 }, gpu: "auto" });
+  const session = await openSessionFor(server, { url: server.url, viewport: { width: 480, height: 270 }, gpu: "auto" });
   try {
     const hasBar = await session.evaluate<boolean>(`!!document.querySelector("[data-ff-ui]")`);
     assert.equal(hasBar, true, "preview precisa da barra de controle");

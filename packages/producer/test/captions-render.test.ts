@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { tmpdir } from "node:os";
-import { openSession, resolveChrome, startServer } from "@frankframes/engine";
+import { openSession, openSessionFor, resolveChrome, startServer } from "@frankframes/engine";
 import { prepare } from "../src/render.ts";
 import { buildCaptionComposition } from "../src/captions.ts";
 
@@ -34,7 +34,7 @@ test("karaokê acende a palavra no instante certo", { timeout: 300_000 }, async 
 
   const prepared = await prepare({ entry });
   const server = await startServer(prepared.entryDir, { page: { path: basename(prepared.entry), html: prepared.compiledHtml } });
-  const session = await openSession({ url: `${server.url}${basename(entry)}`, viewport: prepared.viewport, gpu: "software" });
+  const session = await openSessionFor(server, { url: `${server.url}${basename(entry)}`, viewport: prepared.viewport, gpu: "software" });
   try {
     const colors = () =>
       session.evaluate<string[]>(`[...document.querySelectorAll("span.w")].map((span) => getComputedStyle(span).color)`);

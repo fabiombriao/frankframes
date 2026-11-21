@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { injectionScript, openSession, resolveChrome, startServer } from "../src/index.ts";
+import { injectionScript, openSession, openSessionFor, resolveChrome, startServer } from "../src/index.ts";
 import type { PreviewAudioConfig } from "../src/index.ts";
 
 /** WAV PCM mono 8 kHz com um tom de 440 Hz. */
@@ -66,7 +66,7 @@ async function withPage(
   await writeFile(join(dir, "index.html"), PAGE);
   await writeFile(join(dir, "tone.wav"), tone(6));
   const server = await startServer(dir, { live: true, preview: META, audio });
-  const session = await openSession({ url: server.url, viewport: { width: 640, height: 360 }, gpu: "auto" });
+  const session = await openSessionFor(server, { url: server.url, viewport: { width: 640, height: 360 }, gpu: "auto" });
   try {
     await body(session, dir);
     assert.deepEqual(await session.evaluate<string[]>("window.__ff.liveErrors"), [], "nenhum erro engolido no laço");
@@ -129,7 +129,7 @@ test("src do mix inexistente: erro visível na barra e em liveErrors", { timeout
   const dir = await mkdtemp(join(tmpdir(), "ff-preview-audio-"));
   await writeFile(join(dir, "index.html"), PAGE);
   const server = await startServer(dir, { live: true, preview: META, audio: { src: "/nao-existe.wav" } });
-  const session = await openSession({ url: server.url, viewport: { width: 640, height: 360 }, gpu: "auto" });
+  const session = await openSessionFor(server, { url: server.url, viewport: { width: 640, height: 360 }, gpu: "auto" });
   try {
     const failed = await until(() => audioState(session), (s) => s.status === "error", "falha de download virar error");
     assert.match(failed.error ?? "", /E_PREVIEW_AUDIO.*404/);
@@ -158,7 +158,7 @@ test("falha do mix no servidor e composição longa aparecem na barra, sem derru
     [{ disabled: "áudio do preview desligado acima de 20 min" }, "disabled", /20 min/],
   ] as const) {
     const server = await startServer(dir, { live: true, preview: META, audio });
-    const session = await openSession({ url: server.url, viewport: { width: 640, height: 360 }, gpu: "auto" });
+    const session = await openSessionFor(server, { url: server.url, viewport: { width: 640, height: 360 }, gpu: "auto" });
     try {
       await until(() => audioState(session), (s) => s.status === status, `status ${status}`);
       const text = await session.evaluate<string>(`document.querySelector("[data-ff-audio-status]").textContent`);

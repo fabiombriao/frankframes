@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { extractFrames } from "../src/media.ts";
-import { openSession, resolveChrome, startServer } from "../src/index.ts";
+import { openSession, openSessionFor, resolveChrome, startServer } from "../src/index.ts";
 import { assetPath } from "../src/home.ts";
 import type { MediaManifest } from "../src/media.ts";
 
@@ -54,7 +54,7 @@ test("preview toca o vídeo fora de banda em tempo real", { timeout: 300_000 }, 
     live: true,
     preview: { fps: { num: 30, den: 1 }, frames: 60 },
   });
-  const session = await openSession({ url: server.url, viewport: { width: 320, height: 180 }, gpu: "software" });
+  const session = await openSessionFor(server, { url: server.url, viewport: { width: 320, height: 180 }, gpu: "software" });
   try {
     await sleep(400);
     const first = await session.evaluate<string>(`document.querySelector("img[data-ff-media]").src`);

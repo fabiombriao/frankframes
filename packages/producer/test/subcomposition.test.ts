@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { openSession, resolveChrome, startServer } from "@frankframes/engine";
+import { openSession, openSessionFor, resolveChrome, startServer } from "@frankframes/engine";
 import { compileComposition } from "../src/compile.ts";
 
 const ENTRY = `<!doctype html>
@@ -40,7 +40,7 @@ test("sub-composição de arquivo só aparece na janela dela", { timeout: 300_00
   assert.ok(compiled.html.includes('data-ff-start="1000"'), "host anotado com início absoluto");
 
   const server = await startServer(dir, { page: { path: "index.html", html: compiled.html } });
-  const session = await openSession({ url: `${server.url}index.html`, viewport: { width: 640, height: 360 }, gpu: "auto" });
+  const session = await openSessionFor(server, { url: `${server.url}index.html`, viewport: { width: 640, height: 360 }, gpu: "auto" });
   try {
     const visibility = (selector: string) =>
       session.evaluate<string>(`getComputedStyle(document.querySelector(${JSON.stringify(selector)})).visibility`);

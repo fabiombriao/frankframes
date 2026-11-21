@@ -1,6 +1,6 @@
 // FrankFrames — proprietário. Ver LICENSE na raiz.
 import { createServer } from "node:http";
-import { readFile } from "node:fs/promises";
+import { readFile as nodeReadFile } from "node:fs/promises";
 import { extname, join, normalize, resolve, sep } from "node:path";
 import { assetPath } from "./home.ts";
 import type { AddressInfo } from "node:net";
@@ -33,10 +33,24 @@ const MIME: Record<string, string> = {
   ".txt": "text/plain; charset=utf-8",
 };
 
+/** Falha de leitura de arquivo no servidor: cada tentativa extra e cada falha final ficam registradas. */
+export interface ServerFailure {
+  /** Caminho da URL pedida (sem a raiz do disco). */
+  path: string;
+  /** Código do erro do sistema (EBUSY, EPERM, EACCES, ...). */
+  code: string;
+  /** Tentativa que falhou, começando em 1. */
+  attempt: number;
+  /** `retry`: vai tentar de novo; `failed`: respondeu 500. */
+  outcome: "retry" | "failed";
+}
+
 export interface StaticServer {
   url: string;
   /** Avisa os clientes do preview que o arquivo mudou. */
   notify: () => void;
+  /** Falhas recentes de leitura (as últimas 50), da mais antiga para a mais nova. */
+  failures: () => ServerFailure[];
   close: () => Promise<void>;
 }
 
@@ -57,7 +71,22 @@ export interface ServerOptions {
   audio?: PreviewAudioConfig;
   /** Diretório dos mixes de preview servido em `/__ff_audio/<sha256>.wav`. */
   audioDir?: string;
+  /** Leitura de arquivo. Só existe para o teste provar o retry e o 500 sem travar um arquivo de verdade. */
+  readFile?: (path: string) => Promise<Buffer>;
+  /** Destino do registro de falhas de leitura, uma linha por evento (padrão: stderr). */
+  log?: (line: string) => void;
 }
+
+/**
+ * Erros do sistema que costumam ser passageiros no Windows (sincronizador de pasta,
+ * antivírus segurando o arquivo): a única leitura que se repete, e só estas.
+ */
+const TRANSIENT_READ_CODES = new Set(["EBUSY", "EPERM", "EACCES"]);
+/** Espera antes de cada nova tentativa: no máximo 3 tentativas extras. */
+const READ_RETRY_DELAYS_MS = [50, 100, 200];
+/** Arquivo que não existe: 404. Qualquer outro erro de leitura é 500 com o código. */
+const NOT_FOUND_CODES = new Set(["ENOENT", "ENOTDIR", "EISDIR"]);
+const MAX_FAILURES = 50;
 
 const MEDIA_PREFIX = "/__ff_media/";
 const FONTS_PREFIX = "/__ff_fonts/";
@@ -72,6 +101,31 @@ const AUDIO_NAME = /^[0-9a-f]{64}\.wav$/;
  */
 export async function startServer(rootDir: string, options: ServerOptions = {}): Promise<StaticServer> {
   const clients = new Set<import("node:http").ServerResponse>();
+  const failures: ServerFailure[] = [];
+  const log = options.log ?? ((line: string) => void process.stderr.write(`${line}\n`));
+  const record = (failure: ServerFailure): void => {
+    failures.push(failure);
+    if (failures.length > MAX_FAILURES) failures.shift();
+    // Falha de leitura é rara e importa: fica no log do processo (no gate, em out/ci-suite.log).
+    const next = failure.outcome === "retry" ? "vai repetir" : "sem sucesso";
+    log(`[frankframes] servidor: ${failure.code} ao ler ${failure.path} (tentativa ${failure.attempt}, ${next})`);
+  };
+  const readFile = options.readFile ?? ((path: string) => nodeReadFile(path));
+  /** Lê o arquivo; repete só erro passageiro, no máximo 3 vezes, e registra cada tentativa. */
+  const readAsset = async (file: string, path: string): Promise<Buffer> => {
+    for (let attempt = 1; ; attempt += 1) {
+      try {
+        return await readFile(file);
+      } catch (error) {
+        const code = (error as NodeJS.ErrnoException).code ?? "";
+        if (!TRANSIENT_READ_CODES.has(code)) throw error;
+        const delay = READ_RETRY_DELAYS_MS[attempt - 1];
+        record({ path, code, attempt, outcome: delay === undefined ? "failed" : "retry" });
+        if (delay === undefined) throw error;
+        await new Promise((resolveDelay) => setTimeout(resolveDelay, delay));
+      }
+    }
+  };
   const roots = {
     site: resolve(rootDir),
     media: options.mediaRoot ? resolve(options.mediaRoot) : undefined,
@@ -102,7 +156,7 @@ export async function startServer(rootDir: string, options: ServerOptions = {}):
           response.writeHead(404).end("não encontrado");
           return;
         }
-        const wav = await readFile(join(resolve(options.audioDir), name));
+        const wav = await readAsset(join(resolve(options.audioDir), name), pathname);
         response.writeHead(200, { "content-type": "audio/wav", "cache-control": "no-store" }).end(wav);
         return;
       }
@@ -131,7 +185,7 @@ export async function startServer(rootDir: string, options: ServerOptions = {}):
       }
 
       const isEntry = options.page !== undefined && (pathname === "/" || pathname === `/${options.page.path}`);
-      const raw = isEntry ? Buffer.from(options.page!.html) : await readFile(file);
+      const raw = isEntry ? Buffer.from(options.page!.html) : await readAsset(file, pathname);
       const type = isEntry ? "text/html; charset=utf-8" : (MIME[extname(file).toLowerCase()] ?? "application/octet-stream");
       const body = type.startsWith("text/html")
         ? Buffer.from(
@@ -146,8 +200,19 @@ export async function startServer(rootDir: string, options: ServerOptions = {}):
           )
         : raw;
       response.writeHead(200, { "content-type": type, "cache-control": "no-store" }).end(body);
-    } catch {
-      response.writeHead(404).end("não encontrado");
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (error instanceof URIError) {
+        response.writeHead(400).end("URL inválida");
+      } else if (code !== undefined && NOT_FOUND_CODES.has(code)) {
+        response.writeHead(404).end("não encontrado");
+      } else {
+        // Qualquer outro erro é falha do servidor, não "arquivo ausente": o corpo traz o código.
+        const detail = code ?? (error instanceof Error ? error.message : String(error));
+        const path = new URL(request.url ?? "/", "http://127.0.0.1").pathname;
+        if (code === undefined || !TRANSIENT_READ_CODES.has(code)) record({ path, code: detail, attempt: 1, outcome: "failed" });
+        response.writeHead(500, { "content-type": "text/plain; charset=utf-8" }).end(`erro ao servir o arquivo: ${detail}`);
+      }
     }
   });
 
@@ -155,19 +220,25 @@ export async function startServer(rootDir: string, options: ServerOptions = {}):
   server.listen(0, "127.0.0.1", listening.resolve);
   await listening.promise;
   const { port } = server.address() as AddressInfo;
+  let closing: Promise<void> | undefined;
 
   return {
     url: `http://127.0.0.1:${port}/`,
+    failures: () => [...failures],
     notify: () => {
       for (const client of clients) client.write("data: reload\n\n");
     },
-    close: async () => {
-      for (const client of clients) client.end();
-      clients.clear();
-      const closed = Promise.withResolvers<void>();
-      server.closeAllConnections();
-      server.close((error) => (error ? closed.reject(error) : closed.resolve()));
-      return closed.promise;
+    // Idempotente: quem abre a sessão pode ter fechado o servidor numa falha, e o `finally` do chamador fecha de novo.
+    close: () => {
+      closing ??= (async () => {
+        for (const client of clients) client.end();
+        clients.clear();
+        const closed = Promise.withResolvers<void>();
+        server.closeAllConnections();
+        server.close((error) => (error ? closed.reject(error) : closed.resolve()));
+        await closed.promise;
+      })();
+      return closing;
     },
   };
 }

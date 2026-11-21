@@ -6,7 +6,7 @@ import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import { extractFrames, openSession, resolveChrome, startServer } from "../src/index.ts";
+import { extractFrames, openSession, openSessionFor, resolveChrome, startServer } from "../src/index.ts";
 import type { MediaManifest } from "../src/media.ts";
 
 const run = promisify(execFile);
@@ -68,7 +68,7 @@ test("vídeo fora de banda: <video> vira <img> e o frame é estável", { timeout
 
   const captureRun = async (order: number[]): Promise<Map<number, string>> => {
     const server = await startServer(workspace, { mediaRoot: mediaDir, manifest });
-    const session = await openSession({ url: server.url, viewport: { width: 640, height: 360 }, gpu: "auto" });
+    const session = await openSessionFor(server, { url: server.url, viewport: { width: 640, height: 360 }, gpu: "auto" });
     const hashes = new Map<number, string>();
     try {
       for (const frame of order) {
@@ -136,7 +136,7 @@ test("imagem substituta respeita a janela do clip", { timeout: 300_000 }, async 
   );
 
   const server = await startServer(workspace, { mediaRoot: mediaDir, manifest });
-  const session = await openSession({ url: server.url, viewport: { width: 640, height: 360 }, gpu: "auto" });
+  const session = await openSessionFor(server, { url: server.url, viewport: { width: 640, height: 360 }, gpu: "auto" });
   try {
     const visibility = () => session.evaluate<string>(`getComputedStyle(document.querySelector("img[data-ff-media]")).visibility`);
 

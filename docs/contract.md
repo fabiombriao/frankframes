@@ -315,6 +315,24 @@ O contrato promete isto ao autor, e o engine tem que cumprir:
    reserva. A mensagem traz a família, o peso e o estilo da face e manda conferir o `src` do `@font-face` ou a
    fonte em `vendor/fonts`. Face declarada e nunca usada também falha: declarar é prometer que carrega, e
    apagar o `@font-face` morto é a correção. O código é de render, como `E_MOTION_RUNTIME`.
+9. **Captura nunca espera para sempre.** O servidor local e a sessão do browser falham alto, com código e `hint`:
+   - **Servidor de assets.** Caminho que não existe (`ENOENT`, `ENOTDIR`, `EISDIR`) responde `404`. Qualquer outro
+     erro de leitura responde `500` com o código do sistema no corpo (`erro ao servir o arquivo: EBUSY`); nunca
+     vira `404`. Só `EBUSY`, `EPERM` e `EACCES` são repetidos, e só dentro da leitura do servidor: no máximo 3
+     repetições, com 50, 100 e 200 ms de espera; esgotadas, `500`. Cada falha e cada repetição vai para o
+     log do servidor (uma linha em stderr: `[frankframes] servidor: EBUSY ao ler /x (tentativa 2, vai repetir)`) e para o
+     registro dele (`failures()`, as 50 mais recentes: caminho, código, tentativa, resultado), e esse
+     registro é anexado à mensagem da falha da sessão (`E_FONT_LOAD: … [servidor: EBUSY ao ler fonts/X.woff2 (4 falha(s),
+     sem sucesso)]`). Nenhuma outra camada repete leitura de arquivo.
+   - **Queda do browser.** Se o Chrome cai ou é encerrado, toda operação pendente da sessão rejeita com
+     `E_BROWSER_CLOSED`, e toda operação seguinte rejeita na hora com o mesmo código. A sessão não repete por
+     conta própria; o render faz uma única repetição classificada dessa falha (`retryOnceIfTransient`).
+   - **Prazos explícitos.** Abrir o Chrome (60 s), a prontidão da página (120 s), cada seek (60 s) e cada captura
+     (120 s) têm prazo. Estourar um deles rejeita com `E_BROWSER_TIMEOUT`, cuja mensagem diz qual operação
+     passou do prazo e cujo `hint` diz o que conferir. Estouro de prazo não é repetido.
+   - **Quem abre fecha.** Se a abertura da sessão rejeita, o Chrome e o servidor local são fechados antes de
+     a rejeição chegar ao chamador (`openSessionFor`); fechar o servidor duas vezes é permitido.
+   Os dois códigos são códigos de render (`stage: "capture"`), como `E_FONT_LOAD`.
 
 **GPU:** o padrão é `auto` — hardware quando existe, SwiftShader como fallback. Igualdade byte-a-byte
 entre *máquinas diferentes* só é prometida em `software`; em `hardware` a promessa é "igual nesta
