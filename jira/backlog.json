@@ -336,6 +336,17 @@
           ],
           "acceptance": "Visto em 2026-11-21: frankframes captions video-teste.mp4 (Groq) escreveu o HTML e então o processo caiu com \"Assertion failed: !(handle->flags & UV_HANDLE_CLOSING), file src/win/async.c\" e exit 127, de forma intermitente (com e sem --motion). Provável process.exit() enquanto handles do fetch ainda fecham. Critério: (1) a CLI termina pelo fim natural do event loop com process.exitCode, sem process.exit() no caminho de sucesso, ou fecha explicitamente o que abriu antes de sair; (2) comando que deu certo sai com 0 em 10 execuções seguidas de captions com transcrição remota simulada por servidor local; (3) teste que roda a CLI como processo filho contra um servidor HTTP local e exige exit 0 e stderr sem Assertion.",
           "jiraKey": "EDT-71"
+        },
+        {
+          "summary": "Gate completo sem teste que falha só sob carga",
+          "points": 2,
+          "labels": [
+            "testes",
+            "robustez",
+            "bug"
+          ],
+          "acceptance": "Visto em 2026-11-21, sempre na rodada completa de node scripts/ci.ts e nunca isolado: (a) preview-audio.test.ts falhou 3 vezes (EDT-50, EDT-52, EDT-55) com deriva de cerca de -170 ms; (b) engine parallel.test.ts falhou 1 vez (EDT-54 Studio) com E_FONT_LOAD 'A network error occurred' ao carregar Poppins 600 de vendor/fonts. Critério: (1) causa de cada um diagnosticada e registrada no comentário do item (relógio, timeout, servidor de fontes, concorrência); (2) correção na causa, sem retry cego nem tolerância alargada sem justificativa medida; (3) se o problema for do produto (fonte local falhando sob carga), o render falha alto ou espera de forma determinística, com teste que reproduz a carga; (4) 5 rodadas completas seguidas do gate verdes.",
+          "jiraKey": "EDT-72"
         }
       ],
       "jiraKey": "EDT-26"
