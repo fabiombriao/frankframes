@@ -192,8 +192,8 @@ async function createIssue(input: {
   }
 }
 
-async function updateIssue(key: string, input: { description: string; labels: string[]; points?: number }): Promise<void> {
-  const fields: Record<string, unknown> = { description: input.description };
+async function updateIssue(key: string, input: { summary: string; description: string; labels: string[]; points?: number }): Promise<void> {
+  const fields: Record<string, unknown> = { summary: input.summary, description: input.description };
   if (input.labels.length > 0) fields.labels = input.labels;
   const pointsField = input.points === undefined ? null : await storyPointsField();
   if (pointsField !== null) fields[pointsField] = input.points;
@@ -376,6 +376,7 @@ async function main(): Promise<void> {
         process.stdout.write(`criado ${key} ${item.summary}\n`);
       } else {
         await updateIssue(item.key, {
+          summary: item.summary,
           description: item.description,
           labels: item.labels,
           ...(item.points !== undefined ? { points: item.points } : {}),

@@ -530,13 +530,12 @@
           "jiraKey": "EDT-58"
         },
         {
-          "summary": "Comando `frankframes generate` com LLM na CLI",
+          "summary": "Comando `frankframes generate` via Codex CLI (conta ChatGPT do titular)",
           "points": 8,
           "labels": [
-            "geracao",
-            "decisao-titular"
+            "geracao"
           ],
-          "acceptance": "Depende de decisão do titular: provedor, chave em .env e custo medido por vídeo antes de ligar. Gera a composição a partir do pedido, valida pelo contrato, abre no Studio; nunca envia mídia do projeto sem opt-in.",
+          "acceptance": "Decidido pelo titular: usa o Codex CLI instalado e logado com a conta ChatGPT (`codex exec` não interativo, sandbox read-only, --ephemeral), sem chave de API no produto. `frankframes generate \"pedido\"` gera a composição com skill e catálogo como contexto, valida pelo contrato (lint) e corrige em laço limitado, renderiza draft e abre no Studio. Codex ausente ou deslogado falha alto com E_CODEX_MISSING/E_CODEX_AUTH e hint (`codex login`); nunca envia mídia do projeto, só texto; teste usa um agente falso no lugar do codex.",
           "jiraKey": "EDT-59"
         }
       ],
