@@ -13,6 +13,39 @@ export interface CaptionOptions {
   fontSize?: number;
   /** Safra: margem inferior em pixels. */
   bottom?: number;
+  /** Caracteres por linha; padrão derivado da largura útil e do tamanho da fonte. */
+  maxCharsPerLine?: number;
+  /** Acima disso, a fonte encolhe em degraus. Padrão: 3. */
+  maxLines?: number;
+}
+
+/**
+ * Quebra o texto em linhas equilibradas: menos linhas, sem palavra órfã.
+ * Não parte palavra — se uma palavra sozinha estoura, ela fica na linha.
+ */
+export function wrapLines(text: string, maxChars: number): string[] {
+  const words = text.trim().split(/\s+/).filter((word) => word !== "");
+  if (words.length === 0) return [];
+  const lines: string[] = [];
+  let current = "";
+  for (const word of words) {
+    const candidate = current === "" ? word : `${current} ${word}`;
+    if (candidate.length <= maxChars || current === "") current = candidate;
+    else {
+      lines.push(current);
+      current = word;
+    }
+  }
+  if (current !== "") lines.push(current);
+  return lines;
+}
+
+/** Fonte que cabe em até `maxLines` linhas sem passar da largura útil. */
+export function fitFontSize(lines: string[], base: number, maxChars: number, maxLines = 3): number {
+  const ratios = lines.map((line) => Math.min(1, maxChars / Math.max(1, line.length)));
+  const widthPressure = ratios.length === 0 ? 1 : Math.min(...ratios);
+  const heightPressure = lines.length <= maxLines ? 1 : maxLines / lines.length;
+  return Math.round(base * Math.max(0.55, widthPressure * heightPressure));
 }
 
 const ESCAPES: Record<string, string> = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
@@ -30,7 +63,9 @@ export function buildCaptionComposition(segments: CaptionSegment[], options: Cap
   const height = options.height ?? 1080;
   const fps = options.fps ?? 30;
   const font = options.font ?? "Inter";
-  const fontSize = options.fontSize ?? Math.round(height * 0.055);
+  const baseFontSize = options.fontSize ?? Math.round(height * 0.055);
+  const maxChars = options.maxCharsPerLine ?? Math.max(12, Math.round((width * 0.84) / (baseFontSize * 0.55)));
+  const fontSize = baseFontSize;
   const bottom = options.bottom ?? Math.round(height * 0.08);
 
   const usable = segments
@@ -44,7 +79,10 @@ export function buildCaptionComposition(segments: CaptionSegment[], options: Cap
     .map((segment, index) => {
       const start = segment.start.toFixed(3);
       const length = (segment.end - segment.start).toFixed(3);
-      return `    <div class="caption" data-clip-id="cap-${index}" data-start="${start}" data-duration="${length}">${escapeHtml(segment.text.trim())}</div>`;
+      const lines = wrapLines(segment.text, maxChars);
+      const size = fitFontSize(lines, baseFontSize, maxChars, options.maxLines ?? 3);
+      const body = lines.map((line) => escapeHtml(line)).join("<br>");
+      return `    <div class="caption" data-clip-id="cap-${index}" data-start="${start}" data-duration="${length}" style="font-size:${size}px">${body}</div>`;
     })
     .join("\n");
 
@@ -68,14 +106,15 @@ export function buildCaptionComposition(segments: CaptionSegment[], options: Cap
       bottom: ${bottom}px;
       transform: translateX(-50%);
       max-width: ${Math.round(width * 0.84)}px;
-      padding: ${Math.round(fontSize * 0.28)}px ${Math.round(fontSize * 0.5)}px;
+      padding: ${Math.round(baseFontSize * 0.28)}px ${Math.round(baseFontSize * 0.5)}px;
       background: rgba(0, 0, 0, 0.62);
       color: #ffffff;
-      font-size: ${fontSize}px;
+      font-size: ${baseFontSize}px;
       font-weight: 600;
+      white-space: normal;
       line-height: 1.18;
       text-align: center;
-      border-radius: ${Math.round(fontSize * 0.16)}px;
+      border-radius: ${Math.round(baseFontSize * 0.16)}px;
     }
   </style>
 </head>

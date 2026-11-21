@@ -85,3 +85,12 @@ test("captureFramesInParallel: 1 worker e 3 workers produzem os mesmos hashes", 
     await server.close();
   }
 });
+
+test("workers padrão respeitam CPU, memória e o teto de 8", async () => {
+  const { defaultWorkerCount } = await import("../src/parallel.ts");
+  assert.equal(defaultWorkerCount(64, 64 * 1024 ** 3), 8, "muitos núcleos: teto 8");
+  assert.equal(defaultWorkerCount(8, 64 * 1024 ** 3), 4);
+  assert.equal(defaultWorkerCount(4, 64 * 1024 ** 3), 2, "mínimo 2");
+  assert.equal(defaultWorkerCount(32, 2 * 1024 ** 3), 2, "memória limita a 2");
+  assert.equal(defaultWorkerCount(2, 1 * 1024 ** 3), 2);
+});

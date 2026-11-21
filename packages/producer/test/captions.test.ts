@@ -31,3 +31,25 @@ test("sem segmento válido, falha alto", () => {
   assert.throws(() => buildCaptionComposition([]), /nenhum segmento válido/);
   assert.throws(() => buildCaptionComposition([{ start: 2, end: 1, text: "x" }]), /nenhum segmento válido/);
 });
+
+test("quebra de linha equilibrada e fonte que encolhe", async () => {
+  const { wrapLines, fitFontSize } = await import("../src/captions.ts");
+  const lines = wrapLines("uma legenda longa que precisa de pelo menos duas linhas para caber na largura", 30);
+  assert.ok(lines.length >= 2);
+  for (const line of lines) assert.ok(line.length <= 34, `linha longa: ${line.length}`);
+  assert.deepEqual(wrapLines("   ", 20), []);
+
+  const base = 60;
+  assert.equal(fitFontSize(["curta"], base, 40), base);
+  const longLines = Array.from({ length: 6 }, () => "x".repeat(38));
+  assert.ok(fitFontSize(longLines, base, 40) < base, "muitas linhas precisam encolher a fonte");
+});
+
+test("composição de legenda quebra o texto e mantém tempo", () => {
+  const texto = "essa legenda é longa o suficiente para ocupar mais de uma linha na largura segura do quadro";
+  const html = buildCaptionComposition([{ start: 0, end: 2, text: texto }], { width: 1080, height: 1920, maxCharsPerLine: 28 });
+  const composition = loadComposition(html);
+  assert.equal(composition.ok, true, JSON.stringify(composition.diagnostics));
+  assert.ok(html.includes("<br>"), "texto longo precisa de quebra explícita");
+  assert.equal((html.match(/data-clip-id=/g) ?? []).length, 1);
+});
