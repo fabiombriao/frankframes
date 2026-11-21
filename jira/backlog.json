@@ -374,6 +374,22 @@
             "teste: mudar um index.html e rodar o script deixa catalog-server.test.ts verde sem passo manual"
           ],
           "jiraKey": "EDT-74"
+        },
+        {
+          "summary": "data-start com id hifenizado (clip-1) não vira 'clip - 1'",
+          "points": 2,
+          "labels": [
+            "contrato",
+            "bug"
+          ],
+          "acceptance": [
+            "quando o valor inteiro de data-start é o id de um clip existente, é referência a ele com deslocamento 0 (id exato tem precedência sobre id ± n)",
+            "a correção vale para todo consumidor do contrato (resolve, motion/transição, edit.ts), feita uma vez no contrato",
+            "forma sem espaço que não é id existente ('a-0.25') continua sendo a − 0.25",
+            "docs/contract.md descreve a precedência no mesmo commit",
+            "testes que falhariam hoje: data-start=\"clip-1\" resolve no fim de clip-1; dividir um clip clip-N com referenciador de deslocamento 0 e aparar até deslocamento 0 deixam a composição válida e no tempo certo"
+          ],
+          "jiraKey": "EDT-75"
         }
       ],
       "jiraKey": "EDT-26"
