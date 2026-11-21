@@ -112,6 +112,16 @@ quando tiver espaço: `font-family: "Space Grotesk", sans-serif`.
 5. **Não deixe mídia sem `data-duration` nem duração medida.** Se o probe não puder medir, declare o
    tempo no elemento.
 
+## Legendas e áudio
+
+- `frankframes captions <audio> -o legendas.html` gera a composição de legendas. Se o provedor devolver
+  tempos por palavra, a saída é **karaokê**: cada palavra acende quando é falada
+  (`animation-delay` absoluto) e as anteriores ficam na cor de destaque.
+- Papel no mix: `data-audio-role="voice"` faz a música com `data-audio-role="music"` abaixar 9 dB.
+- Entrega sai normalizada a −14 LUFS; use `--no-loudness` só para pós-produção externa.
+- Animações CSS começam no tempo 0 da composição. Para a entrada acontecer quando o clip aparece,
+  use `animation-delay` igual ao `data-start` do clip — não confie no aparecimento para disparar.
+
 ## Checklist de entrega
 
 - [ ] Raiz com `data-composition-id`, `data-root="true"`, largura, altura, fps e duração > 0.
