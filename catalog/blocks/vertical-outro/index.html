@@ -31,7 +31,6 @@
     letter-spacing: 0.22em;
     text-transform: uppercase;
     color: rgba(20, 19, 15, 0.5);
-    animation: fade-in 0.6s ease-out both;
   }
   .kicker b { display: block; color: #c8412a; font-weight: 400; }
   .mark {
@@ -41,7 +40,6 @@
     width: 88px;
     height: 88px;
     border: 3px solid #14130f;
-    animation: mark-in 0.6s cubic-bezier(0.22, 0.8, 0.2, 1) 0.1s both;
   }
   .mark .stem {
     position: absolute;
@@ -51,7 +49,6 @@
     height: 50px;
     background: #14130f;
     transform-origin: top center;
-    animation: stem-in 0.5s cubic-bezier(0.22, 0.8, 0.2, 1) 0.3s both;
   }
   .mark .arm {
     position: absolute;
@@ -61,7 +58,6 @@
     height: 10px;
     background: #14130f;
     transform-origin: left center;
-    animation: arm-in 0.45s cubic-bezier(0.22, 0.8, 0.2, 1) 0.42s both;
   }
   .mark .dot {
     position: absolute;
@@ -70,7 +66,6 @@
     width: 12px;
     height: 12px;
     background: #c8412a;
-    animation: dot-in 0.35s cubic-bezier(0.22, 1.5, 0.4, 1) 0.55s both;
   }
   .title {
     position: absolute;
@@ -87,9 +82,8 @@
   .title i {
     display: block;
     font-style: normal;
-    animation: line-in 0.9s cubic-bezier(0.22, 0.8, 0.2, 1) both;
   }
-  .title .l2 i { animation-delay: 0.12s; font-style: italic; color: #c8412a; }
+  .title .l2 i { font-style: italic; color: #c8412a; }
   .rule {
     position: absolute;
     left: 96px;
@@ -98,7 +92,6 @@
     height: 4px;
     background: #14130f;
     transform-origin: left center;
-    animation: rule-in 0.7s cubic-bezier(0.22, 0.8, 0.2, 1) 0.5s both;
   }
   .signature {
     position: absolute;
@@ -108,7 +101,6 @@
     font-size: 92px;
     line-height: 1.1;
     color: #14130f;
-    animation: fade-in 0.8s ease-out 0.62s both;
   }
   .next {
     position: absolute;
@@ -118,7 +110,6 @@
     font-size: 32px;
     line-height: 1.5;
     color: rgba(20, 19, 15, 0.62);
-    animation: fade-in 0.8s ease-out 0.8s both;
   }
   .next strong { color: #14130f; }
   .foot {
@@ -135,66 +126,37 @@
     letter-spacing: 0.14em;
     text-transform: uppercase;
     color: rgba(20, 19, 15, 0.45);
-    animation: fade-in 0.8s ease-out 1s both;
   }
   .foot strong { display: block; font-family: "Inter", sans-serif; font-weight: 700; font-size: 28px; letter-spacing: 0; text-transform: none; color: #14130f; }
   .foot .right { text-align: right; }
-  @keyframes mark-in {
-    from { transform: scale(0.8); opacity: 0; }
-    to { transform: scale(1); opacity: 1; }
-  }
-  @keyframes stem-in {
-    from { transform: scaleY(0); }
-    to { transform: scaleY(1); }
-  }
-  @keyframes arm-in {
-    from { transform: scaleX(0); }
-    to { transform: scaleX(1); }
-  }
-  @keyframes dot-in {
-    from { transform: scale(0); }
-    to { transform: scale(1); }
-  }
-  @keyframes line-in {
-    from { transform: translateY(108%); }
-    to { transform: translateY(0); }
-  }
-  @keyframes rule-in {
-    from { transform: scaleX(0); }
-    to { transform: scaleX(1); }
-  }
-  @keyframes fade-in {
-    from { opacity: 0; transform: translateY(10px); }
-    to { opacity: 1; transform: translateY(0); }
-  }
 </style>
 </head>
 <body>
 <div class="stage" data-composition-id="vertical-outro" data-root="true" data-width="1080" data-height="1920" data-fps="30" data-duration="3">
   <div class="frame"></div>
 
-  <div class="kicker" data-clip-id="kicker" data-start="0" data-duration="3"><b>Fim do capítulo</b>Série Ofício · 04</div>
+  <div class="kicker" data-clip-id="kicker" data-start="0" data-duration="3" data-enter="subir distance=10 dur=0.6 curve=ease-out"><b>Fim do capítulo</b>Série Ofício · 04</div>
 
-  <div class="mark" data-clip-id="mark" data-start="0.1" data-duration="2.9">
-    <div class="stem"></div>
-    <div class="arm"></div>
-    <div class="dot"></div>
+  <div class="mark" data-clip-id="mark" data-start="0.1" data-duration="2.9" data-keyframes='[{"time":0,"scale":0.8,"opacity":0,"curve":"cubic-bezier(0.22,0.8,0.2,1)"},{"time":0.6,"scale":1,"opacity":1}]'>
+    <div class="stem" data-keyframes='[{"time":0.2,"scaleY":0,"curve":"cubic-bezier(0.22,0.8,0.2,1)"},{"time":0.7,"scaleY":1}]'></div>
+    <div class="arm" data-keyframes='[{"time":0.32,"scaleX":0,"curve":"cubic-bezier(0.22,0.8,0.2,1)"},{"time":0.77,"scaleX":1}]'></div>
+    <div class="dot" data-keyframes='[{"time":0.45,"scale":0,"curve":"cubic-bezier(0.22,1.5,0.4,1)"},{"time":0.8,"scale":1}]'></div>
   </div>
 
   <h1 class="title" data-clip-id="title" data-start="0.15" data-duration="2.85">
-    <span class="l1"><i>Até a</i></span>
-    <span class="l2"><i>próxima.</i></span>
+    <span class="l1"><i data-keyframes='[{"time":0,"y":72.74133,"curve":"cubic-bezier(0.14334,0.77175,0.33701,1)"},{"time":0.75,"y":0}]'>Até a</i></span>
+    <span class="l2"><i data-keyframes='[{"time":0,"y":152.64146,"curve":"cubic-bezier(0.19331,0.79564,0.21658,1)"},{"time":0.87,"y":0}]'>próxima.</i></span>
   </h1>
 
-  <div class="rule" data-clip-id="rule" data-start="0.5" data-duration="2.5"></div>
-  <div class="signature" data-clip-id="signature" data-start="0.62" data-duration="2.38">Mara &amp; João</div>
+  <div class="rule" data-clip-id="rule" data-start="0.5" data-duration="2.5" data-keyframes='[{"time":0,"scaleX":0,"curve":"cubic-bezier(0.22,0.8,0.2,1)"},{"time":0.7,"scaleX":1}]'></div>
+  <div class="signature" data-clip-id="signature" data-start="0.62" data-duration="2.38" data-enter="subir distance=10 dur=0.8 curve=ease-out">Mara &amp; João</div>
 
-  <p class="next" data-clip-id="next" data-start="0.8" data-duration="2.2">
+  <p class="next" data-clip-id="next" data-start="0.8" data-duration="2.2" data-enter="subir distance=10 dur=0.8 curve=ease-out">
     <strong>Episódio 05 — A ilha que some.</strong><br>
     Estreia na quinta, às 21h.
   </p>
 
-  <div class="foot" data-clip-id="foot" data-start="1" data-duration="2">
+  <div class="foot" data-clip-id="foot" data-start="1" data-duration="2" data-enter="subir distance=10 dur=0.8 curve=ease-out">
     <div><strong>@frankframes</strong>frankframes.studio</div>
     <div class="right"><strong>Porto Alegre</strong>2026</div>
   </div>

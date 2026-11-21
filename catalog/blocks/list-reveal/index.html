@@ -62,7 +62,6 @@
     gap: 20px;
     padding: 26px 0 30px;
     border-top: 1px solid rgba(241, 236, 223, 0.34);
-    animation: row-in 0.85s cubic-bezier(0.16, 0.85, 0.25, 1) both;
   }
   .item:last-child { border-bottom: 1px solid rgba(241, 236, 223, 0.34); }
   .item .num {
@@ -78,38 +77,30 @@
     letter-spacing: -0.025em;
   }
   .item .text small { display: block; margin-top: 10px; font: 400 19px/1.4 "Inter", sans-serif; letter-spacing: 0.01em; color: rgba(241, 236, 223, 0.5); }
-  @keyframes row-in {
-    from { transform: translateY(42px); opacity: 0; }
-    to { transform: translateY(0); opacity: 1; }
-  }
-  @keyframes fade-in {
-    from { opacity: 0; }
-    to { opacity: 1; }
-  }
 </style>
 </head>
 <body>
 <div class="stage" data-composition-id="list-reveal" data-root="true" data-width="1920" data-height="1080" data-fps="30" data-duration="4">
   <div class="kicker" data-clip-id="kicker" data-start="0" data-duration="4"><b>06</b>Três notas de montagem</div>
 
-  <div class="title" data-clip-id="title" data-start="0.1" data-duration="3.9" style="animation: fade-in 0.7s ease-out both">
+  <div class="title" data-clip-id="title" data-start="0.1" data-duration="3.9" data-enter="surgir dur=0.7 at=-0.1 curve=ease-out">
     O que<br><em>fica.</em>
   </div>
 
-  <div class="aside" data-clip-id="aside" data-start="0.35" data-duration="3.65" style="animation: fade-in 0.8s ease-out 0.3s both">
+  <div class="aside" data-clip-id="aside" data-start="0.35" data-duration="3.65" data-enter="surgir dur=0.8 at=-0.05 curve=ease-out">
     Notas retiradas<br>da ilha de edição<br>— caderno 12
   </div>
 
   <div class="list">
-    <div class="item" data-clip-id="item-light" data-start="0.55" data-duration="3.45" style="animation-delay: 0.55s">
+    <div class="item" data-clip-id="item-light" data-start="0.55" data-duration="3.45" data-enter="subir distance=42 dur=0.85 curve=cubic-bezier(0.16,0.85,0.25,1)">
       <div class="num">01</div>
       <div class="text">A luz antes do corte<small>O plano respira enquanto a fala ainda não chegou.</small></div>
     </div>
-    <div class="item" data-clip-id="item-silence" data-start="0.85" data-duration="3.15" style="animation-delay: 0.85s">
+    <div class="item" data-clip-id="item-silence" data-start="0.85" data-duration="3.15" data-enter="subir distance=42 dur=0.85 curve=cubic-bezier(0.16,0.85,0.25,1)">
       <div class="num">02</div>
       <div class="text">O silêncio depois da fala<small>Meio segundo a mais muda a leitura da cena inteira.</small></div>
     </div>
-    <div class="item" data-clip-id="item-error" data-start="1.15" data-duration="2.85" style="animation-delay: 1.15s">
+    <div class="item" data-clip-id="item-error" data-start="1.15" data-duration="2.85" data-enter="subir distance=42 dur=0.85 curve=cubic-bezier(0.16,0.85,0.25,1)">
       <div class="num">03</div>
       <div class="text">O erro que ninguém viu<small>Fica no corte final; some na terceira exibição.</small></div>
     </div>

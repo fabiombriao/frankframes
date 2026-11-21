@@ -27,7 +27,6 @@
     letter-spacing: 0.2em;
     text-transform: uppercase;
     color: rgba(20, 19, 15, 0.5);
-    animation: fade-in 0.6s ease-out both;
   }
   .top b { color: #c8412a; font-weight: 400; }
   .rule {
@@ -38,7 +37,6 @@
     height: 2px;
     background: #14130f;
     transform-origin: left center;
-    animation: rule-in 0.8s cubic-bezier(0.22, 0.8, 0.2, 1) both;
   }
   .figure {
     position: absolute;
@@ -65,7 +63,6 @@
     font-weight: 700;
     line-height: 1.1;
     letter-spacing: -0.035em;
-    animation: rise-in 0.8s cubic-bezier(0.22, 0.8, 0.2, 1) 0.4s both;
   }
   .claim span { color: rgba(20, 19, 15, 0.6); }
   .meter {
@@ -88,7 +85,6 @@
     height: 100%;
     background: #14130f;
     transform-origin: left center;
-    animation: meter-in 0.9s cubic-bezier(0.22, 0.8, 0.2, 1) 0.7s both;
   }
   .fill::after {
     content: "";
@@ -107,7 +103,6 @@
     font: 400 18px/1 "JetBrains Mono", monospace;
     letter-spacing: 0.12em;
     color: rgba(20, 19, 15, 0.4);
-    animation: fade-in 0.6s ease-out 0.8s both;
   }
   .note {
     position: absolute;
@@ -122,49 +117,32 @@
     letter-spacing: 0.1em;
     text-transform: uppercase;
     color: rgba(20, 19, 15, 0.45);
-    animation: fade-in 0.8s ease-out 1s both;
   }
   .note strong { display: block; font-family: "Inter", sans-serif; font-weight: 600; font-size: 26px; letter-spacing: 0; text-transform: none; color: #14130f; }
   .note .right { text-align: right; }
-  @keyframes rule-in {
-    from { transform: scaleX(0); }
-    to { transform: scaleX(1); }
-  }
   @keyframes figure-in {
     from { transform: translateY(60px); opacity: 0; clip-path: inset(0 0 100% 0); }
     to { transform: translateY(0); opacity: 1; clip-path: inset(0 0 -8% 0); }
-  }
-  @keyframes meter-in {
-    from { transform: scaleX(0); }
-    to { transform: scaleX(1); }
-  }
-  @keyframes rise-in {
-    from { transform: translateY(26px); opacity: 0; }
-    to { transform: translateY(0); opacity: 1; }
-  }
-  @keyframes fade-in {
-    from { opacity: 0; transform: translateY(10px); }
-    to { opacity: 1; transform: translateY(0); }
   }
 </style>
 </head>
 <body>
 <div class="stage" data-composition-id="vertical-stat" data-root="true" data-width="1080" data-height="1920" data-fps="30" data-duration="4">
-  <div class="top" data-clip-id="top" data-start="0" data-duration="4"><span>Hábitos de tela</span><b>2026</b></div>
-  <div class="rule" data-clip-id="rule" data-start="0" data-duration="4"></div>
+  <div class="top" data-clip-id="top" data-start="0" data-duration="4" data-enter="subir distance=10 dur=0.6 curve=ease-out"><span>Hábitos de tela</span><b>2026</b></div>
+  <div class="rule" data-clip-id="rule" data-start="0" data-duration="4" data-keyframes='[{"time":0,"scaleX":0,"curve":"cubic-bezier(0.22,0.8,0.2,1)"},{"time":0.8,"scaleX":1}]'></div>
 
   <div class="figure" data-clip-id="figure" data-start="0.12" data-duration="3.88">78<small>%</small></div>
 
-  <h1 class="claim" data-clip-id="claim" data-start="0.4" data-duration="3.6">
+  <h1 class="claim" data-clip-id="claim" data-start="0.4" data-duration="3.6" data-enter="subir distance=26 dur=0.8 curve=cubic-bezier(0.22,0.8,0.2,1)">
     assistem a vídeos <span>na vertical</span>, com o som desligado.
   </h1>
 
-  <div class="meter" data-clip-id="meter" data-start="0.55" data-duration="3.45">
-    <div class="track"><div class="fill" style="width: 78%"></div></div>
-    <div class="scale"><span>0</span><span>25</span><span>50</span><span>75</span><span>100</span></div>
+  <div class="meter" data-clip-id="meter" data-start="0.55" data-duration="3.45" data-enter="subir distance=10 dur=0.5 curve=ease-out">
+    <div class="track"><div class="fill" style="width: 78%" data-keyframes='[{"time":0.15,"scaleX":0,"curve":"cubic-bezier(0.22,0.8,0.2,1)"},{"time":1.05,"scaleX":1}]'></div></div>
+    <div class="scale" data-enter="subir distance=10 dur=0.6 at=0.25 curve=ease-out"><span>0</span><span>25</span><span>50</span><span>75</span><span>100</span></div>
   </div>
 
-  <div class="note" data-clip-id="note" data-start="1" data-duration="3">
+  <div class="note" data-clip-id="note" data-start="1" data-duration="3" data-enter="subir distance=10 dur=0.8 curve=ease-out">
     <div><strong>Amostra de 2.400 pessoas</strong>Pesquisa anual · mobile</div>
     <div class="right"><strong>Margem 2,1 p.p.</strong>Fonte: FrankFrames Lab</div>
   </div>

@@ -23,7 +23,6 @@
     letter-spacing: 0.22em;
     text-transform: uppercase;
     color: rgba(20, 19, 15, 0.5);
-    animation: fade-in 0.6s ease-out both;
   }
   .kicker b { color: #c8412a; font-weight: 400; margin-right: 14px; }
   .count {
@@ -34,7 +33,6 @@
     font-size: 86px;
     line-height: 1;
     color: rgba(20, 19, 15, 0.22);
-    animation: fade-in 0.6s ease-out 0.1s both;
   }
   .photo {
     position: absolute;
@@ -44,7 +42,6 @@
     height: 1040px;
     overflow: hidden;
     background: #e2dccb;
-    animation: photo-in 0.85s cubic-bezier(0.22, 0.8, 0.2, 1) 0.1s both;
   }
   .sun {
     position: absolute;
@@ -54,7 +51,6 @@
     height: 230px;
     border-radius: 50%;
     background: #f2e34c;
-    animation: sun-in 0.95s cubic-bezier(0.22, 0.8, 0.2, 1) 0.25s both;
   }
   .ridge-back {
     position: absolute;
@@ -64,7 +60,6 @@
     height: 420px;
     background: #bcb5a4;
     clip-path: polygon(0 100%, 14% 46%, 27% 72%, 44% 26%, 61% 64%, 78% 40%, 100% 100%);
-    animation: ridge-in 0.9s cubic-bezier(0.22, 0.8, 0.2, 1) 0.3s both;
   }
   .ridge-front {
     position: absolute;
@@ -74,7 +69,6 @@
     height: 360px;
     background: #8b8577;
     clip-path: polygon(0 100%, 12% 58%, 30% 84%, 48% 44%, 68% 76%, 84% 50%, 100% 100%);
-    animation: ridge-in 0.9s cubic-bezier(0.22, 0.8, 0.2, 1) 0.42s both;
   }
   .ground {
     position: absolute;
@@ -84,7 +78,6 @@
     height: 230px;
     background: #35332c;
     transform-origin: bottom center;
-    animation: ground-in 0.8s cubic-bezier(0.22, 0.8, 0.2, 1) 0.5s both;
   }
   .ground i {
     position: absolute;
@@ -103,7 +96,6 @@
     letter-spacing: 0.18em;
     text-transform: uppercase;
     color: rgba(244, 240, 230, 0.7);
-    animation: fade-in 0.7s ease-out 0.8s both;
   }
   .frame-label {
     position: absolute;
@@ -115,14 +107,12 @@
     letter-spacing: 0.16em;
     text-transform: uppercase;
     color: #f4f0e6;
-    animation: fade-in 0.7s ease-out 0.9s both;
   }
   .caption {
     position: absolute;
     left: 96px;
     right: 96px;
     top: 1320px;
-    animation: rise-in 0.8s cubic-bezier(0.22, 0.8, 0.2, 1) 0.9s both;
   }
   .caption h1 {
     margin: 0;
@@ -151,56 +141,31 @@
     letter-spacing: 0.14em;
     text-transform: uppercase;
     color: rgba(20, 19, 15, 0.45);
-    animation: fade-in 0.75s ease-out 1.05s both;
   }
   .meta b { font-weight: 400; color: #14130f; }
   .meta .right { text-align: right; }
-  @keyframes photo-in {
-    from { clip-path: inset(0 100% 0 0); }
-    to { clip-path: inset(0 0 0 0); }
-  }
-  @keyframes sun-in {
-    from { transform: translateY(90px); opacity: 0; }
-    to { transform: translateY(0); opacity: 1; }
-  }
-  @keyframes ridge-in {
-    from { transform: translateY(48px); opacity: 0; }
-    to { transform: translateY(0); opacity: 1; }
-  }
-  @keyframes ground-in {
-    from { transform: scaleY(0); }
-    to { transform: scaleY(1); }
-  }
-  @keyframes rise-in {
-    from { transform: translateY(24px); opacity: 0; }
-    to { transform: translateY(0); opacity: 1; }
-  }
-  @keyframes fade-in {
-    from { opacity: 0; }
-    to { opacity: 1; }
-  }
 </style>
 </head>
 <body>
 <div class="stage" data-composition-id="vertical-image" data-root="true" data-width="1080" data-height="1920" data-fps="30" data-duration="3.5">
-  <div class="kicker" data-clip-id="kicker" data-start="0" data-duration="3.5"><b>Arquivo</b>Paisagem</div>
-  <div class="count" data-clip-id="count" data-start="0.1" data-duration="3.4">01</div>
+  <div class="kicker" data-clip-id="kicker" data-start="0" data-duration="3.5" data-enter="surgir dur=0.6 curve=ease-out"><b>Arquivo</b>Paisagem</div>
+  <div class="count" data-clip-id="count" data-start="0.1" data-duration="3.4" data-enter="surgir dur=0.6 curve=ease-out">01</div>
 
-  <div class="photo" data-clip-id="photo" data-start="0.1" data-duration="3.4">
-    <div class="sun"></div>
-    <div class="ridge-back"></div>
-    <div class="ridge-front"></div>
-    <div class="ground"><i></i></div>
-    <div class="stamp">Quadro 018 · 06h12</div>
-    <div class="frame-label">35 mm · f/2.8</div>
+  <div class="photo" data-clip-id="photo" data-start="0.1" data-duration="3.4" data-keyframes='[{"time":0,"clip":"inset(0% 100% 0% 0%)","curve":"cubic-bezier(0.22,0.8,0.2,1)"},{"time":0.85,"clip":"inset(0% 0% 0% 0%)"}]'>
+    <div class="sun" data-enter="subir distance=90 dur=0.95 at=0.15 curve=cubic-bezier(0.22,0.8,0.2,1)"></div>
+    <div class="ridge-back" data-enter="subir distance=48 dur=0.9 at=0.2 curve=cubic-bezier(0.22,0.8,0.2,1)"></div>
+    <div class="ridge-front" data-enter="subir distance=48 dur=0.9 at=0.32 curve=cubic-bezier(0.22,0.8,0.2,1)"></div>
+    <div class="ground" data-keyframes='[{"time":0.4,"scaleY":0,"curve":"cubic-bezier(0.22,0.8,0.2,1)"},{"time":1.2,"scaleY":1}]'><i></i></div>
+    <div class="stamp" data-enter="surgir dur=0.7 at=0.7 curve=ease-out">Quadro 018 · 06h12</div>
+    <div class="frame-label" data-enter="surgir dur=0.7 at=0.8 curve=ease-out">35 mm · f/2.8</div>
   </div>
 
-  <div class="caption" data-clip-id="caption" data-start="0.9" data-duration="2.6">
+  <div class="caption" data-clip-id="caption" data-start="0.9" data-duration="2.6" data-enter="subir distance=24 dur=0.8 curve=cubic-bezier(0.22,0.8,0.2,1)">
     <h1>Serra do Mar, antes do primeiro ônibus</h1>
     <p>A luz dura quatro minutos. Depois disso a névoa sobe e o vale vira uma parede branca.</p>
   </div>
 
-  <div class="meta" data-clip-id="meta" data-start="1.05" data-duration="2.45">
+  <div class="meta" data-clip-id="meta" data-start="1.05" data-duration="2.45" data-enter="surgir dur=0.75 curve=ease-out">
     <div>Fotografia <b>Helena Vasques</b></div>
     <div class="right">Fig. 01 — <b>2026</b></div>
   </div>

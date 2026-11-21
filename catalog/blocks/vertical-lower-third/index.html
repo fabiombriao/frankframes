@@ -35,7 +35,6 @@
     letter-spacing: 0.22em;
     text-transform: uppercase;
     color: rgba(242, 239, 230, 0.5);
-    animation: fade-in 0.6s ease-out both;
   }
   .kicker b { color: #f2e34c; font-weight: 400; margin-right: 14px; }
   .live {
@@ -48,7 +47,6 @@
     font: 400 20px/1 "JetBrains Mono", monospace;
     letter-spacing: 0.18em;
     color: #f2efe6;
-    animation: fade-in 0.6s ease-out 0.15s both;
   }
   .live i { width: 14px; height: 14px; background: #c8412a; font-style: normal; }
   .band {
@@ -59,7 +57,6 @@
     height: 430px;
     background: #f2e34c;
     transform-origin: left center;
-    animation: band-in 0.8s cubic-bezier(0.22, 0.8, 0.2, 1) 0.1s both;
   }
   .marker {
     position: absolute;
@@ -69,7 +66,6 @@
     height: 430px;
     background: #c8412a;
     transform-origin: bottom center;
-    animation: marker-in 0.6s cubic-bezier(0.22, 0.8, 0.2, 1) both;
   }
   .name {
     position: absolute;
@@ -82,7 +78,6 @@
     letter-spacing: 0.005em;
     text-transform: uppercase;
     color: #f2efe6;
-    animation: slide-in 0.75s cubic-bezier(0.22, 0.8, 0.2, 1) 0.22s both;
   }
   .role {
     position: absolute;
@@ -92,7 +87,6 @@
     font-weight: 700;
     letter-spacing: 0.02em;
     color: #101113;
-    animation: slide-in 0.75s cubic-bezier(0.22, 0.8, 0.2, 1) 0.36s both;
   }
   .detail {
     position: absolute;
@@ -103,7 +97,6 @@
     letter-spacing: 0.1em;
     text-transform: uppercase;
     color: rgba(16, 17, 19, 0.62);
-    animation: fade-in 0.7s ease-out 0.5s both;
   }
   .detail span { margin-right: 26px; }
   .foot {
@@ -117,44 +110,27 @@
     letter-spacing: 0.14em;
     text-transform: uppercase;
     color: rgba(242, 239, 230, 0.42);
-    animation: fade-in 0.8s ease-out 0.9s both;
   }
   .foot strong { display: block; font-family: "DM Sans", sans-serif; font-weight: 700; font-size: 26px; letter-spacing: 0; text-transform: none; color: #f2efe6; }
   .foot .right { text-align: right; }
-  @keyframes band-in {
-    from { transform: scaleX(0); }
-    to { transform: scaleX(1); }
-  }
-  @keyframes marker-in {
-    from { transform: scaleY(0); }
-    to { transform: scaleY(1); }
-  }
-  @keyframes slide-in {
-    from { transform: translateX(-40px); opacity: 0; }
-    to { transform: translateX(0); opacity: 1; }
-  }
-  @keyframes fade-in {
-    from { opacity: 0; transform: translateY(10px); }
-    to { opacity: 1; transform: translateY(0); }
-  }
 </style>
 </head>
 <body>
 <div class="stage" data-composition-id="vertical-lower-third" data-root="true" data-width="1080" data-height="1920" data-fps="30" data-duration="3.5">
   <div class="ghost">02</div>
-  <div class="kicker" data-clip-id="kicker" data-start="0" data-duration="3.5"><b>Perfil</b>Entrevista</div>
-  <div class="live" data-clip-id="live" data-start="0.15" data-duration="3.35"><i></i>Estúdio</div>
+  <div class="kicker" data-clip-id="kicker" data-start="0" data-duration="3.5" data-enter="subir distance=10 dur=0.6 curve=ease-out"><b>Perfil</b>Entrevista</div>
+  <div class="live" data-clip-id="live" data-start="0.15" data-duration="3.35" data-enter="subir distance=10 dur=0.6 curve=ease-out"><i></i>Estúdio</div>
 
-  <div class="band" data-clip-id="band" data-start="0.1" data-duration="3.4"></div>
-  <div class="marker" data-clip-id="marker" data-start="0" data-duration="3.5"></div>
+  <div class="band" data-clip-id="band" data-start="0.1" data-duration="3.4" data-keyframes='[{"time":0,"scaleX":0,"curve":"cubic-bezier(0.22,0.8,0.2,1)"},{"time":0.8,"scaleX":1}]'></div>
+  <div class="marker" data-clip-id="marker" data-start="0" data-duration="3.5" data-keyframes='[{"time":0,"scaleY":0,"curve":"cubic-bezier(0.22,0.8,0.2,1)"},{"time":0.6,"scaleY":1}]'></div>
 
-  <div class="name" data-clip-id="name" data-start="0.22" data-duration="3.28">Helena<br>Vasques</div>
-  <div class="role" data-clip-id="role" data-start="0.36" data-duration="3.14">Diretora de fotografia</div>
-  <div class="detail" data-clip-id="detail" data-start="0.5" data-duration="3">
+  <div class="name" data-clip-id="name" data-start="0.22" data-duration="3.28" data-enter="chegar-esquerda distance=40 dur=0.75 curve=cubic-bezier(0.22,0.8,0.2,1)">Helena<br>Vasques</div>
+  <div class="role" data-clip-id="role" data-start="0.36" data-duration="3.14" data-enter="chegar-esquerda distance=40 dur=0.75 curve=cubic-bezier(0.22,0.8,0.2,1)">Diretora de fotografia</div>
+  <div class="detail" data-clip-id="detail" data-start="0.5" data-duration="3" data-enter="subir distance=10 dur=0.7 curve=ease-out">
     <span>18 anos de set</span><span>São Paulo</span>
   </div>
 
-  <div class="foot" data-clip-id="foot" data-start="0.9" data-duration="2.6">
+  <div class="foot" data-clip-id="foot" data-start="0.9" data-duration="2.6" data-enter="subir distance=10 dur=0.8 curve=ease-out">
     <div><strong>Série Ofício</strong>Capítulo 02 — 04</div>
     <div class="right"><strong>06 de março</strong>2026</div>
   </div>

@@ -67,6 +67,13 @@ for (const slug of listBlocks().map((block) => block.slug)) {
     assert.ok(!/https?:\/\//i.test(html), `${slug}: URL externa no HTML`);
     assert.ok(!/<script/i.test(html), `${slug}: script no HTML`);
   });
+
+  // EDT-56: a entrada dos blocos usa atributos de motion (tempo local ao clip), não animation-delay absoluto.
+  test(`bloco ${slug}: usa atributos de motion`, () => {
+    const html = readBlock(slug);
+    assert.match(html, /\sdata-(enter|exit|emphasis|camera|transition|split|keyframes)=/, `${slug}: nenhum atributo de motion`);
+    assert.equal(loadComposition(html).ok, true, `${slug}: composição inválida`);
+  });
 }
 
 test("readBlock recusa slug e arquivo fora do bloco", () => {

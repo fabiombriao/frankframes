@@ -32,9 +32,6 @@
   .new {
     background: #e9e3d3;
     color: #15130f;
-    clip-path: circle(0% at 50% 46%);
-    animation: iris 0.95s cubic-bezier(0.62, 0, 0.2, 1) both;
-    animation-delay: 0.25s;
   }
   .ring {
     position: absolute;
@@ -45,9 +42,6 @@
     margin: -150px 0 0 -150px;
     border: 8px solid #d8452e;
     border-radius: 50%;
-    opacity: 0;
-    animation: ring 1.15s cubic-bezier(0.4, 0, 0.2, 1) both;
-    animation-delay: 0.25s;
     z-index: 4;
   }
   .kicker {
@@ -92,23 +86,6 @@
     border-top: 4px solid #15130f;
     border-right: 4px solid #15130f;
   }
-  @keyframes iris {
-    from { clip-path: circle(0% at 50% 46%); }
-    to { clip-path: circle(78% at 50% 46%); }
-  }
-  @keyframes ring {
-    0% { transform: scale(0.1); opacity: 0; }
-    55% { opacity: 0.9; }
-    100% { transform: scale(2.6); opacity: 0; }
-  }
-  @keyframes rise {
-    from { transform: translateY(-50%) translateY(34px); opacity: 0; }
-    to { transform: translateY(-50%) translateY(0); opacity: 1; }
-  }
-  @keyframes fade-in {
-    from { opacity: 0; }
-    to { opacity: 1; }
-  }
 </style>
 </head>
 <body>
@@ -117,17 +94,17 @@
     <div class="mark">Abrir a cena</div>
   </div>
 
-  <div class="layer new" data-clip-id="scene-new" data-start="0.25" data-duration="3.35">
-    <div class="kicker" style="animation: fade-in 0.6s ease-out both; animation-delay: 0.9s">capítulo 04 — memória</div>
-    <div class="corner" style="animation: fade-in 0.5s ease-out both; animation-delay: 0.95s"></div>
-    <div class="title" style="animation: rise 0.8s cubic-bezier(0.22, 0.8, 0.2, 1) both; animation-delay: 0.78s">
+  <div class="layer new" data-clip-id="scene-new" data-start="0.25" data-duration="3.35" data-keyframes='[{"time":0,"clip":"circle(0% at 50% 46%)","curve":"cubic-bezier(0.62,0,0.2,1)"},{"time":0.95,"clip":"circle(78% at 50% 46%)"}]'>
+    <div class="kicker" data-enter="surgir dur=0.6 at=0.65 curve=ease-out">capítulo 04 — memória</div>
+    <div class="corner" data-enter="surgir dur=0.5 at=0.7 curve=ease-out"></div>
+    <div class="title" data-enter="subir distance=34 dur=0.8 at=0.53 curve=cubic-bezier(0.22,0.8,0.2,1)">
       <span>O que</span>
       <span>ficou</span>
     </div>
-    <div class="caption" style="animation: fade-in 0.7s ease-out both; animation-delay: 1.15s">Quatro entrevistas, uma tarde<br>e o que sobrou na mesa.</div>
+    <div class="caption" data-enter="surgir dur=0.7 at=0.9 curve=ease-out">Quatro entrevistas, uma tarde<br>e o que sobrou na mesa.</div>
   </div>
 
-  <div class="ring" data-clip-id="iris-ring" data-start="0.25" data-duration="1.15"></div>
+  <div class="ring" data-clip-id="iris-ring" data-start="0.25" data-duration="1.15" data-keyframes='[{"time":0,"scale":0.1,"opacity":0,"curve":"cubic-bezier(0.4,0,0.2,1)"},{"time":0.6325,"opacity":0.9,"curve":"cubic-bezier(0.4,0,0.2,1)"},{"time":1.15,"scale":2.6,"opacity":0}]'></div>
 </div>
 </body>
 </html>

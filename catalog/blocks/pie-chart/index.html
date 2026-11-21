@@ -41,8 +41,6 @@
     top: 392px;
     width: 560px;
     height: 560px;
-    animation: pie-in 0.8s cubic-bezier(0.22, 0.8, 0.2, 1) both;
-    animation-delay: 0.25s;
   }
   .pie {
     position: absolute;
@@ -56,9 +54,6 @@
     border-radius: 50%;
     background: conic-gradient(#f0553b 0 46%, transparent 46% 100%);
     transform: translate(26px, -6px);
-    opacity: 0;
-    animation: pop 0.5s ease-out both;
-    animation-delay: 1.15s;
   }
   .hole {
     position: absolute;
@@ -103,12 +98,7 @@
     gap: 24px;
     height: 132px;
     border-bottom: 1px solid rgba(23, 21, 15, 0.22);
-    opacity: 0;
-    animation: row-in 0.6s ease-out both;
   }
-  .row.top { animation-delay: 0.7s; }
-  .row.mid { animation-delay: 0.85s; }
-  .row.low { animation-delay: 1s; }
   .swatch { width: 40px; height: 40px; }
   .swatch.a { background: #d8452e; }
   .swatch.b { background: #1d1b16; }
@@ -143,9 +133,6 @@
     color: #f2efe6;
     background: #d8452e;
     padding: 12px 18px;
-    opacity: 0;
-    animation: pop 0.5s ease-out both;
-    animation-delay: 1.2s;
   }
   .footnote {
     position: absolute;
@@ -156,56 +143,40 @@
     text-transform: uppercase;
     color: rgba(23, 21, 15, 0.68);
   }
-  @keyframes pie-in {
-    from { transform: scale(0.9); opacity: 0; }
-    to { transform: scale(1); opacity: 1; }
-  }
-  @keyframes pop {
-    from { opacity: 0; }
-    to { opacity: 1; }
-  }
-  @keyframes row-in {
-    from { transform: translateX(28px); opacity: 0; }
-    to { transform: translateX(0); opacity: 1; }
-  }
-  @keyframes fade-up {
-    from { transform: translateY(20px); opacity: 0; }
-    to { transform: translateY(0); opacity: 1; }
-  }
 </style>
 </head>
 <body>
 <div class="stage" data-composition-id="pie-chart" data-root="true" data-width="1920" data-height="1080" data-fps="30" data-duration="3.8">
-  <div class="kicker" style="animation: fade-up 0.6s ease-out both; animation-delay: 0.08s">Perfil de gasto / 12 meses</div>
-  <div class="title" style="animation: fade-up 0.7s ease-out both; animation-delay: 0.15s">De onde vem <em>o minuto</em>.</div>
+  <div class="kicker" data-clip-id="kicker" data-start="0" data-duration="3.8" data-enter="subir distance=20 dur=0.6 at=0.08 curve=ease-out">Perfil de gasto / 12 meses</div>
+  <div class="title" data-clip-id="title" data-start="0" data-duration="3.8" data-enter="subir distance=20 dur=0.7 at=0.15 curve=ease-out">De onde vem <em>o minuto</em>.</div>
 
-  <div class="pie-wrap" data-clip-id="pie" data-start="0.25" data-duration="3.55">
+  <div class="pie-wrap" data-clip-id="pie" data-start="0.25" data-duration="3.55" data-enter="crescer amount=0.9 dur=0.8 curve=cubic-bezier(0.22,0.8,0.2,1)">
     <div class="pie"></div>
-    <div class="slice-pop"></div>
+    <div class="slice-pop" data-enter="surgir dur=0.5 at=0.9 curve=ease-out"></div>
     <div class="hole"><b>46%</b><small>maior fatia</small></div>
   </div>
 
-  <div class="badge" data-clip-id="badge" data-start="0.25" data-duration="3.55">Montagem domina</div>
+  <div class="badge" data-clip-id="badge" data-start="0.25" data-duration="3.55" data-enter="surgir dur=0.5 at=0.95 curve=ease-out">Montagem domina</div>
 
   <div class="legend" data-clip-id="legend" data-start="0.55" data-duration="3.25">
-    <div class="row top">
+    <div class="row top" data-enter="chegar-direita distance=28 dur=0.6 at=0.15 curve=ease-out">
       <span class="swatch a"></span>
       <span class="label">Montagem<small>Sala de corte</small></span>
       <span class="value">46%</span>
     </div>
-    <div class="row mid">
+    <div class="row mid" data-enter="chegar-direita distance=28 dur=0.6 at=0.3 curve=ease-out">
       <span class="swatch b"></span>
       <span class="label">Captação<small>Set e deslocamento</small></span>
       <span class="value">31%</span>
     </div>
-    <div class="row low">
+    <div class="row low" data-enter="chegar-direita distance=28 dur=0.6 at=0.45 curve=ease-out">
       <span class="swatch c"></span>
       <span class="label">Acabamento<small>Cor, som e entrega</small></span>
       <span class="value">23%</span>
     </div>
   </div>
 
-  <div class="footnote" style="animation: fade-up 0.6s ease-out both; animation-delay: 1.5s">Base: 128 projetos finalizados · horas faturáveis</div>
+  <div class="footnote" data-clip-id="footnote" data-start="0" data-duration="3.8" data-enter="subir distance=20 dur=0.6 at=1.5 curve=ease-out">Base: 128 projetos finalizados · horas faturáveis</div>
 </div>
 </body>
 </html>

@@ -1,9 +1,15 @@
 // FrankFrames — proprietário. Ver LICENSE na raiz.
-import { basename } from "node:path";
-import { openSession, resolveChrome, startServer } from "@frankframes/engine";
+import { execFile } from "node:child_process";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { basename, join } from "node:path";
+import { promisify } from "node:util";
+import { assetPath, openSession, resolveChrome, startServer } from "@frankframes/engine";
 import type { Session } from "@frankframes/engine";
 import type { GpuMode } from "@frankframes/engine";
 import { prepare } from "./render.ts";
+
+const run = promisify(execFile);
 
 export interface GoldenFrame {
   frame: number;
@@ -110,4 +116,25 @@ export async function captureFrameAt(entry: string, ratio = 0.5): Promise<{ png:
 export async function engineSignature(gpu: GpuMode = "software"): Promise<GoldenManifest["engine"]> {
   const chrome = await resolveChrome();
   return { browser: chrome.version, gpu, viewport: "nativo" };
+}
+
+/** PSNR médio (dB) entre dois PNGs de mesmo tamanho via FFmpeg; `Infinity` quando idênticos. */
+export async function psnr(a: Buffer, b: Buffer): Promise<number> {
+  const dir = await mkdtemp(join(tmpdir(), "ff-golden-"));
+  try {
+    const left = join(dir, "a.png");
+    const right = join(dir, "b.png");
+    await writeFile(left, a);
+    await writeFile(right, b);
+    const ffmpeg = assetPath("ffmpeg", "bin", process.platform === "win32" ? "ffmpeg.exe" : "ffmpeg");
+    // psnr sai com código 0; qualquer falha do FFmpeg (tamanhos diferentes, PNG ilegível) tem de aparecer.
+    const result = await run(ffmpeg, ["-hide_banner", "-i", left, "-i", right, "-lavfi", "[0][1]psnr", "-f", "null", "-"], {
+      encoding: "utf8",
+    });
+    const match = /average:([\d.]+|inf)/.exec(result.stderr);
+    if (match === null) throw new Error(`psnr: FFmpeg não devolveu a média: ${result.stderr.slice(-300)}`);
+    return match[1] === "inf" ? Infinity : Number(match[1]);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 }

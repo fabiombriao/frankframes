@@ -19,9 +19,6 @@
   .new {
     background: #e9e3d3;
     color: #15130f;
-    clip-path: inset(0 0 100% 0);
-    animation: reveal 0.5s cubic-bezier(0.72, 0, 0.18, 1) both;
-    animation-delay: 0.25s;
   }
   .kicker {
     position: absolute;
@@ -71,8 +68,6 @@
     top: -360px;
     height: 360px;
     background: #d8452e;
-    animation: cross 0.5s cubic-bezier(0.72, 0, 0.18, 1) both;
-    animation-delay: 0.25s;
     z-index: 5;
   }
   .band::after {
@@ -84,22 +79,6 @@
     height: 10px;
     background: #14130f;
   }
-  @keyframes reveal {
-    from { clip-path: inset(0 0 100% 0); }
-    to { clip-path: inset(0 0 0 0); }
-  }
-  @keyframes cross {
-    from { transform: translateY(0); }
-    to { transform: translateY(2280px); }
-  }
-  @keyframes rise {
-    from { transform: translateY(28px); opacity: 0; }
-    to { transform: translateY(0); opacity: 1; }
-  }
-  @keyframes fade-in {
-    from { opacity: 0; }
-    to { opacity: 1; }
-  }
 </style>
 </head>
 <body>
@@ -109,14 +88,14 @@
     <div class="headline"><span>Luz</span><span>fria</span></div>
   </div>
 
-  <div class="layer new" data-clip-id="scene-new" data-start="0.25" data-duration="3.35">
-    <div class="kicker" style="animation: fade-in 0.5s ease-out both; animation-delay: 0.85s">Cena 02 / varanda</div>
-    <div class="rule" style="animation: fade-in 0.45s ease-out both; animation-delay: 0.8s"></div>
-    <div class="body" style="animation: rise 0.6s ease-out both; animation-delay: 0.92s">A faixa desce e troca a luz sem cortar o áudio.</div>
-    <div class="headline"><span style="animation: rise 0.65s cubic-bezier(0.22, 0.8, 0.2, 1) both; animation-delay: 0.78s">Luz</span><span style="animation: rise 0.65s cubic-bezier(0.22, 0.8, 0.2, 1) both; animation-delay: 0.86s">quente</span></div>
+  <div class="layer new" data-clip-id="scene-new" data-start="0.25" data-duration="3.35" data-keyframes='[{"time":0,"clip":"inset(0% 0% 100% 0%)","curve":"cubic-bezier(0.72,0,0.18,1)"},{"time":0.5,"clip":"inset(0% 0% 0% 0%)"}]'>
+    <div class="kicker" data-enter="surgir dur=0.5 at=0.6 curve=ease-out">Cena 02 / varanda</div>
+    <div class="rule" data-enter="surgir dur=0.45 at=0.55 curve=ease-out"></div>
+    <div class="body" data-enter="subir distance=28 dur=0.6 at=0.67 curve=ease-out">A faixa desce e troca a luz sem cortar o áudio.</div>
+    <div class="headline"><span data-enter="subir distance=28 dur=0.65 at=0.53 curve=cubic-bezier(0.22,0.8,0.2,1)">Luz</span><span data-enter="subir distance=28 dur=0.65 at=0.61 curve=cubic-bezier(0.22,0.8,0.2,1)">quente</span></div>
   </div>
 
-  <div class="band" data-clip-id="wipe-band" data-start="0.25" data-duration="0.5"></div>
+  <div class="band" data-clip-id="wipe-band" data-start="0.25" data-duration="0.5" data-keyframes='[{"time":0,"y":0,"curve":"cubic-bezier(0.72,0,0.18,1)"},{"time":0.5,"y":2280}]'></div>
 </div>
 </body>
 </html>

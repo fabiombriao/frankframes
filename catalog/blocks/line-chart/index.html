@@ -82,20 +82,13 @@
   }
   .series.a { stroke: #d8452e; }
   .series.b { stroke: #2f6b5e; }
-  .endpoint {
-    opacity: 0;
-    animation: pop 0.5s ease-out both;
-  }
-  .endpoint.a { fill: #d8452e; animation-delay: 2s; }
-  .endpoint.b { fill: #2f6b5e; animation-delay: 2.15s; }
+  .endpoint.a { fill: #d8452e; }
+  .endpoint.b { fill: #2f6b5e; }
   .endlabel {
     font-family: "Inter", sans-serif;
     font-size: 26px;
     font-weight: 700;
     fill: #151513;
-    opacity: 0;
-    animation: pop 0.5s ease-out both;
-    animation-delay: 2.1s;
     text-anchor: end;
   }
   .footnote {
@@ -119,27 +112,19 @@
     from { stroke-dashoffset: 1; }
     to { stroke-dashoffset: 0; }
   }
-  @keyframes pop {
-    from { opacity: 0; }
-    to { opacity: 1; }
-  }
-  @keyframes fade-up {
-    from { transform: translateY(20px); opacity: 0; }
-    to { transform: translateY(0); opacity: 1; }
-  }
 </style>
 </head>
 <body>
 <div class="stage" data-composition-id="line-chart" data-root="true" data-width="1920" data-height="1080" data-fps="30" data-duration="4">
-  <div class="kicker" style="animation: fade-up 0.6s ease-out both; animation-delay: 0.1s">Relatório trimestral / custo por entrega</div>
-  <div class="title" style="animation: fade-up 0.7s ease-out both; animation-delay: 0.18s">Duas curvas, <em>uma virada</em>.</div>
+  <div class="kicker" data-clip-id="kicker" data-start="0" data-duration="4" data-enter="subir distance=20 dur=0.6 at=0.1 curve=ease-out">Relatório trimestral / custo por entrega</div>
+  <div class="title" data-clip-id="title" data-start="0" data-duration="4" data-enter="subir distance=20 dur=0.7 at=0.18 curve=ease-out">Duas curvas, <em>uma virada</em>.</div>
 
-  <div class="legend" style="animation: fade-up 0.6s ease-out both; animation-delay: 0.35s">
+  <div class="legend" data-clip-id="legend" data-start="0" data-duration="4" data-enter="subir distance=20 dur=0.6 at=0.35 curve=ease-out">
     <div class="a"><b></b><span>Manual</span></div>
     <div class="b"><b></b><span>Assistido</span></div>
   </div>
 
-  <div class="plot" data-clip-id="plot" data-start="0.4" data-duration="3.6" style="animation: fade-up 0.6s ease-out both; animation-delay: 0.4s">
+  <div class="plot" data-clip-id="plot" data-start="0.4" data-duration="3.6" data-enter="subir distance=20 dur=0.6 curve=ease-out">
     <svg viewBox="0 0 1280 560" role="img" aria-label="Duas séries de custo caindo ao longo de seis meses">
       <line class="axis" x1="110" y1="60" x2="1180" y2="60"></line>
       <line class="axis" x1="110" y1="162.5" x2="1180" y2="162.5"></line>
@@ -163,14 +148,14 @@
       <path class="series a" pathLength="1" style="animation-delay: 0.5s" d="M110 388 L324 331 L538 245 L752 191 L966 117 L1180 85"></path>
       <path class="series b" pathLength="1" style="animation-delay: 0.72s" d="M110 421 L324 404 L538 372 L752 351 L966 322 L1180 306"></path>
 
-      <circle class="endpoint a" cx="1180" cy="85" r="9"></circle>
-      <circle class="endpoint b" cx="1180" cy="306" r="9"></circle>
-      <text class="endlabel" x="1150" y="62">-31%</text>
+      <circle class="endpoint a" cx="1180" cy="85" r="9" data-enter="surgir dur=0.5 at=1.6 curve=ease-out"></circle>
+      <circle class="endpoint b" cx="1180" cy="306" r="9" data-enter="surgir dur=0.5 at=1.75 curve=ease-out"></circle>
+      <text class="endlabel" x="1150" y="62" data-enter="surgir dur=0.5 at=1.7 curve=ease-out">-31%</text>
     </svg>
   </div>
 
-  <div class="footnote" style="animation: fade-up 0.6s ease-out both; animation-delay: 1.4s">Índice de custo por minuto entregue · base 100 em janeiro</div>
-  <div class="stamp" style="animation: fade-up 0.6s ease-out both; animation-delay: 1.55s">FIG. 12</div>
+  <div class="footnote" data-clip-id="footnote" data-start="0" data-duration="4" data-enter="subir distance=20 dur=0.6 at=1.4 curve=ease-out">Índice de custo por minuto entregue · base 100 em janeiro</div>
+  <div class="stamp" data-clip-id="stamp" data-start="0" data-duration="4" data-enter="subir distance=20 dur=0.6 at=1.55 curve=ease-out">FIG. 12</div>
 </div>
 </body>
 </html>

@@ -26,7 +26,6 @@
     letter-spacing: 0.24em;
     text-transform: uppercase;
     color: rgba(243, 239, 228, 0.5);
-    animation: fade-in 0.7s ease-out both;
   }
   .head b { color: #f2e34c; font-weight: 400; }
   .beat {
@@ -59,7 +58,6 @@
     font-size: 640px;
     line-height: 1;
     letter-spacing: -0.02em;
-    animation: pulse 1s cubic-bezier(0.22, 0.85, 0.24, 1) both;
   }
   .digit .unit {
     position: absolute;
@@ -72,8 +70,6 @@
     color: rgba(243, 239, 228, 0.6);
     white-space: nowrap;
   }
-  .b2 .digit { animation-delay: 1s; }
-  .b3 .digit { animation-delay: 2s; }
   .foot {
     position: absolute;
     left: 116px;
@@ -99,41 +95,32 @@
   }
   .ticks span:nth-child(2) { animation-delay: 1s; }
   .ticks span:nth-child(3) { animation-delay: 2s; }
-  @keyframes pulse {
-    0% { opacity: 0; transform: scale(1.16); }
-    24% { opacity: 1; transform: scale(1); }
-    100% { opacity: 1; transform: scale(1); }
-  }
   @keyframes tick-on {
     from { background: rgba(243, 239, 228, 0.2); }
     to { background: #f2e34c; }
-  }
-  @keyframes fade-in {
-    from { opacity: 0; transform: translateY(-12px); }
-    to { opacity: 1; transform: translateY(0); }
   }
 </style>
 </head>
 <body>
 <div class="stage" data-composition-id="countdown" data-root="true" data-width="1920" data-height="1080" data-fps="30" data-duration="3">
-  <div class="head" data-clip-id="countdown-head" data-start="0" data-duration="3">
+  <div class="head" data-clip-id="countdown-head" data-start="0" data-duration="3" data-enter="descer distance=12 dur=0.7 curve=ease-out">
     <span><b>●</b> Contagem regressiva</span>
     <span>Estúdio 04 · 30 fps</span>
   </div>
 
   <div class="beat" data-clip-id="beat-three" data-start="0" data-duration="1">
     <div class="ring"></div>
-    <div class="digit">3<span class="unit">Prepara a câmera</span></div>
+    <div class="digit" data-enter="assentar amount=1.16 dur=0.24 curve=cubic-bezier(0.22,0.85,0.24,1)">3<span class="unit">Prepara a câmera</span></div>
   </div>
 
   <div class="beat b2" data-clip-id="beat-two" data-start="beat-three" data-duration="1">
     <div class="ring"></div>
-    <div class="digit">2<span class="unit">Ajusta a luz</span></div>
+    <div class="digit" data-enter="assentar amount=1.16 dur=0.24 curve=cubic-bezier(0.22,0.85,0.24,1)">2<span class="unit">Ajusta a luz</span></div>
   </div>
 
   <div class="beat b3" data-clip-id="beat-one" data-start="beat-two" data-duration="1">
     <div class="ring"></div>
-    <div class="digit">1<span class="unit">Silêncio no set</span></div>
+    <div class="digit" data-enter="assentar amount=1.16 dur=0.24 curve=cubic-bezier(0.22,0.85,0.24,1)">1<span class="unit">Silêncio no set</span></div>
   </div>
 
   <div class="foot" data-clip-id="countdown-foot" data-start="0" data-duration="3">

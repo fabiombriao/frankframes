@@ -36,7 +36,6 @@
     font: 400 19px/1 "JetBrains Mono", monospace;
     letter-spacing: 0.26em;
     text-transform: uppercase;
-    animation: fade-in 0.55s ease-out both;
   }
   .before .tag { color: rgba(20, 19, 15, 0.5); }
   .after .tag { color: #f2e34c; }
@@ -65,7 +64,6 @@
     font-size: 34px;
     line-height: 1.38;
     letter-spacing: -0.015em;
-    animation: rise-in 0.85s cubic-bezier(0.22, 0.8, 0.2, 1) 0.3s both;
   }
   .before .body { left: 100px; }
   .after .body { left: 104px; font-weight: 500; }
@@ -76,7 +74,6 @@
     left: 100px;
     right: 100px;
     bottom: 104px;
-    animation: fade-in 0.7s ease-out 0.75s both;
   }
   .list div {
     display: flex;
@@ -97,50 +94,37 @@
     height: 1080px;
     background: #c8412a;
     transform-origin: top center;
-    animation: seam-in 0.7s cubic-bezier(0.22, 0.8, 0.2, 1) both;
-  }
-  @keyframes seam-in {
-    from { transform: scaleY(0); }
-    to { transform: scaleY(1); }
   }
   @keyframes big-in {
     from { transform: translateY(40px); opacity: 0; clip-path: inset(0 0 100% 0); }
     to { transform: translateY(0); opacity: 1; clip-path: inset(0 0 -10% 0); }
-  }
-  @keyframes rise-in {
-    from { transform: translateY(26px); opacity: 0; }
-    to { transform: translateY(0); opacity: 1; }
-  }
-  @keyframes fade-in {
-    from { opacity: 0; transform: translateY(10px); }
-    to { opacity: 1; transform: translateY(0); }
   }
 </style>
 </head>
 <body>
 <div class="stage" data-composition-id="comparison" data-root="true" data-width="1920" data-height="1080" data-fps="30" data-duration="4">
   <section class="side before" data-clip-id="col-before" data-start="0" data-duration="4">
-    <div class="tag">Antes · corte bruto</div>
+    <div class="tag" data-enter="subir distance=10 dur=0.55 curve=ease-out">Antes · corte bruto</div>
     <div class="big">40<small>s</small></div>
-    <p class="body">
+    <p class="body" data-enter="subir distance=26 dur=0.85 at=0.3 curve=cubic-bezier(0.22,0.8,0.2,1)">
       A cena respirava até o desconforto. O olhar ficava no ar, <strong>sem resposta</strong>, e a fala se repetia.
     </p>
-    <div class="list">
+    <div class="list" data-enter="subir distance=10 dur=0.7 at=0.75 curve=ease-out">
       <div><span>planos</span><b>01</b></div>
       <div><span>pausas</span><b>00</b></div>
       <div><span>som</span><b>só voz</b></div>
     </div>
   </section>
 
-  <div class="seam" data-clip-id="seam" data-start="0" data-duration="4"></div>
+  <div class="seam" data-clip-id="seam" data-start="0" data-duration="4" data-keyframes='[{"time":0,"scaleY":0,"curve":"cubic-bezier(0.22,0.8,0.2,1)"},{"time":0.7,"scaleY":1}]'></div>
 
   <section class="side after" data-clip-id="col-after" data-start="0.12" data-duration="3.88">
-    <div class="tag">Depois · versão final</div>
+    <div class="tag" data-enter="subir distance=10 dur=0.55 at=-0.12 curve=ease-out">Depois · versão final</div>
     <div class="big">6<small>s</small></div>
-    <p class="body">
+    <p class="body" data-enter="subir distance=26 dur=0.85 at=0.18 curve=cubic-bezier(0.22,0.8,0.2,1)">
       O silêncio entra como resposta. Três planos criam a pergunta que a fala <strong>não faz</strong>.
     </p>
-    <div class="list">
+    <div class="list" data-enter="subir distance=10 dur=0.7 at=0.63 curve=ease-out">
       <div><span>planos</span><b>03</b></div>
       <div><span>pausa</span><b>0,4 s</b></div>
       <div><span>som</span><b>ambiente</b></div>

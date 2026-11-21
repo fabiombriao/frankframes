@@ -3,7 +3,7 @@ export { renderComposition, prepare, RenderError, timedClips, frameCountFor } fr
 export { RENDER_ERROR_CODES, sanitizeMessage, toErrorPayload } from "./errors.ts";
 export type { ErrorPayload, RenderCode } from "./errors.ts";
 export type { PrepareOptions, PreparedComposition, RenderOptions, RenderResult, RenderStage } from "./render.ts";
-export { captureFrameAt, captureGolden, engineSignature, sampleFrames } from "./goldens.ts";
+export { captureFrameAt, captureGolden, engineSignature, psnr, sampleFrames } from "./goldens.ts";
 export type { GoldenBlock, GoldenFrame, GoldenManifest } from "./goldens.ts";
 export { resolveFfmpeg } from "./ffmpeg.ts";
 export type { FfmpegPair } from "./ffmpeg.ts";

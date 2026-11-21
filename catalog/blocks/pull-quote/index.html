@@ -23,7 +23,6 @@
     height: 610px;
     background: #c8412a;
     transform-origin: top center;
-    animation: bar-in 0.7s cubic-bezier(0.22, 0.8, 0.2, 1) both;
   }
   .stamp {
     position: absolute;
@@ -34,7 +33,6 @@
     text-transform: uppercase;
     text-align: right;
     color: rgba(244, 240, 230, 0.45);
-    animation: fade-in 0.7s ease-out 0.1s both;
   }
   .stamp b { display: block; font-weight: 400; color: #f2e34c; letter-spacing: 0.1em; }
   .quote {
@@ -53,9 +51,7 @@
   .quote i {
     display: block;
     font-style: inherit;
-    animation: line-in 1s cubic-bezier(0.22, 0.8, 0.2, 1) both;
   }
-  .quote .second i { animation-delay: 0.14s; }
   .quote .accent { color: #f2e34c; font-style: normal; }
   .attrib {
     position: absolute;
@@ -65,7 +61,6 @@
     display: flex;
     justify-content: space-between;
     align-items: flex-end;
-    animation: fade-in 0.8s ease-out 0.85s both;
   }
   .who {
     font: 400 18px/1.7 "JetBrains Mono", monospace;
@@ -98,44 +93,27 @@
     height: 1px;
     background: rgba(244, 240, 230, 0.22);
     transform-origin: left center;
-    animation: rule-in 0.9s cubic-bezier(0.22, 0.8, 0.2, 1) 0.7s both;
-  }
-  @keyframes bar-in {
-    from { transform: scaleY(0); }
-    to { transform: scaleY(1); }
-  }
-  @keyframes line-in {
-    from { transform: translateY(110%); }
-    to { transform: translateY(0); }
-  }
-  @keyframes rule-in {
-    from { transform: scaleX(0); }
-    to { transform: scaleX(1); }
-  }
-  @keyframes fade-in {
-    from { opacity: 0; transform: translateY(12px); }
-    to { opacity: 1; transform: translateY(0); }
   }
 </style>
 </head>
 <body>
 <div class="stage" data-composition-id="pull-quote" data-root="true" data-width="1920" data-height="1080" data-fps="30" data-duration="4">
-  <div class="bar" data-clip-id="bar" data-start="0" data-duration="4"></div>
+  <div class="bar" data-clip-id="bar" data-start="0" data-duration="4" data-keyframes='[{"time":0,"scaleY":0,"curve":"cubic-bezier(0.22,0.8,0.2,1)"},{"time":0.7,"scaleY":1}]'></div>
 
-  <div class="stamp" data-clip-id="stamp" data-start="0" data-duration="4">
+  <div class="stamp" data-clip-id="stamp" data-start="0" data-duration="4" data-enter="subir distance=12 dur=0.7 at=0.1 curve=ease-out">
     <b>Citação 07</b>
     Diário de montagem
   </div>
 
   <blockquote class="quote" data-clip-id="quote" data-start="0.15" data-duration="3.85">
-    <span class="first"><i>“O corte não é</i></span>
-    <span class="second"><i>onde a cena acaba —</i></span>
-    <span class="third"><i>é onde o <em class="accent">sentido</em> começa.”</i></span>
+    <span class="first"><i data-keyframes='[{"time":0,"y":64.09717,"curve":"cubic-bezier(0.14324,0.7751,0.31934,1)"},{"time":0.85,"y":0}]'>“O corte não é</i></span>
+    <span class="second"><i data-keyframes='[{"time":0,"y":132.77178,"curve":"cubic-bezier(0.2117,0.79876,0.20437,1)"},{"time":0.99,"y":0}]'>onde a cena acaba —</i></span>
+    <span class="third"><i data-keyframes='[{"time":0,"y":64.09717,"curve":"cubic-bezier(0.14324,0.7751,0.31934,1)"},{"time":0.85,"y":0}]'>é onde o <em class="accent">sentido</em> começa.”</i></span>
   </blockquote>
 
-  <div class="hairline"></div>
+  <div class="hairline" data-clip-id="hairline" data-start="0" data-duration="4" data-keyframes='[{"time":0.7,"scaleX":0,"curve":"cubic-bezier(0.22,0.8,0.2,1)"},{"time":1.6,"scaleX":1}]'></div>
 
-  <div class="attrib" data-clip-id="attribution" data-start="0.85" data-duration="3.15">
+  <div class="attrib" data-clip-id="attribution" data-start="0.85" data-duration="3.15" data-enter="subir distance=12 dur=0.8 curve=ease-out">
     <div class="who">
       <strong>Nelson Araripe</strong>
       Editor de som

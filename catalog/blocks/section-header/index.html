@@ -23,7 +23,6 @@
     height: 2px;
     background: #14130f;
     transform-origin: left center;
-    animation: rule-in 0.75s cubic-bezier(0.22, 0.8, 0.2, 1) both;
   }
   .kicker {
     position: absolute;
@@ -33,7 +32,6 @@
     letter-spacing: 0.24em;
     text-transform: uppercase;
     color: rgba(20, 19, 15, 0.55);
-    animation: fade-in 0.6s ease-out 0.1s both;
   }
   .index {
     position: absolute;
@@ -44,7 +42,6 @@
     line-height: 0.9;
     letter-spacing: 0.02em;
     color: #c8412a;
-    animation: index-in 0.8s cubic-bezier(0.22, 0.8, 0.2, 1) 0.08s both;
   }
   .title {
     position: absolute;
@@ -60,11 +57,8 @@
   .title i {
     display: block;
     font-style: normal;
-    animation: line-in 0.9s cubic-bezier(0.22, 0.8, 0.2, 1) both;
   }
   .title .accent { color: #c8412a; }
-  .title .line-one i { animation-delay: 0.2s; }
-  .title .line-two i { animation-delay: 0.32s; }
   .subtitle {
     position: absolute;
     left: 120px;
@@ -73,7 +67,6 @@
     font-size: 30px;
     line-height: 1.45;
     color: rgba(20, 19, 15, 0.68);
-    animation: fade-in 0.8s ease-out 0.6s both;
   }
   .aside {
     position: absolute;
@@ -87,7 +80,6 @@
     letter-spacing: 0.1em;
     text-transform: uppercase;
     color: rgba(20, 19, 15, 0.55);
-    animation: fade-in 0.8s ease-out 0.75s both;
   }
   .aside strong { display: block; font-family: "Inter", sans-serif; font-weight: 700; font-size: 23px; letter-spacing: 0; text-transform: none; color: #14130f; }
   .tick {
@@ -103,54 +95,30 @@
     height: 6px;
     background: rgba(20, 19, 15, 0.18);
     transform-origin: left center;
-    animation: tick-in 0.5s ease-out both;
   }
-  .tick b:nth-child(1) { background: #c8412a; animation-delay: 0.7s; }
-  .tick b:nth-child(2) { animation-delay: 0.78s; }
-  .tick b:nth-child(3) { animation-delay: 0.86s; }
-  .tick b:nth-child(4) { animation-delay: 0.94s; }
-  @keyframes rule-in {
-    from { transform: scaleX(0); }
-    to { transform: scaleX(1); }
-  }
-  @keyframes line-in {
-    from { transform: translateY(105%); }
-    to { transform: translateY(0); }
-  }
-  @keyframes index-in {
-    from { transform: translateY(-26px); opacity: 0; }
-    to { transform: translateY(0); opacity: 1; }
-  }
-  @keyframes tick-in {
-    from { transform: scaleX(0); opacity: 0; }
-    to { transform: scaleX(1); opacity: 1; }
-  }
-  @keyframes fade-in {
-    from { opacity: 0; transform: translateY(10px); }
-    to { opacity: 1; transform: translateY(0); }
-  }
+  .tick b:nth-child(1) { background: #c8412a; }
 </style>
 </head>
 <body>
 <div class="stage" data-composition-id="section-header" data-root="true" data-width="1920" data-height="1080" data-fps="30" data-duration="4">
-  <div class="rule-top"></div>
-  <div class="kicker" data-clip-id="kicker" data-start="0" data-duration="4">Capítulo 04 — Processo</div>
-  <div class="index" data-clip-id="index" data-start="0" data-duration="4">04</div>
+  <div class="rule-top" data-clip-id="rule-top" data-start="0" data-duration="4" data-keyframes='[{"time":0,"scaleX":0,"curve":"cubic-bezier(0.22,0.8,0.2,1)"},{"time":0.75,"scaleX":1}]'></div>
+  <div class="kicker" data-clip-id="kicker" data-start="0" data-duration="4" data-enter="subir distance=10 dur=0.6 at=0.1 curve=ease-out">Capítulo 04 — Processo</div>
+  <div class="index" data-clip-id="index" data-start="0" data-duration="4" data-enter="descer distance=26 dur=0.8 at=0.08 curve=cubic-bezier(0.22,0.8,0.2,1)">04</div>
 
   <h1 class="title" data-clip-id="title" data-start="0.2" data-duration="3.8">
-    <span class="line-one"><i>O que fica</i></span>
-    <span class="line-two"><i>fora do <em class="accent" style="font-style:normal">quadro</em></i></span>
+    <span class="line-one"><i data-keyframes='[{"time":0,"y":165.816,"curve":"cubic-bezier(0.22,0.8,0.2,1)"},{"time":0.9,"y":0}]'>O que fica</i></span>
+    <span class="line-two"><i data-keyframes='[{"time":0.12,"y":165.816,"curve":"cubic-bezier(0.22,0.8,0.2,1)"},{"time":1.02,"y":0}]'>fora do <em class="accent" style="font-style:normal">quadro</em></i></span>
   </h1>
 
-  <p class="subtitle" data-clip-id="subtitle" data-start="0.6" data-duration="3.4">
+  <p class="subtitle" data-clip-id="subtitle" data-start="0.6" data-duration="3.4" data-enter="subir distance=10 dur=0.8 curve=ease-out">
     Uma conversa sobre montagem, silêncio e as decisões que ninguém vê no arquivo final.
   </p>
 
-  <div class="tick">
-    <b></b><b></b><b></b><b></b>
+  <div class="tick" data-clip-id="tick" data-start="0" data-duration="4">
+    <b data-keyframes='[{"time":0.7,"scaleX":0,"opacity":0,"curve":"cubic-bezier(0,0,0.58,1)"},{"time":1.2,"scaleX":1,"opacity":1}]'></b><b data-keyframes='[{"time":0.78,"scaleX":0,"opacity":0,"curve":"cubic-bezier(0,0,0.58,1)"},{"time":1.28,"scaleX":1,"opacity":1}]'></b><b data-keyframes='[{"time":0.86,"scaleX":0,"opacity":0,"curve":"cubic-bezier(0,0,0.58,1)"},{"time":1.36,"scaleX":1,"opacity":1}]'></b><b data-keyframes='[{"time":0.94,"scaleX":0,"opacity":0,"curve":"cubic-bezier(0,0,0.58,1)"},{"time":1.44,"scaleX":1,"opacity":1}]'></b>
   </div>
 
-  <div class="aside" data-clip-id="aside" data-start="0.75" data-duration="3.25">
+  <div class="aside" data-clip-id="aside" data-start="0.75" data-duration="3.25" data-enter="subir distance=10 dur=0.8 curve=ease-out">
     <strong>Série Ofício</strong>
     12 min · 2026
   </div>

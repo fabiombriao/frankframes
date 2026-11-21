@@ -54,10 +54,6 @@
     overflow: hidden;
     border-top: 1px solid rgba(242, 239, 230, 0.2);
   }
-  .rows {
-    animation: roll 4s linear both;
-    animation-delay: 0.3s;
-  }
   .row {
     height: 130px;
     padding-top: 26px;
@@ -107,24 +103,16 @@
     height: 2px;
     background: rgba(242, 239, 230, 0.32);
   }
-  @keyframes roll {
-    from { transform: translateY(44px); }
-    to { transform: translateY(-780px); }
-  }
-  @keyframes fade-in {
-    from { opacity: 0; transform: translateY(16px); }
-    to { opacity: 1; transform: translateY(0); }
-  }
 </style>
 </head>
 <body>
 <div class="stage" data-composition-id="vertical-credits" data-root="true" data-width="1080" data-height="1920" data-fps="30" data-duration="4.5">
-  <div class="kicker" style="animation: fade-in 0.6s ease-out both; animation-delay: 0.08s">Encerramento</div>
-  <div class="title" style="animation: fade-in 0.7s ease-out both; animation-delay: 0.15s">Quem fez</div>
-  <div class="side" style="animation: fade-in 0.6s ease-out both; animation-delay: 0.28s"><b>06</b>nomes</div>
+  <div class="kicker" data-clip-id="kicker" data-start="0" data-duration="4.5" data-enter="subir distance=16 dur=0.6 at=0.08 curve=ease-out">Encerramento</div>
+  <div class="title" data-clip-id="title" data-start="0" data-duration="4.5" data-enter="subir distance=16 dur=0.7 at=0.15 curve=ease-out">Quem fez</div>
+  <div class="side" data-clip-id="side" data-start="0" data-duration="4.5" data-enter="subir distance=16 dur=0.6 at=0.28 curve=ease-out"><b>06</b>nomes</div>
 
   <div class="window" data-clip-id="credits-window" data-start="0.3" data-duration="4.2">
-    <div class="rows">
+    <div class="rows" data-keyframes='[{"time":0,"y":44,"curve":"linear"},{"time":4,"y":-780}]'>
       <div class="row"><div class="role">Direção</div><div class="name">Ana Vasconcelos</div></div>
       <div class="row"><div class="role">Roteiro</div><div class="name">Tomás Ferreira</div></div>
       <div class="row"><div class="role">Fotografia</div><div class="name">Miguel Braga</div></div>

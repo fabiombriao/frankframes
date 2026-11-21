@@ -23,7 +23,6 @@
     letter-spacing: 0.26em;
     text-transform: uppercase;
     color: rgba(244, 240, 230, 0.5);
-    animation: fade-in 0.6s ease-out both;
   }
   .kicker b { color: #f2e34c; font-weight: 400; margin-right: 12px; }
   .mark {
@@ -34,7 +33,6 @@
     font-size: 400px;
     line-height: 0.62;
     color: #c8412a;
-    animation: mark-in 0.8s cubic-bezier(0.22, 0.85, 0.24, 1) both;
   }
   .quote {
     position: absolute;
@@ -44,7 +42,6 @@
     font-size: 100px;
     line-height: 1.12;
     letter-spacing: -0.02em;
-    animation: quote-in 1s cubic-bezier(0.22, 0.85, 0.24, 1) 0.2s both;
   }
   .quote em {
     font-style: italic;
@@ -61,14 +58,12 @@
     letter-spacing: 0.22em;
     text-transform: uppercase;
     color: rgba(244, 240, 230, 0.45);
-    animation: fade-in 0.8s ease-out 0.55s both;
   }
   .attrib {
     position: absolute;
     left: 96px;
     right: 96px;
     bottom: 180px;
-    animation: fade-in 0.9s ease-out 0.8s both;
   }
   .rule {
     width: 100%;
@@ -114,34 +109,22 @@
     color: rgba(244, 240, 230, 0.42);
   }
   .stamp b { display: block; color: #f4f0e6; font-weight: 400; }
-  @keyframes quote-in {
-    from { opacity: 0; transform: translateY(44px); }
-    to { opacity: 1; transform: translateY(0); }
-  }
-  @keyframes mark-in {
-    from { opacity: 0; transform: translateY(-28px) scale(0.9); }
-    to { opacity: 1; transform: translateY(0) scale(1); }
-  }
-  @keyframes fade-in {
-    from { opacity: 0; transform: translateY(14px); }
-    to { opacity: 1; transform: translateY(0); }
-  }
 </style>
 </head>
 <body>
 <div class="stage" data-composition-id="vertical-testimonial" data-root="true" data-width="1080" data-height="1920" data-fps="30" data-duration="4">
-  <div class="kicker" data-clip-id="vtest-kicker" data-start="0" data-duration="4"><b>03</b>Depoimento</div>
-  <div class="mark" data-clip-id="vtest-mark" data-start="0.05" data-duration="3.95">&ldquo;</div>
+  <div class="kicker" data-clip-id="vtest-kicker" data-start="0" data-duration="4" data-enter="subir distance=14 dur=0.6 curve=ease-out"><b>03</b>Depoimento</div>
+  <div class="mark" data-clip-id="vtest-mark" data-start="0.05" data-duration="3.95" data-keyframes='[{"time":0,"y":-21.26775,"scale":0.92404,"opacity":0.24044,"curve":"cubic-bezier(0.18072,0.84102,0.27263,1)"},{"time":0.75,"y":0,"scale":1,"opacity":1}]'>&ldquo;</div>
 
-  <div class="quote" data-clip-id="vtest-quote" data-start="0.2" data-duration="3.8">
+  <div class="quote" data-clip-id="vtest-quote" data-start="0.2" data-duration="3.8" data-enter="subir distance=44 dur=1 curve=cubic-bezier(0.22,0.85,0.24,1)">
     Eles filmaram a cidade como quem <em>pede licença</em>.
   </div>
 
-  <div class="stamp-line" data-clip-id="vtest-stamp" data-start="0.55" data-duration="3.45">
+  <div class="stamp-line" data-clip-id="vtest-stamp" data-start="0.55" data-duration="3.45" data-enter="subir distance=14 dur=0.8 curve=ease-out">
     Campanha Casa Norte · Temporada 2026
   </div>
 
-  <div class="attrib" data-clip-id="vtest-attrib" data-start="0.8" data-duration="3.2">
+  <div class="attrib" data-clip-id="vtest-attrib" data-start="0.8" data-duration="3.2" data-enter="subir distance=14 dur=0.9 curve=ease-out">
     <div class="rule"></div>
     <div class="row">
       <div class="avatar">MT</div>

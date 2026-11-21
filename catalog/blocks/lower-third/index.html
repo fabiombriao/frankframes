@@ -52,7 +52,6 @@
     height: 236px;
     background: #f2e34c;
     transform-origin: left center;
-    animation: band-in 0.85s cubic-bezier(0.22, 0.8, 0.2, 1) both;
   }
   .name {
     position: absolute;
@@ -65,7 +64,6 @@
     letter-spacing: 0.01em;
     text-transform: uppercase;
     color: #101113;
-    animation: slide-in 0.8s cubic-bezier(0.22, 0.8, 0.2, 1) 0.18s both;
   }
   .role {
     position: absolute;
@@ -77,7 +75,6 @@
     letter-spacing: 0.08em;
     text-transform: uppercase;
     color: #101113;
-    animation: slide-in 0.8s cubic-bezier(0.22, 0.8, 0.2, 1) 0.34s both;
   }
   .marker {
     position: absolute;
@@ -87,7 +84,6 @@
     height: 236px;
     background: #e0452b;
     transform-origin: bottom center;
-    animation: marker-in 0.6s cubic-bezier(0.22, 0.8, 0.2, 1) both;
   }
   .meta {
     position: absolute;
@@ -98,25 +94,8 @@
     letter-spacing: 0.08em;
     text-transform: uppercase;
     color: rgba(241, 239, 232, 0.52);
-    animation: fade-in 0.9s ease-out 0.5s both;
   }
   .meta strong { display: block; color: #f1efe8; font-weight: 400; font-size: 24px; letter-spacing: 0.02em; }
-  @keyframes band-in {
-    from { transform: scaleX(0); }
-    to { transform: scaleX(1); }
-  }
-  @keyframes marker-in {
-    from { transform: scaleY(0); }
-    to { transform: scaleY(1); }
-  }
-  @keyframes slide-in {
-    from { transform: translateX(-48px); opacity: 0; }
-    to { transform: translateX(0); opacity: 1; }
-  }
-  @keyframes fade-in {
-    from { opacity: 0; }
-    to { opacity: 1; }
-  }
 </style>
 </head>
 <body>
@@ -124,15 +103,15 @@
   <div class="ghost">02</div>
   <div class="frame-line"></div>
 
-  <div class="kicker" data-clip-id="kicker" data-start="0" data-duration="3" style="animation: fade-in 0.6s ease-out both">Perfil / Entrevista</div>
+  <div class="kicker" data-clip-id="kicker" data-start="0" data-duration="3" data-enter="surgir dur=0.6 curve=ease-out">Perfil / Entrevista</div>
 
-  <div class="band" data-clip-id="band" data-start="0.1" data-duration="2.9"></div>
-  <div class="marker" data-clip-id="marker" data-start="0.1" data-duration="2.9"></div>
+  <div class="band" data-clip-id="band" data-start="0.1" data-duration="2.9" data-keyframes='[{"time":0,"scaleX":0.43167,"curve":"cubic-bezier(0.14815,0.78147,0.28552,1)"},{"time":0.75,"scaleX":1}]'></div>
+  <div class="marker" data-clip-id="marker" data-start="0.1" data-duration="2.9" data-keyframes='[{"time":0,"scaleY":0.58207,"curve":"cubic-bezier(0.14334,0.77175,0.33701,1)"},{"time":0.5,"scaleY":1}]'></div>
 
-  <div class="name" data-clip-id="name" data-start="0.25" data-duration="2.75">Helena Vasques</div>
-  <div class="role" data-clip-id="role" data-start="0.45" data-duration="2.55">Diretora de fotografia</div>
+  <div class="name" data-clip-id="name" data-start="0.25" data-duration="2.75" data-enter="chegar-esquerda distance=48 dur=0.8 at=-0.07 curve=cubic-bezier(0.22,0.8,0.2,1)">Helena Vasques</div>
+  <div class="role" data-clip-id="role" data-start="0.45" data-duration="2.55" data-enter="chegar-esquerda distance=48 dur=0.8 at=-0.11 curve=cubic-bezier(0.22,0.8,0.2,1)">Diretora de fotografia</div>
 
-  <div class="meta" data-clip-id="meta" data-start="0.62" data-duration="2.38">
+  <div class="meta" data-clip-id="meta" data-start="0.62" data-duration="2.38" data-enter="surgir dur=0.9 at=-0.12 curve=ease-out">
     <strong>01 — 04</strong>
     Série documental<br>
     Salvador, BA

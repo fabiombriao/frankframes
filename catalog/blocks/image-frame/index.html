@@ -37,7 +37,6 @@
     border: 1px solid #151513;
     box-shadow: 18px 18px 0 rgba(21, 21, 19, 0.12);
     transform-origin: center center;
-    animation: plate-in 1s cubic-bezier(0.16, 0.85, 0.25, 1) both;
   }
   .scene {
     position: relative;
@@ -46,7 +45,6 @@
     overflow: hidden;
     background:
       linear-gradient(180deg, #ccd8cd 0%, #e9e0c7 36%, #235451 36%, #1a4341 55%, #c78e4c 55%, #af7440 66%, #2a2924 66%, #1d1c19 100%);
-    animation: pan 3.5s cubic-bezier(0.2, 0.6, 0.3, 1) both;
   }
   .scene::before {
     content: "";
@@ -127,18 +125,6 @@
   .marks .b { right: 304px; top: 104px; border-width: 2px 2px 0 0; }
   .marks .c { left: 304px; bottom: 196px; border-width: 0 0 2px 2px; }
   .marks .d { right: 304px; bottom: 196px; border-width: 0 2px 2px 0; }
-  @keyframes plate-in {
-    from { transform: scale(0.94); opacity: 0; }
-    to { transform: scale(1); opacity: 1; }
-  }
-  @keyframes pan {
-    from { transform: scale(1.06); }
-    to { transform: scale(1); }
-  }
-  @keyframes fade-up {
-    from { transform: translateY(22px); opacity: 0; }
-    to { transform: translateY(0); opacity: 1; }
-  }
 </style>
 </head>
 <body>
@@ -147,19 +133,19 @@
 
   <div class="marks"><span class="a"></span><span class="b"></span><span class="c"></span><span class="d"></span></div>
 
-  <div class="plate" data-clip-id="plate" data-start="0.1" data-duration="3.4">
-    <div class="scene">
+  <div class="plate" data-clip-id="plate" data-start="0.1" data-duration="3.4" data-enter="crescer amount=0.94 dur=1 at=-0.1 curve=cubic-bezier(0.16,0.85,0.25,1)">
+    <div class="scene" data-keyframes='[{"time":0,"scale":1.05483,"curve":"cubic-bezier(0.18795,0.60386,0.31448,1)"},{"time":3.4,"scale":1}]'>
       <div class="water-line"></div>
       <div class="ridge"></div>
     </div>
   </div>
 
-  <div class="caption" data-clip-id="caption" data-start="0.7" data-duration="2.8" style="animation: fade-up 0.8s ease-out 0.7s both">
+  <div class="caption" data-clip-id="caption" data-start="0.7" data-duration="2.8" data-enter="subir distance=22 dur=0.8 curve=ease-out">
     <div class="fig">Fig. 04</div>
     <div class="title">Maré baixa, 06:12</div>
   </div>
 
-  <div class="note" data-clip-id="note" data-start="0.95" data-duration="2.55" style="animation: fade-up 0.8s ease-out 0.9s both">
+  <div class="note" data-clip-id="note" data-start="0.95" data-duration="2.55" data-enter="subir distance=22 dur=0.8 at=-0.05 curve=ease-out">
     Litoral norte · série atlântica<br>
     negativo 6×7 · 400 ISO
   </div>

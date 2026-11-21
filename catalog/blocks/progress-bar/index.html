@@ -23,7 +23,6 @@
     letter-spacing: 0.24em;
     text-transform: uppercase;
     color: rgba(242, 239, 230, 0.45);
-    animation: fade-in 0.6s ease-out both;
   }
   .kicker b { color: #f2e34c; font-weight: 400; margin-right: 16px; }
   .headline {
@@ -35,7 +34,6 @@
     font-weight: 700;
     line-height: 1.02;
     letter-spacing: -0.04em;
-    animation: rise-in 0.75s cubic-bezier(0.22, 0.8, 0.2, 1) 0.08s both;
   }
   .headline span { color: rgba(242, 239, 230, 0.38); }
   .status {
@@ -47,7 +45,6 @@
     text-transform: uppercase;
     color: rgba(242, 239, 230, 0.4);
     text-align: right;
-    animation: fade-in 0.6s ease-out 0.2s both;
   }
   .status b { display: block; margin-top: 12px; font-weight: 400; font-size: 26px; color: #f2e34c; letter-spacing: 0.06em; }
   .track {
@@ -58,7 +55,6 @@
     height: 64px;
     background: #1d1f24;
     overflow: hidden;
-    animation: fade-in 0.5s ease-out 0.15s both;
   }
   .fill {
     position: absolute;
@@ -85,7 +81,6 @@
     width: 1560px;
     height: 22px;
     background-image: repeating-linear-gradient(90deg, rgba(242, 239, 230, 0.28) 0 2px, transparent 2px 156px);
-    animation: fade-in 0.6s ease-out 0.5s both;
   }
   .scale {
     position: absolute;
@@ -97,7 +92,6 @@
     font: 400 17px/1 "JetBrains Mono", monospace;
     letter-spacing: 0.1em;
     color: rgba(242, 239, 230, 0.5);
-    animation: fade-in 0.6s ease-out 0.6s both;
   }
   .legend {
     position: absolute;
@@ -112,7 +106,6 @@
     letter-spacing: 0.12em;
     text-transform: uppercase;
     color: rgba(242, 239, 230, 0.42);
-    animation: fade-in 0.8s ease-out 1.35s both;
   }
   .legend strong { display: block; font-family: "Inter", sans-serif; font-weight: 600; font-size: 26px; letter-spacing: 0; text-transform: none; color: #f2efe6; }
   .check {
@@ -127,38 +120,30 @@
     from { width: 0%; }
     to { width: 100%; }
   }
-  @keyframes rise-in {
-    from { transform: translateY(24px); opacity: 0; }
-    to { transform: translateY(0); opacity: 1; }
-  }
-  @keyframes fade-in {
-    from { opacity: 0; transform: translateY(8px); }
-    to { opacity: 1; transform: translateY(0); }
-  }
 </style>
 </head>
 <body>
 <div class="stage" data-composition-id="progress-bar" data-root="true" data-width="1920" data-height="1080" data-fps="30" data-duration="4">
-  <div class="kicker" data-clip-id="kicker" data-start="0" data-duration="4"><b>Render</b>Fila de exportação</div>
+  <div class="kicker" data-clip-id="kicker" data-start="0" data-duration="4" data-enter="subir distance=8 dur=0.6 curve=ease-out"><b>Render</b>Fila de exportação</div>
 
-  <h1 class="headline" data-clip-id="headline" data-start="0.08" data-duration="3.92">
+  <h1 class="headline" data-clip-id="headline" data-start="0.08" data-duration="3.92" data-enter="subir distance=24 dur=0.75 curve=cubic-bezier(0.22,0.8,0.2,1)">
     Quatro minutos de vídeo,<br><span>1.240 frames capturados.</span>
   </h1>
 
-  <div class="status" data-clip-id="status" data-start="0.2" data-duration="3.8">
+  <div class="status" data-clip-id="status" data-start="0.2" data-duration="3.8" data-enter="subir distance=8 dur=0.6 curve=ease-out">
     progresso
     <b id="done">100%</b>
   </div>
 
-  <div class="track" data-clip-id="track" data-start="0.15" data-duration="3.85">
+  <div class="track" data-clip-id="track" data-start="0.15" data-duration="3.85" data-enter="subir distance=8 dur=0.5 curve=ease-out">
     <div class="fill" data-clip-id="fill" data-start="0.25" data-duration="3.75"></div>
   </div>
-  <div class="ticks" data-start="0.15" data-duration="3.85"></div>
-  <div class="scale" data-start="0.15" data-duration="3.85">
+  <div class="ticks" data-start="0.15" data-duration="3.85" data-enter="subir distance=8 dur=0.6 at=0.35 curve=ease-out"></div>
+  <div class="scale" data-start="0.15" data-duration="3.85" data-enter="subir distance=8 dur=0.6 at=0.45 curve=ease-out">
     <span>0</span><span>25</span><span>50</span><span>75</span><span>100%</span>
   </div>
 
-  <div class="legend" data-clip-id="legend" data-start="1.35" data-duration="2.65">
+  <div class="legend" data-clip-id="legend" data-start="1.35" data-duration="2.65" data-enter="subir distance=8 dur=0.8 curve=ease-out">
     <div><strong><span class="check"></span>frames verificados</strong>SHA-256 por amostra</div>
     <div style="text-align:right"><strong>1920 × 1080 · 30 fps</strong>h264 · 12 Mbps</div>
   </div>

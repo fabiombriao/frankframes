@@ -69,7 +69,6 @@
     height: 14px;
     background: #d8452e;
     transform-origin: left center;
-    animation: draw 0.9s cubic-bezier(0.22, 0.8, 0.2, 1) 1.2s both;
   }
   .copy {
     position: absolute;
@@ -81,7 +80,6 @@
     font-size: 42px;
     line-height: 1.25;
     letter-spacing: -0.015em;
-    animation: fade-up 0.9s cubic-bezier(0.22, 0.8, 0.2, 1) 0.9s both;
   }
   .copy strong { font-weight: 700; }
   .footnote {
@@ -102,14 +100,6 @@
   @keyframes tick-seven {
     to { transform: translateY(-2800px); }
   }
-  @keyframes draw {
-    from { transform: scaleX(0); }
-    to { transform: scaleX(1); }
-  }
-  @keyframes fade-up {
-    from { transform: translateY(26px); opacity: 0; }
-    to { transform: translateY(0); opacity: 1; }
-  }
 </style>
 </head>
 <body>
@@ -123,9 +113,9 @@
     <div class="percent">%</div>
   </div>
 
-  <div class="underline" data-clip-id="underline" data-start="1.1" data-duration="2.4"></div>
+  <div class="underline" data-clip-id="underline" data-start="1.1" data-duration="2.4" data-keyframes='[{"time":0.1,"scaleX":0,"curve":"cubic-bezier(0.22,0.8,0.2,1)"},{"time":1,"scaleX":1}]'></div>
 
-  <div class="copy" data-clip-id="copy" data-start="0.9" data-duration="2.6">
+  <div class="copy" data-clip-id="copy" data-start="0.9" data-duration="2.6" data-enter="subir distance=26 dur=0.9 curve=cubic-bezier(0.22,0.8,0.2,1)">
     das equipes de pós<br><strong>terminam no prazo</strong><br>quando o corte é aprovado antes da trilha.
   </div>
 

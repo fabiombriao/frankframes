@@ -54,7 +54,6 @@
     font-size: 190px;
     line-height: 1;
     transform-origin: center center;
-    animation: mark-in 0.9s cubic-bezier(0.16, 0.85, 0.25, 1) 0.25s both;
   }
   .mark small {
     position: absolute;
@@ -72,7 +71,6 @@
     height: 6px;
     background: #0d0d0c;
     transform-origin: left center;
-    animation: draw 0.8s cubic-bezier(0.16, 0.85, 0.25, 1) 0.7s both;
   }
   .footer {
     position: absolute;
@@ -86,24 +84,11 @@
     letter-spacing: 0.1em;
     text-transform: uppercase;
     color: rgba(13, 13, 12, 1);
-    animation: fade-up 0.7s ease-out 0.9s both;
   }
   .footer .brand { font-family: "Anton", sans-serif; font-size: 42px; letter-spacing: 0.01em; text-transform: none; color: #0d0d0c; }
   @keyframes wipe {
     from { transform: translateY(46px); clip-path: inset(0 0 100% 0); }
     to { transform: translateY(0); clip-path: inset(0 0 -12% 0); }
-  }
-  @keyframes mark-in {
-    from { transform: rotate(-8deg) scale(0.7); opacity: 0; }
-    to { transform: rotate(0deg) scale(1); opacity: 1; }
-  }
-  @keyframes draw {
-    from { transform: scaleX(0); }
-    to { transform: scaleX(1); }
-  }
-  @keyframes fade-up {
-    from { transform: translateY(16px); opacity: 0; }
-    to { transform: translateY(0); opacity: 1; }
   }
 </style>
 </head>
@@ -114,10 +99,10 @@
   <div class="headline one reveal" data-clip-id="line-one" data-start="0.05" data-duration="2.95">Até a</div>
   <div class="headline two reveal" data-clip-id="line-two" data-start="0.22" data-duration="2.78" style="animation-delay: 0.22s">próxima.</div>
 
-  <div class="mark" data-clip-id="mark" data-start="0.3" data-duration="2.7">FF<small>1920/1080</small></div>
-  <div class="bar" data-clip-id="bar" data-start="0.65" data-duration="2.35"></div>
+  <div class="mark" data-clip-id="mark" data-start="0.3" data-duration="2.7" data-keyframes='[{"time":0,"opacity":0.27544,"scale":0.78263,"rotate":-5.79644,"curve":"cubic-bezier(0.1433,0.83946,0.30069,1)"},{"time":0.85,"opacity":1,"scale":1,"rotate":0}]'>FF<small>1920/1080</small></div>
+  <div class="bar" data-clip-id="bar" data-start="0.65" data-duration="2.35" data-keyframes='[{"time":0.05,"scaleX":0,"curve":"cubic-bezier(0.16,0.85,0.25,1)"},{"time":0.85,"scaleX":1}]'></div>
 
-  <div class="footer" data-clip-id="footer" data-start="0.85" data-duration="2.15">
+  <div class="footer" data-clip-id="footer" data-start="0.85" data-duration="2.15" data-enter="subir distance=16 dur=0.7 at=0.05 curve=ease-out">
     <span class="brand">FrankFrames</span>
     <span>Vídeo é arquivo.<br>Nada é estimado.</span>
   </div>

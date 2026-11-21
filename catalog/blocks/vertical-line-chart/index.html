@@ -43,9 +43,6 @@
     display: flex;
     align-items: baseline;
     gap: 22px;
-    opacity: 0;
-    animation: rise 0.6s ease-out both;
-    animation-delay: 1.9s;
   }
   .final b {
     font-family: "Anton", sans-serif;
@@ -90,17 +87,11 @@
   }
   .dot {
     fill: #f2e34c;
-    opacity: 0;
-    animation: pop 0.45s ease-out both;
-    animation-delay: 2.15s;
   }
   .halo {
     fill: none;
     stroke: rgba(242, 227, 76, 0.4);
     stroke-width: 3;
-    opacity: 0;
-    animation: pop 0.5s ease-out both;
-    animation-delay: 2.25s;
   }
   .foot {
     position: absolute;
@@ -123,26 +114,14 @@
     from { stroke-dashoffset: 1; }
     to { stroke-dashoffset: 0; }
   }
-  @keyframes pop {
-    from { opacity: 0; }
-    to { opacity: 1; }
-  }
-  @keyframes rise {
-    from { transform: translateY(24px); opacity: 0; }
-    to { transform: translateY(0); opacity: 1; }
-  }
-  @keyframes fade-in {
-    from { opacity: 0; }
-    to { opacity: 1; }
-  }
 </style>
 </head>
 <body>
 <div class="stage" data-composition-id="vertical-line-chart" data-root="true" data-width="1080" data-height="1920" data-fps="30" data-duration="4">
-  <div class="kicker" style="animation: fade-in 0.6s ease-out both; animation-delay: 0.08s"><b>01</b>uso diário</div>
-  <div class="title" style="animation: rise 0.7s ease-out both; animation-delay: 0.15s">O hábito <span>pegou.</span></div>
+  <div class="kicker" data-clip-id="kicker" data-start="0" data-duration="4" data-enter="surgir dur=0.6 at=0.08 curve=ease-out"><b>01</b>uso diário</div>
+  <div class="title" data-clip-id="title" data-start="0" data-duration="4" data-enter="subir distance=24 dur=0.7 at=0.15 curve=ease-out">O hábito <span>pegou.</span></div>
 
-  <div class="final" data-clip-id="final-value" data-start="1.9" data-duration="2.1"><b>128</b><small>unid. por dia<br>junho de 2026</small></div>
+  <div class="final" data-clip-id="final-value" data-start="1.9" data-duration="2.1" data-enter="subir distance=24 dur=0.6 curve=ease-out"><b>128</b><small>unid. por dia<br>junho de 2026</small></div>
 
   <div class="plot" data-clip-id="plot" data-start="0.5" data-duration="3.5">
     <svg viewBox="0 0 888 760" role="img" aria-label="Uma série de uso diário crescendo de 40 para 128 unidades">
@@ -165,13 +144,13 @@
 
       <path class="series" pathLength="1" d="M80 469 L236 404 L392 349 L548 246 L704 177 L860 91"></path>
 
-      <circle class="halo" cx="860" cy="91" r="24"></circle>
-      <circle class="dot" cx="860" cy="91" r="11"></circle>
+      <circle class="halo" cx="860" cy="91" r="24" data-enter="surgir dur=0.5 at=1.75 curve=ease-out"></circle>
+      <circle class="dot" cx="860" cy="91" r="11" data-enter="surgir dur=0.45 at=1.65 curve=ease-out"></circle>
     </svg>
   </div>
 
-  <div class="foot" style="animation: fade-in 0.6s ease-out both; animation-delay: 1.35s">Média móvel de 7 dias · exclui fins de semana</div>
-  <div class="stamp" style="animation: fade-in 0.6s ease-out both; animation-delay: 1.45s">FIG. 08</div>
+  <div class="foot" data-clip-id="foot" data-start="0" data-duration="4" data-enter="surgir dur=0.6 at=1.35 curve=ease-out">Média móvel de 7 dias · exclui fins de semana</div>
+  <div class="stamp" data-clip-id="stamp" data-start="0" data-duration="4" data-enter="surgir dur=0.6 at=1.45 curve=ease-out">FIG. 08</div>
 </div>
 </body>
 </html>

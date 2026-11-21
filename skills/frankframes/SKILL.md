@@ -164,8 +164,10 @@ quando tiver espaço: `font-family: "Space Grotesk", sans-serif`.
   entrada>"` (ex.: `--motion "subir"`), cada palavra também entra com esse preset, na hora em que é falada.
 - Papel no mix: `data-audio-role="voice"` faz a música com `data-audio-role="music"` abaixar 9 dB.
 - Entrega sai normalizada a −14 LUFS; use `--no-loudness` só para pós-produção externa.
-- Animações CSS começam no tempo 0 da composição. Para a entrada acontecer quando o clip aparece,
-  use `animation-delay` igual ao `data-start` do clip — não confie no aparecimento para disparar.
+- Para a entrada acontecer quando o clip aparece, use `data-enter`/`data-keyframes`: o tempo é local ao
+  clip (`at=0` é o `data-start`), sem conta de `animation-delay` absoluto. Animação CSS começa no tempo 0
+  da composição; deixe em CSS só o que o motion não cobre (cor, `stroke-dash*`, `width`/`height`,
+  contadores, `steps()`, `transform` com skew/matrix, `clip-path` com sobra negativa).
 
 ## Checklist de entrega
 
