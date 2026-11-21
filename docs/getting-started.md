@@ -63,6 +63,16 @@ O contrato completo está em [`docs/contract.md`](contract.md). O mínimo:
 - Sem `data-duration` na raiz, a duração é derivada do maior fim — e nunca estimada.
 - Erro de contrato **bloqueia** o render: `frankframes lint arquivo.html` diz o código e o que fazer.
 
+## Legendas
+
+```bash
+frankframes captions audio.wav -o legendas.html --size 1080x1920
+```
+
+Se o provedor devolver tempos por palavra, a legenda sai em **karaokê**: cada palavra acende no
+instante exato (`animation-delay` absoluto) e as já faladas ficam na cor de destaque. Sem palavras,
+o texto quebra em linhas equilibradas e a fonte encolhe para caber na largura segura.
+
 ## 6. Usar um bloco pronto
 
 ```bash

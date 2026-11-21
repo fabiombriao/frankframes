@@ -262,7 +262,11 @@ async function main(): Promise<void> {
     try {
       const transcriber = await resolveProvider({ language: cli.language });
       const result = await transcriber.transcribe(entry, { language: cli.language });
-      const html = buildCaptionComposition(result.segments, {
+      const segments = result.segments.map((segment) => ({
+        ...segment,
+        words: (result.words ?? []).filter((word) => word.start >= segment.start - 0.01 && word.start < segment.end),
+      }));
+      const html = buildCaptionComposition(segments, {
         ...(Number.isFinite(width) ? { width } : {}),
         ...(Number.isFinite(height) ? { height } : {}),
       });

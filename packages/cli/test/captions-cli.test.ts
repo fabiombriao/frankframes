@@ -62,5 +62,7 @@ test("captions gera composição de legendas a partir do provedor", { timeout: 1
   assert.equal(composition.clips.length, 1);
   assert.equal(composition.clips[0]!.start, 0);
   assert.equal(composition.clips[0]!.end, 1.5);
-  assert.ok(html.includes("olá mundo"));
+  // O provedor devolveu `words`: a saída entra em modo karaokê.
+  assert.equal((html.match(/class="w"/g) ?? []).length, 2);
+  assert.ok(html.includes(">olá<") && html.includes(">mundo<"));
 });

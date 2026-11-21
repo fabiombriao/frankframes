@@ -1,8 +1,16 @@
 // FrankFrames — proprietário. Ver LICENSE na raiz.
+export interface CaptionWord {
+  start: number;
+  end: number;
+  word: string;
+}
+
 export interface CaptionSegment {
   start: number;
   end: number;
   text: string;
+  /** Palavras com tempo: liga o modo karaokê. */
+  words?: CaptionWord[];
 }
 
 export interface CaptionOptions {
@@ -17,6 +25,8 @@ export interface CaptionOptions {
   maxCharsPerLine?: number;
   /** Acima disso, a fonte encolhe em degraus. Padrão: 3. */
   maxLines?: number;
+  /** Cor da palavra já falada no karaokê. Padrão: #ffd400. */
+  highlight?: string;
 }
 
 /**
@@ -75,13 +85,28 @@ export function buildCaptionComposition(segments: CaptionSegment[], options: Cap
   if (usable.length === 0) throw new Error("nenhum segmento válido para gerar legendas");
 
   const duration = Math.max(...usable.map((segment) => segment.end));
+  const highlight = options.highlight ?? "#ffd400";
   const clips = usable
     .map((segment, index) => {
       const start = segment.start.toFixed(3);
       const length = (segment.end - segment.start).toFixed(3);
       const lines = wrapLines(segment.text, maxChars);
       const size = fitFontSize(lines, baseFontSize, maxChars, options.maxLines ?? 3);
-      const body = lines.map((line) => escapeHtml(line)).join("<br>");
+
+      // Karaokê: cada palavra acende no seu instante. Como a animação CSS roda no
+      // tempo do documento, o atraso é o `word.start` absoluto — o clip só fica
+      // visível a partir do `data-start` do segmento.
+      const words = (segment.words ?? []).filter((word) => Number.isFinite(word.start) && word.word.trim() !== "");
+      const body =
+        words.length > 0
+          ? words
+              .map(
+                (word) =>
+                  `<span class="w" style="animation-delay:${Math.max(0, word.start).toFixed(3)}s">${escapeHtml(word.word.trim())}</span>`,
+              )
+              .join(" ")
+          : lines.map((line) => escapeHtml(line)).join("<br>");
+
       return `    <div class="caption" data-clip-id="cap-${index}" data-start="${start}" data-duration="${length}" style="font-size:${size}px">${body}</div>`;
     })
     .join("\n");
@@ -115,6 +140,14 @@ export function buildCaptionComposition(segments: CaptionSegment[], options: Cap
       line-height: 1.18;
       text-align: center;
       border-radius: ${Math.round(baseFontSize * 0.16)}px;
+    }
+    .w {
+      color: rgba(255, 255, 255, 0.62);
+      animation: k 1ms linear both;
+      white-space: pre;
+    }
+    @keyframes k {
+      to { color: ${highlight}; }
     }
   </style>
 </head>

@@ -53,3 +53,37 @@ test("composição de legenda quebra o texto e mantém tempo", () => {
   assert.ok(html.includes("<br>"), "texto longo precisa de quebra explícita");
   assert.equal((html.match(/data-clip-id=/g) ?? []).length, 1);
 });
+
+test("karaokê: uma palavra por span, acesa no instante absoluto", () => {
+  const html = buildCaptionComposition(
+    [
+      {
+        start: 1,
+        end: 3,
+        text: "olá mundo",
+        words: [
+          { start: 1, end: 1.8, word: "olá" },
+          { start: 1.9, end: 2.6, word: "mundo" },
+        ],
+      },
+    ],
+    { width: 1080, height: 1920, highlight: "#ff2d55" },
+  );
+
+  const composition = loadComposition(html);
+  assert.equal(composition.ok, true, JSON.stringify(composition.diagnostics));
+  assert.equal((html.match(/class="w"/g) ?? []).length, 2, "uma palavra por span");
+  assert.ok(html.includes("animation-delay:1.000s"), "primeira palavra acende no segundo 1");
+  assert.ok(html.includes("animation-delay:1.900s"));
+  assert.ok(html.includes("@keyframes k"), "keyframe do destaque precisa existir");
+  assert.ok(html.includes("#ff2d55"));
+  assert.ok(!html.includes("<br>"), "com palavras, o texto não é quebrado manualmente");
+});
+
+test("palavras inválidas caem no modo texto", () => {
+  const html = buildCaptionComposition([
+    { start: 0, end: 1, text: "sem palavras", words: [{ start: Number.NaN, end: 1, word: "x" }] },
+  ]);
+  assert.ok(!html.includes('class="w"'));
+  assert.ok(html.includes("sem palavras"));
+});
