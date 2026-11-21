@@ -47,6 +47,7 @@ node packages/cli/src/cli.ts browser install   # shell pinado 158 + verificaçã
 npm test
 node packages/cli/src/cli.ts lint examples/hello.html
 node packages/cli/src/cli.ts gallery            # galeria dos 48 blocos no navegador
+node scripts/showreel.ts                       # showreel MP4 com os 48 blocos (~3 min de vídeo)
 node packages/cli/src/cli.ts preview examples/hello.html --open
 node packages/cli/src/cli.ts render examples/hello.html -o out/hello.mp4 --preset draft --workers 4
 node packages/cli/src/cli.ts render entrada.html --gpu software --no-loudness
