@@ -347,6 +347,33 @@
           ],
           "acceptance": "Visto em 2026-11-21, sempre na rodada completa de node scripts/ci.ts e nunca isolado: (a) preview-audio.test.ts falhou 3 vezes (EDT-50, EDT-52, EDT-55) com deriva de cerca de -170 ms; (b) engine parallel.test.ts falhou 1 vez (EDT-54 Studio) com E_FONT_LOAD 'A network error occurred' ao carregar Poppins 600 de vendor/fonts. Critério: (1) causa de cada um diagnosticada e registrada no comentário do item (relógio, timeout, servidor de fontes, concorrência); (2) correção na causa, sem retry cego nem tolerância alargada sem justificativa medida; (3) se o problema for do produto (fonte local falhando sob carga), o render falha alto ou espera de forma determinística, com teste que reproduz a carga; (4) 5 rodadas completas seguidas do gate verdes.",
           "jiraKey": "EDT-72"
+        },
+        {
+          "summary": "Diagnóstico para data-start ignorado em filho que não vira clip",
+          "points": 2,
+          "labels": [
+            "contrato",
+            "motion"
+          ],
+          "acceptance": [
+            "lint emite aviso com código estável quando um elemento tem data-start mas não é clip (sem data-duration resolvível nem data-clip-id), apontando que o motion dele usa o início do clip dono",
+            "docs/contract.md descreve o aviso no mesmo commit",
+            "teste que falharia sem o aviso, com o caso real do vertical-chart (data-start dentro das barras)"
+          ],
+          "jiraKey": "EDT-73"
+        },
+        {
+          "summary": "generate-catalog atualiza o sha256 do meta.json",
+          "points": 1,
+          "labels": [
+            "catalogo",
+            "tooling"
+          ],
+          "acceptance": [
+            "scripts/generate-catalog.ts recalcula sha256 do index.html de cada bloco e grava no meta.json",
+            "teste: mudar um index.html e rodar o script deixa catalog-server.test.ts verde sem passo manual"
+          ],
+          "jiraKey": "EDT-74"
         }
       ],
       "jiraKey": "EDT-26"
