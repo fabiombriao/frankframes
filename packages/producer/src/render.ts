@@ -64,6 +64,16 @@ function motionFailure(error: unknown): RenderError | undefined {
   return match === null ? undefined : new RenderError("E_MOTION_RUNTIME", "capture", match[0]);
 }
 
+/**
+ * Face de fonte declarada que não carregou na prontidão da página: o texto sairia na fonte
+ * de reserva. A mensagem já traz a família e o que conferir (o "hint" fica na frase).
+ */
+function fontFailure(error: unknown): RenderError | undefined {
+  const message = error instanceof Error ? error.message : String(error);
+  const match = /E_FONT_LOAD: [^\r\n]*/.exec(message);
+  return match === null ? undefined : new RenderError("E_FONT_LOAD", "capture", match[0]);
+}
+
 export interface PrepareOptions {
   entry: string;
   ffmpeg?: string;
@@ -308,7 +318,7 @@ export async function renderComposition(options: RenderOptions): Promise<RenderR
         }),
       );
     } catch (error) {
-      throw motionFailure(error) ?? error;
+      throw motionFailure(error) ?? fontFailure(error) ?? error;
     } finally {
       await server.close();
     }

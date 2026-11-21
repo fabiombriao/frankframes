@@ -103,8 +103,19 @@ export const CLOCK_SOURCE = `(() => {
       return;
     }
     // Carrega TODA face declarada: texto que só aparece no meio do clip não pode
-    // trocar de fonte durante a captura.
-    const faces = document.fonts ? [...document.fonts].map((face) => face.load().catch(() => {})) : [];
+    // trocar de fonte durante a captura. Face que não carrega é falha (E_FONT_LOAD):
+    // sem isso o texto sairia na fonte de reserva, sem aviso. Vale também para a face
+    // que nenhum elemento usa, porque o contrato é "toda face declarada carrega".
+    const fontFailures = [];
+    const faces = document.fonts
+      ? [...document.fonts].map((face) =>
+          face.load().catch((error) => {
+            fontFailures.push(
+              face.family + " (peso " + face.weight + ", estilo " + face.style + "): " + (error && error.message ? error.message : String(error)),
+            );
+          }),
+        )
+      : [];
     Promise.all([
       ...faces,
       document.fonts ? document.fonts.ready : Promise.resolve(),
@@ -115,10 +126,19 @@ export const CLOCK_SOURCE = `(() => {
             })
           : Promise.resolve(),
       ),
-    ]).then(
-      () => readyDeferred.resolve(true),
-      (error) => readyDeferred.reject(error),
-    );
+    ])
+      .then(() => {
+        if (fontFailures.length > 0) {
+          throw new Error(
+            "E_FONT_LOAD: fonte declarada não carregou: " + fontFailures.join("; ") +
+              " (confira o src do @font-face, caminho e arquivo, ou a fonte em vendor/fonts)",
+          );
+        }
+      })
+      .then(
+        () => readyDeferred.resolve(true),
+        (error) => readyDeferred.reject(error),
+      );
   };
   const syncAnimations = () => {
     for (const animation of document.getAnimations()) {

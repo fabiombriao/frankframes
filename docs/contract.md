@@ -309,6 +309,12 @@ O contrato promete isto ao autor, e o engine tem que cumprir:
 7. **Prova**: SHA-256 por frame amostrado, versionado no repositório. Divergência de hash cai para
    comparação de PSNR contra o PNG de referência (`catalog/goldens/<bloco>/<frame>.png`): jitter de
    rasterização de 1–2 pixels passa (≥50 dB); mudança visual real falha.
+8. **Fonte declarada que não carrega bloqueia o render.** Na prontidão o engine carrega **toda** face
+   declarada (`@font-face`, inclusive as embarcadas), e não só as que algum elemento usa. Se uma falha, a
+   prontidão é rejeitada e o render para na etapa `capture` com `E_FONT_LOAD`, sem capturar um frame na fonte de
+   reserva. A mensagem traz a família, o peso e o estilo da face e manda conferir o `src` do `@font-face` ou a
+   fonte em `vendor/fonts`. Face declarada e nunca usada também falha: declarar é prometer que carrega, e
+   apagar o `@font-face` morto é a correção. O código é de render, como `E_MOTION_RUNTIME`.
 
 **GPU:** o padrão é `auto` — hardware quando existe, SwiftShader como fallback. Igualdade byte-a-byte
 entre *máquinas diferentes* só é prometida em `software`; em `hardware` a promessa é "igual nesta

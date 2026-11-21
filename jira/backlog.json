@@ -140,6 +140,17 @@
           ],
           "acceptance": "As animações CSS do autor ficam pausadas em 0 desde a prontidão, sem rodar em tempo real enquanto fontes e imagens carregam. Assim o raster do primeiro seek não depende de quanto tempo real passou. O mesmo frame dá o mesmo hash com 0 ms e com 2500 ms de espera antes do primeiro seek. Os goldens do catálogo batem sob 8 capturas em paralelo. Os goldens são regenerados no estado determinístico.",
           "jiraKey": "EDT-67"
+        },
+        {
+          "summary": "Fim de linha fixo em LF no repositório, independente do core.autocrlf",
+          "points": 1,
+          "labels": [
+            "repo",
+            "determinismo",
+            "bug"
+          ],
+          "acceptance": "Um .gitattributes na raiz fixa texto em LF (* text=auto eol=lf) e marca binários (png, mp4, mov, wav, woff2, ttf, webm) como binary. Com core.autocrlf=true, um git stash/checkout não reescreve docs/reference/*.md nem catalog/goldens.json em CRLF, e o teste de referência não falha por fim de linha. O renormalize (git add --renormalize .) entra no mesmo commit e não altera nenhum PNG.",
+          "jiraKey": "EDT-69"
         }
       ],
       "jiraKey": "EDT-10"
