@@ -55,6 +55,48 @@ export interface RawClip {
   children: RawClip[];
 }
 
+/** Atributos de movimento (docs/contract.md §7b). */
+export type MotionKind = "enter" | "exit" | "emphasis" | "camera" | "transition";
+
+/** Um elemento com atributos de motion, como o autor escreveu (ainda sem validar). */
+export interface MotionSource {
+  /** Clip dono: o próprio elemento ou o clip temporizado mais próximo acima dele. */
+  clipId: string;
+  /** Posição entre os elementos com motion do clip, na ordem canônica do documento. */
+  ordinal: number;
+  tag: string;
+  /** `true` quando o elemento é o próprio clip. */
+  own: boolean;
+  /** Valor bruto de cada atributo presente ("" conta como presente). */
+  attrs: Partial<Record<MotionKind, string>>;
+  /** Atributo `style` inline, para detectar conflito de posse. */
+  style?: string;
+}
+
+export interface MotionKey {
+  /** 0..1 dentro da trilha. */
+  offset: number;
+  value: number | string;
+  /** Easing do trecho que COMEÇA nesta chave; `null` = linear. */
+  easing: string | null;
+}
+
+/** Uma animação de uma propriedade CSS, com tempo local ao clip dono. */
+export interface MotionTrack {
+  /** Propriedade CSS animada (`opacity`, `--ff-sx`, `clip-path`...). */
+  prop: string;
+  /** Segundos desde o início do clip dono; pode ser negativo (entrada antes de 0). */
+  start: number;
+  duration: number;
+  keys: MotionKey[];
+}
+
+export interface MotionTarget {
+  ordinal: number;
+  tag: string;
+  tracks: MotionTrack[];
+}
+
 export interface RawComposition {
   id: string;
   width?: number;
@@ -63,6 +105,8 @@ export interface RawComposition {
   /** `data-duration` da raiz. Tem precedência sobre qualquer derivação. */
   authoredDuration?: number;
   clips: RawClip[];
+  /** Elementos com motion, em ordem de documento. */
+  motion: MotionSource[];
   diagnostics: Diagnostic[];
 }
 
@@ -90,6 +134,8 @@ export interface Composition {
   fps: Fps;
   clips: ResolvedClip[];
   duration: DurationResolution;
+  /** Motion resolvido por id de clip dono. Vazio quando a composição não usa motion. */
+  motion: Record<string, MotionTarget[]>;
   diagnostics: Diagnostic[];
   /** `true` quando nenhum diagnóstico tem severidade `error`. */
   ok: boolean;

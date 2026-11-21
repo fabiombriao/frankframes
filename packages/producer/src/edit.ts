@@ -275,6 +275,13 @@ export function splitClip(source: string, request: SplitRequest): string {
   if (clip.keyframes !== undefined) {
     throw new EditError("E_SPLIT_UNSUPPORTED", `clip "${clipId}" tem data-keyframes; remova a automação antes de dividir`);
   }
+  // Cada metade herdaria o motion inteiro: a entrada repetiria no corte e a saída nunca chegaria.
+  if (composition.motion[clip.id] !== undefined) {
+    throw new EditError(
+      "E_SPLIT_UNSUPPORTED",
+      `clip "${clipId}" tem atributos de motion (data-enter/exit/emphasis); remova-os antes de dividir`,
+    );
+  }
   if (clip.start === undefined || clip.end === undefined) {
     throw new EditError("E_SPLIT_UNSUPPORTED", `clip "${clipId}" não tem início e fim resolvidos`);
   }

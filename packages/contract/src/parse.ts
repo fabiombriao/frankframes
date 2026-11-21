@@ -1,17 +1,14 @@
 // FrankFrames — proprietário. Ver LICENSE na raiz.
 import { parse } from "parse5";
-import type { Diagnostic, RawClip, RawComposition } from "./types.ts";
+import type { Diagnostic, MotionSource, RawClip, RawComposition } from "./types.ts";
 import { CODES, diag } from "./errors.ts";
 import { parseFps, parseTimeExpr } from "./timing.ts";
+import { MEDIA_TAGS, hasMotion, isHost, isTimed, motionAttrsOf, motionElements } from "./motion/targets.ts";
+import type { DomNode } from "./motion/targets.ts";
 
-interface P5Node {
-  nodeName: string;
-  attrs?: Array<{ name: string; value: string }>;
-  childNodes?: P5Node[];
-  content?: { childNodes: P5Node[] };
-}
+type P5Node = DomNode;
 
-const MEDIA: Record<string, true> = { video: true, audio: true, img: true };
+const MEDIA = MEDIA_TAGS;
 const MAX_DEPTH = 20;
 
 export const ATTRS = {
@@ -79,12 +76,18 @@ function templateRoot(template: P5Node): P5Node {
   return { nodeName: "#fragment", childNodes: template.content?.childNodes ?? [] };
 }
 
+/** Estado compartilhado da varredura: contador de ids gerados e elementos com motion. */
+export interface ParseState {
+  next: number;
+  motion: MotionSource[];
+}
+
 function buildClip(
   node: P5Node,
   depth: number,
   ordinal: number,
   diagnostics: Diagnostic[],
-  counter: { next: number },
+  counter: ParseState,
 ): RawClip | undefined {
   const tag = node.nodeName;
   const rawId = attr(node, ATTRS.clipId) ?? attr(node, ATTRS.id);
@@ -258,6 +261,12 @@ function buildClip(
   if (src) clip.src = src;
   const mediaSrc = attr(node, "src");
   if (mediaSrc) clip.mediaSrc = mediaSrc;
+  for (const [position, element] of motionElements(node).entries()) {
+    const source: MotionSource = { clipId: id, ordinal: position, tag: element.nodeName, own: element === node, attrs: motionAttrsOf(element) };
+    const style = attr(element, "style");
+    if (style !== undefined) source.style = style;
+    counter.motion.push(source);
+  }
   if (MEDIA[tag] === true) clip.hasAudio = tag === "audio" || (tag === "video" && attr(node, "data-has-audio") !== "false");
   return clip;
 }
@@ -268,7 +277,7 @@ export function collectClips(
   root: P5Node,
   depth: number,
   diagnostics: Diagnostic[],
-  counter: { next: number } = { next: 0 },
+  counter: ParseState = { next: 0, motion: [] },
 ): RawClip[] {
   const clips: RawClip[] = [];
 
@@ -281,8 +290,8 @@ export function collectClips(
       );
       return;
     }
-    const timed = has(node, ATTRS.start) || (has(node, ATTRS.track) && has(node, ATTRS.duration)) || MEDIA[node.nodeName] === true;
-    const host = node !== root && (has(node, ATTRS.src) || has(node, ATTRS.id));
+    const timed = isTimed(node);
+    const host = node !== root && isHost(node);
     if (!timed && node !== root && !host) {
       for (const child of node.childNodes ?? []) visit(child);
       return;
@@ -299,6 +308,27 @@ export function collectClips(
   return clips;
 }
 
+/**
+ * Motion na raiz ou fora de qualquer clip não tem a quem se ligar (§7b.2). Não desce
+ * em clips nem hosts: o que há dentro deles pertence ao clip dono.
+ */
+function checkMotionOutsideClips(root: P5Node, diagnostics: Diagnostic[]): void {
+  const visit = (node: P5Node, isRoot: boolean): void => {
+    if (node.nodeName === "#text" || node.nodeName === "#comment") return;
+    if (!isRoot && (isTimed(node) || isHost(node))) return;
+    if (hasMotion(node)) {
+      const names = Object.keys(motionAttrsOf(node)).map((kind) => `data-${kind}`).join(", ");
+      diagnostics.push(
+        diag(CODES.MOTION_TARGET, "error", `${names} em <${node.nodeName}> fora de qualquer clip${isRoot ? " (é a raiz)" : ""}`, {
+          hint: "coloque o atributo num elemento temporizado (data-start) ou dentro dele",
+        }),
+      );
+    }
+    for (const child of node.childNodes ?? []) visit(child, false);
+  };
+  visit(root, true);
+}
+
 export function parseComposition(html: string): RawComposition {
   const doc = parse(html) as unknown as P5Node;
   const diagnostics: Diagnostic[] = [];
@@ -309,7 +339,7 @@ export function parseComposition(html: string): RawComposition {
         hint: "envolva a composição em um elemento com data-composition-id",
       }),
     );
-    return { id: "", fps: { num: 30, den: 1 }, clips: [], diagnostics };
+    return { id: "", fps: { num: 30, den: 1 }, clips: [], motion: [], diagnostics };
   }
 
   const id = (attr(root, ATTRS.id) ?? "").trim();
@@ -348,7 +378,9 @@ export function parseComposition(html: string): RawComposition {
     );
   }
 
-  const clips = collectClips(root, root, 1, diagnostics);
+  const state: ParseState = { next: 0, motion: [] };
+  const clips = collectClips(root, root, 1, diagnostics, state);
+  checkMotionOutsideClips(root, diagnostics);
 
   const seen = new Set<string>();
   const checkDuplicates = (list: RawClip[]): void => {
@@ -367,7 +399,7 @@ export function parseComposition(html: string): RawComposition {
   };
   checkDuplicates(clips);
 
-  const composition: RawComposition = { id, fps, clips, diagnostics };
+  const composition: RawComposition = { id, fps, clips, motion: state.motion, diagnostics };
   if (width !== undefined) composition.width = width;
   if (height !== undefined) composition.height = height;
   if (authoredDuration !== undefined && authoredDuration > 0) composition.authoredDuration = authoredDuration;

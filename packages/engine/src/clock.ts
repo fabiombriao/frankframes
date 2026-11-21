@@ -75,11 +75,33 @@ export const CLOCK_SOURCE = `(() => {
     return 0;
   };
 
+  // Ganchos de preparação (motion): rodam uma vez, com o DOM completo, antes de a
+  // prontidão contar fontes e imagens. Falha de um gancho rejeita "ready", e o
+  // render para com a mensagem dele. Registrado depois do DOM pronto, roda na hora.
+  const prepareHooks = [];
+  let prepared = false;
+  const prepare = (hook) => {
+    if (prepared) hook();
+    else prepareHooks.push(hook);
+  };
+
   // O script roda no <head>: document.images só existe depois do parse.
   // Prontidão = DOM completo + fontes + toda imagem decodificada.
   const readyDeferred = Promise.withResolvers();
   const ready = readyDeferred.promise;
   const settle = () => {
+    prepared = true;
+    try {
+      for (const hook of prepareHooks) hook();
+      // Congela as animações no tempo 0 JÁ, antes de esperar fontes e imagens. Sem
+      // isso elas rodam em tempo real até o primeiro seek: quanto tempo passou (carga
+      // da máquina) decide quais já terminaram e quais ficam promovidas a camada do
+      // compositor, e o raster do texto muda de 1 px entre uma execução e outra.
+      syncAnimations();
+    } catch (error) {
+      readyDeferred.reject(error);
+      return;
+    }
     // Carrega TODA face declarada: texto que só aparece no meio do clip não pode
     // trocar de fonte durante a captura.
     const faces = document.fonts ? [...document.fonts].map((face) => face.load().catch(() => {})) : [];
@@ -98,9 +120,6 @@ export const CLOCK_SOURCE = `(() => {
       (error) => readyDeferred.reject(error),
     );
   };
-  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", settle, { once: true });
-  else settle();
-
   const syncAnimations = () => {
     for (const animation of document.getAnimations()) {
       animation.pause();
@@ -108,6 +127,10 @@ export const CLOCK_SOURCE = `(() => {
       animation.currentTime = Math.max(0, nowMs - scopeStart(target));
     }
   };
+
+  // Depois de syncAnimations: settle() a chama na hora quando o DOM já está pronto.
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", settle, { once: true });
+  else settle();
 
   const syncVisibility = () => {
     for (const element of document.querySelectorAll("[data-ff-start]")) {
@@ -243,6 +266,7 @@ export const CLOCK_SOURCE = `(() => {
 
   window.__ff = {
     ready,
+    prepare,
     settle: settlePaint,
     syncVisibility,
     syncAnimations,

@@ -60,6 +60,7 @@ tem `data-track` (sem duração) **não** é clip.
 | `data-volume` | ganho linear; `1` = 0 dB, `0` = silêncio. Negativo é erro; acima de `4` avisa (+12 dB) |
 | `data-audio-role` | `voice`, `music` ou `sfx`. Música (`music`) abaixa 9 dB sob qualquer `voice`, com 80 ms de ataque e 250 ms de release |
 | `data-fade-in` / `data-fade-out` | segundos ≥ 0; entram no mixer. Fade maior que a duração é ajustado com aviso |
+| `data-enter` / `data-exit` / `data-emphasis` / `data-camera` / `data-transition` | movimento declarativo do clip ou de um descendente; ver §7b |
 | `data-track` | **só UI**. O render ignora. Não use para lógica |
 | `class="clip"` | convenção de autoria. **Nunca** governa visibilidade — o runtime usa o atributo `data-start` |
 
@@ -88,6 +89,189 @@ O render nunca começa com duração pendente.
 3. senão, se algum clip não tem duração → `unresolved` (`pending-clips`) com a lista.
 4. senão → `derived` = maior `start + duration`, com piso de `1/60` s.
 
+## 7b. Motion
+
+### 7b.1 Princípio
+
+Movimento é declarado em atributos `data-` com tempo **relativo ao clip**. O compilador (producer)
+converte para animações WAAPI com tempo do escopo (o mesmo de `data-ff-comp-start`). O runtime só
+reproduz. CSS `@keyframes` continua permitido; os atributos de motion são a forma recomendada.
+`lint`, Studio e render passam pelo mesmo módulo puro do contrato e veem os mesmos erros.
+
+### 7b.2 Alvos
+
+- **Clip**: o próprio elemento temporizado (§4).
+- **Descendente**: qualquer elemento dentro de um clip; o tempo dele é relativo ao clip dono. Num clip
+  comum o parser não enxerga clips internos (um `data-start` aninhado não cria clip), então todo
+  descendente pertence ao clip de fora. Num host de sub-composição (§5), elementos temporizados e hosts
+  internos são clips do próprio escopo e levam o próprio motion.
+- Erros `E_MOTION_TARGET`:
+  - motion na raiz, fora de qualquer clip, ou em `<audio>`;
+  - `data-camera` fora de `<img>`;
+  - `data-transition` fora de um clip, ou em descendente (vale só no clip que entra);
+  - motion em `<video>`: ainda não é suportado.
+
+### 7b.3 Atributos
+
+| Atributo | Onde | Valor |
+|---|---|---|
+| `data-enter` | clip ou descendente | `<preset> [chave=valor ...]` |
+| `data-exit` | clip ou descendente | `<preset> [chave=valor ...]` |
+| `data-emphasis` | clip ou descendente | `<preset> [chave=valor ...]` |
+| `data-camera` | `<img>` (clip ou descendente) | `<preset> [chave=valor ...]`; reservado: ainda sem presets |
+| `data-transition` | clip que **entra** | `<preset> [chave=valor ...]`; reservado: ainda sem presets |
+
+Atributo reservado aceita só a gramática de §7b.4: qualquer valor dá `E_MOTION_PRESET_UNKNOWN`.
+
+### 7b.4 Gramática
+
+```
+valor      = preset { ws+ param } ;            (* espaços nas pontas são ignorados *)
+preset     = minúscula { minúscula | dígito | "-" } ;
+param      = chave "=" texto ;                 (* texto: sem espaço nem "=" *)
+chave      = minúscula { minúscula } ;
+segundos   = dígito+ [ "." dígito+ ] ;
+âncora     = segundos | "-" segundos | segundos "%" | "end" | "end-" segundos ;
+curva      = "linear" | "ease" | "ease-in" | "ease-out" | "ease-in-out"
+           | "suave" | "freio" | "arranque" | "vaivem"
+           | "cubic-bezier(" num "," num "," num "," num ")" ;     (* sem espaços *)
+num        = [ "-" ] dígito+ [ "." dígito+ ] ;
+distância  = num [ "px" | "%" ] ;              (* sem unidade = px *)
+```
+
+Chaves comuns a todo preset; cada preset acrescenta as dele:
+
+| Chave | Tipo | Regra |
+|---|---|---|
+| `dur` | segundos > 0 | duração do movimento (por ciclo, na ênfase) |
+| `at` | âncora | §7b.5 |
+| `curve` | curva | substitui a curva padrão do preset em todos os trechos |
+
+Chaves de uso geral nos presets que as declaram: `distance` (distância), `amount` (número; unidade
+depende do preset), `dir` (`left|right|up|down`), `repeat` (inteiro 1..20), `fx`/`fy` (número em [0,1]).
+
+Presets disponíveis (a lista completa e as chaves de cada um ficam em `docs/motion.md`, quando existir):
+
+| Atributo | Preset | Movimento | `dur` | Curva | Chaves próprias |
+|---|---|---|---|---|---|
+| `data-enter` | `surgir` | `opacity` 0→1 | 0.5 | `suave` | — |
+| `data-exit` | `apagar` | `opacity` 1→0 | 0.5 | `suave` | — |
+| `data-emphasis` | `pulsar` | `scaleX` e `scaleY` 1→`amount`→1 | 0.6 | `suave` | `amount` em [0.5,3] (padrão 1.08), `repeat` |
+
+Diagnósticos de gramática (todos `error`, com `clipId` e `hint`):
+
+| Código | Quando | Hint |
+|---|---|---|
+| `E_MOTION_SYNTAX` | valor vazio, token sem `=`, chave repetida ou caractere inválido | `use data-enter="subir dur=0.6 at=0.2"` (com um preset existente) |
+| `E_MOTION_PRESET_UNKNOWN` | preset inexistente para aquele atributo | lista os presets válidos do atributo |
+| `E_MOTION_PARAM` | chave que o preset não tem, ou valor fora do tipo ou da faixa (`dur=-1`, `at=-1` fora de `data-enter`) | lista as chaves aceitas, ou mostra a faixa |
+| `E_CURVE_INVALID` | `curve` desconhecida; `cubic-bezier` com x1 ou x2 fora de [0,1] ou y fora de [-5,5] | `use cubic-bezier(0.3,0,0.2,1) ou um nome: linear, ease, suave, freio, arranque, vaivem` |
+
+### 7b.5 Tempo
+
+`D` é a duração do clip (`end − start`, no escopo do clip). A âncora `T` resolve assim:
+
+- `n` → n;
+- `-n` → −n (só em `data-enter`);
+- `p%` → p/100·D;
+- `end` → D;
+- `end-n` → D − n.
+
+Intervalo de cada atributo:
+
+| Atributo | `at` padrão | Intervalo do movimento |
+|---|---|---|
+| enter | `0` | [T, T+dur] |
+| exit | `end` | [T−dur, T]: a âncora marca o **fim** |
+| emphasis | fim da entrada (`0` se não houver entrada) | [T, T+dur·repeat] |
+| camera | `0` | [T, T+dur]; `dur` padrão = D − T |
+
+Regras de faixa (`E_MOTION_OUT_OF_RANGE`; o hint mostra o intervalo calculado e D):
+
+- todo intervalo precisa terminar em ≤ D;
+- nenhum intervalo pode começar antes de 0; a exceção é a entrada, que pode começar antes (o trecho
+  anterior a 0 não aparece, porque o clip ainda está invisível).
+
+D conhecida:
+
+- Âncoras `%`, `end`, `end-n` e câmera sem `dur` exigem D. Sem D, a faixa de um movimento só é checada
+  quando D existe.
+- Se a duração da composição ainda é `unresolved`, a validação espera: o diagnóstico de duração já bloqueia o
+  render e nada de motion é resolvido para o que depende de D.
+- Se a composição resolveu mas o clip não tem fim, o que depende de D é `E_MOTION_OUT_OF_RANGE` com hint
+  `defina data-duration no clip`.
+
+### 7b.6 Propriedades, valores neutros e posse
+
+| Propriedade | CSS animado | Neutro | Faixa |
+|---|---|---|---|
+| `opacity` | `opacity` | 1 | [0,1] |
+| `x`, `y` | `--ff-x`, `--ff-y` → `translate` | 0 | px ou % da própria caixa |
+| `scaleX`, `scaleY` | `--ff-sx`, `--ff-sy` → `scale` | 1 | [0,20] |
+| `rotate` | `--ff-rot` → `rotate` | 0 | graus, [-3600,3600] |
+| `blur` | `--ff-blur` → `filter: blur()` | 0 | px, [0,200] |
+| `clip` | `clip-path` | `inset(0% 0% 0% 0%)` | `inset(t% r% b% l%)` ou `circle(r% at x% y%)` |
+| `zoom` | `--ff-zoom` → `object-view-box` | 1 | [1,10], só `<img>`; reservado à câmera (sem preset ainda) |
+| `focusX`, `focusY` | `--ff-fx`, `--ff-fy` → `object-view-box` | 0.5 | [0,1], só `<img>`; reservado à câmera (sem preset ainda) |
+
+- `scale` é atalho para `scaleX` e `scaleY` iguais.
+- O alvo com motion passa a ser **dono** das propriedades CSS que o movimento usa (`opacity`, `translate`,
+  `scale`, `rotate`, `filter`, `clip-path`, `object-view-box`).
+- O `transform` do autor continua valendo e compõe depois: `translate`, `rotate`, `scale` e então
+  `transform`. `transform-origin` vale para escala e rotação.
+- Conflitos (`E_MOTION_CONFLICT`):
+  - declarar no `style` inline uma propriedade possuída que o movimento usa (estático). Exceção:
+    `opacity` inline é permitida: a animação sobrepõe o valor estático sem ambiguidade;
+  - uma animação CSS do autor que anima, no mesmo elemento, uma propriedade possuída: detectado no runtime, e
+    o render falha com `E_MOTION_RUNTIME`.
+- Num mesmo alvo, dois movimentos da mesma propriedade não podem se sobrepor no tempo
+  (`E_MOTION_OVERLAP`); encostar nas pontas é permitido.
+- Entre movimentos, o valor fica parado; antes do primeiro, vale o valor inicial dele; depois do último, o
+  valor final.
+- Se um movimento começa num valor diferente do que estava parado, o salto é aplicado e o contrato avisa
+  com `W_MOTION_JUMP`.
+
+### 7b.11 Curvas
+
+- `linear`, `ease`, `ease-in`, `ease-out`, `ease-in-out`: as do CSS.
+- Curvas próprias:
+
+  | Nome | Definição |
+  |---|---|
+  | `suave` | `cubic-bezier(0.34,0.1,0.18,1)` |
+  | `freio` | `cubic-bezier(0.18,0.72,0.28,1)` |
+  | `arranque` | `cubic-bezier(0.56,0,0.84,0.42)` |
+  | `vaivem` | `cubic-bezier(0.58,0.04,0.3,0.97)` |
+
+- Cada trecho entre dois pontos do preset leva a curva do preset (ou a de `curve`).
+- O easing sai como o nome CSS (`linear`, `ease-in`...) ou `cubic-bezier(x1, y1, x2, y2)`; a avaliação
+  (`evaluateCurve`) usa bissecção determinística de 40 iterações.
+- Curvas de mola (`mola`, `mola-firme`, `spring(ζ,ω)`) ainda não existem: dão `E_CURVE_INVALID`.
+
+### 7b.12 Compilação e runtime
+
+- O compilador grava em cada alvo `data-ff-motion` com JSON:
+  - formato: `{"v":1,"a":[{"p":<propriedade CSS>,"d":<atraso ms>,"n":<duração ms>,"k":[[offset,valor,easing|null],...]}],"s":[[<propriedade CSS>,<valor do binding>],...]}`;
+  - `d` é relativo ao `data-ff-comp-start` mais próximo do alvo (o mesmo que o relógio usa para
+    sincronizar animações): início absoluto do clip dono, menos esse escopo, mais o tempo local, em ms com
+    3 casas; pode ser negativo (entrada que começa antes de 0);
+  - `n` ≥ 1;
+  - uma entrada em `a` por propriedade CSS; `easing` é o do trecho que **começa** naquele ponto e `null`
+    vale `linear`;
+  - `s` traz as declarações de ligação, por exemplo `["translate","var(--ff-x) var(--ff-y)"]`.
+- O runtime (engine):
+  - registra as propriedades `--ff-*` (`inherits:false`);
+  - aplica `s` no `style` do alvo;
+  - cria `el.animate(k, {delay:d, duration:n, fill:"both", easing:"linear", id:"ff-motion"})`;
+  - deixa o relógio sincronizar como qualquer animação (`currentTime = agora − data-ff-comp-start`).
+- Conflito de posse detectado no runtime sai como `E_MOTION_CONFLICT: ...` na prontidão do relógio e o render
+  falha com `E_MOTION_RUNTIME` (etapa `capture`).
+- Seek em qualquer ordem dá o mesmo frame.
+- `<video>` com motion: as animações vão para a `<img>` que substitui o vídeo (§6); o vídeo continua
+  decodificado pelo FFmpeg. Ainda não é suportado: o runtime recusa `video[data-ff-motion]` com
+  `E_MOTION_TARGET`.
+- Composição sem atributos de motion compila exatamente como antes (§10).
+
 ## 8. Diagnósticos
 
 Todo diagnóstico tem `code` estável, `severity` e `message`; os erros têm `hint` acionável.
@@ -107,6 +291,10 @@ O contrato promete isto ao autor, e o engine tem que cumprir:
 4. **Vídeo fora de banda**: frames extraídos por FFmpeg e `<video>` substituído por `<img>`; o Chrome não
    decodifica vídeo durante a captura.
 5. **Prontidão explícita** antes do frame 0: fontes, imagens (`decode()`), metadados de mídia, N ticks de warmup.
+   As animações CSS/WAAPI existentes ficam **pausadas em 0 já na prontidão**, antes de esperar fontes e imagens:
+   não correm em tempo real até o primeiro seek. Se corressem, o tempo real decorrido (a carga da máquina)
+   decidiria quais terminam e quais ficam como camada do compositor, e o raster do texto mudaria 1 px de
+   uma execução para outra (visto nos goldens `vertical-toc` e `vertical-callout` com 4 capturas paralelas).
 6. **Uma captura por frame, depois do paint.** A primeira captura de cada sessão é descartada; depois
    de cada seek, `__ff.settle` espera dois frames de compositor e um `setTimeout` (que cai **depois** do
    paint) antes do screenshot. Com software + `--disable-gpu-compositing`, uma leitura já é estável —
@@ -180,7 +368,7 @@ Qualquer outra falha de medição continua falhando alto.
   `data-duration` medida pelo ffprobe (imagem: 3 s). Arquivo ilegível falha com `E_MEDIA_PROBE` e é
   apagado; extensão fora da lista é `E_MEDIA_UNSUPPORTED`; teto de 4 GiB (`E_MEDIA_TOO_LARGE`).
 - **Dividir** (`POST /api/clips/<id>/split {at}`). Só para clip de topo com `data-clip-id` explícito, sem
-  `data-keyframes` nem filhos (`E_SPLIT_UNSUPPORTED`), e com `at` a mais de 1 ms das bordas
+  `data-keyframes`, atributos de motion (§7b) nem filhos (`E_SPLIT_UNSUPPORTED`), e com `at` a mais de 1 ms das bordas
   (`E_SPLIT_OUT_OF_RANGE`). A primeira metade fica com `data-duration = at − início` e perde o
   `data-fade-out`; a cópia entra logo depois com `data-start="<id>"` (começa onde a primeira termina),
   o resto da duração, sem `data-fade-in` e, em vídeo/áudio, `data-offset` avançado em
@@ -206,3 +394,6 @@ As escritas são serializadas: duas edições nunca intercalam leitura e gravaç
 
 Composições escritas para outro framework entram por um **importador separado** (`compat-*`), que traduz
 nomes no parsing. O núcleo não ganha um segundo nome para o mesmo conceito, nem modo "congela em t=0".
+
+Composições sem atributos de motion (§7b) compilam exatamente como antes: o compilador não grava
+`data-ff-motion` e o runtime de motion não cria animação.

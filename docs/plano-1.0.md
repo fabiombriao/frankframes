@@ -2175,13 +2175,13 @@ com `data-unit`), 53 e 54. Último item do épico.
 
 | Arquivo / ponto | Itens deste plano | Itens do Studio | Como resolver |
 |---|---|---|---|
-| `studio/index.html`: `<script>` de `app.js` vira `type="module"` | 55 | 39 (se já ligou `timeline-math.js`) | Quem chegar primeiro faz a troca; o outro só importa. Se o EDT-39 já ligou `timeline-math.js` de outro jeito, siga esse jeito e não converta. **[PARAR SE]** houver duas formas. |
+| `studio/index.html`: `<script>` de `app.js` vira `type="module"` | 55 | 39 (se já ligou `timeline-math.js`) | **Resolvido no EDT-39** (commit f773dba): `app.js` já é módulo e importa `/timeline-math.js`. O EDT-55 só importa. |
 | `studio-server.ts` `STUDIO_FILES`, `MIME`, rotas, `compositionPayload()` | 55, 54, 47 | 40, 44, 45, 46 | Mudanças aditivas; aplicar em cima da versão mais nova; nenhum renomeio. |
 | `app.js` teclado (Delete/Backspace) | 47 | 41 | Keyframe selecionado tem precedência sobre apagar clip. O handler do EDT-41 precisa checar `state.selectedKeyframe` antes; combinar a ordem. |
 | `app.js` mapeamento tempo→x e geometria da barra | 47, 54 | 44 (faixas), 45 (zoom) | Marcas e faixa de transição usam a função de escala da timeline, nunca `px/s` próprio. Se 45 ainda não existe, use a escala atual por parâmetro (`decorateBar(bar, clip, timeToX)`). |
 | `app.js` arraste da borda esquerda | — | 42 | Aparar à esquerda move o início do conteúdo: os `time` de `data-keyframes` (volume e visual) precisam deslocar −Δ e descartar < 0. Pedir ao EDT-42 ou fazer junto do EDT-47 (decisão do planejador). |
 | copiar, colar e duplicar | — | 43 | A cópia leva os atributos de motion (texto). Cópia de clip com `data-transition` fica sem parceiro → `E_TRANSITION_PARTNER`. Sugestão para o EDT-43: remover `data-transition` e normalizar `data-start` na cópia. |
-| automação de volume no preview | 47 | 40 | O EDT-40 **não** pode ler `data-keyframes` cru supondo `volume` em todo ponto, porque depois do EDT-50 há pontos sem volume. Ele deve usar `clip.keyframes` do payload (contract, só volume) ou filtrar pontos com `volume`. |
+| automação de volume no preview | 47 | 40 | **Resolvido no EDT-40** (commit 379d6c6): o mix usa `clip.keyframes` do contrato, nunca o atributo cru. O EDT-50 precisa manter `clip.keyframes` só com os pontos de volume. |
 | `edit.ts` (`splitClip`, `EditError`) | 49, 54, 47 | 42, 43 | Aditivo: códigos novos numa união; a recusa de split com motion vem do EDT-49. |
 | exportar MP4 | — | 46 | A falha `E_MOTION_RUNTIME` precisa aparecer na UI de exportação como os outros códigos de `RENDER_ERROR_CODES`. |
 | `docs/contract.md` §9d | 49, 54, 55, 47 | 39–46 | Parágrafos novos no fim de §9d; não reescrever os existentes. |
@@ -2889,7 +2889,10 @@ tocados por quase tudo). Cada item vira um commit depois de revisão e `node scr
    - **EDT-66** (achado no EDT-40): faixa toda em silêncio quebra o `loudnorm` (`measured_I=-inf`). Em
      `mixAudio`, quando a medição dá `-inf`, pular a normalização e devolver um aviso. Teste com
      `anullsrc`. Só toca `packages/producer/src/audio.ts`, os testes dele e o §9c, se mudar texto visível.
-3. **B — Motion, em série:** EDT-49 → 50 → 51 → 52 → 53 → 54 (contrato) → 55 → 54 (Studio) → 47 → 56.
+3. **B — Motion, em série:** EDT-49 (+ EDT-67, achado no gate: animação do autor corria em tempo real
+   antes do primeiro seek; corrigido em `clock.ts` e goldens regenerados no mesmo commit) → **EDT-68**
+   (`face.load().catch(() => {})` vira falha alta da prontidão com código e `hint`; só `clock.ts`, spec
+   §9 e um teste com `@font-face` quebrado) → 50 → 51 → 52 → 53 → 54 (contrato) → 55 → 54 (Studio) → 47 → 56.
 4. **A — Studio, em série:** EDT-41 → 42 → 43 → 45 → 44 → 46.
 5. **C — Onda 1:** EDT-62 medição (o executor para e devolve os números) → EDT-61 lote → EDT-58 skill e `frames`.
 6. **C — EDT-59** `frankframes generate` (Codex), depois EDT-62 otimizações guiadas pela medição.

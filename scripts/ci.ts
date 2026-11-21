@@ -21,16 +21,19 @@ const release = process.argv.includes("--release");
 
 const FAST_TESTS = [
   "packages/contract/test/contract.test.ts",
+  "packages/contract/test/motion.test.ts",
   "packages/encode/test/policy.test.ts",
   "packages/transcribe/test/openai.test.ts",
   "packages/transcribe/test/resolve.test.ts",
   "packages/catalog/test/catalog.test.ts",
   "packages/producer/test/compile.test.ts",
+  "packages/producer/test/motion-compile.test.ts",
   "packages/producer/test/plan.test.ts",
   "packages/producer/test/audio.test.ts",
   "packages/producer/test/preview-audio.test.ts",
   "packages/cli/test/timeline-math.test.ts",
   "packages/engine/test/clock.test.ts",
+  "packages/engine/test/motion-runtime.test.ts",
 ];
 
 interface StageResult {

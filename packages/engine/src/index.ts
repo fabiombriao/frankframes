@@ -1,6 +1,7 @@
 // FrankFrames — proprietário. Ver LICENSE na raiz.
 export { CLOCK_SOURCE, injectClock } from "./clock.ts";
 export { injectionScript, injectEngine } from "./inject.ts";
+export { MOTION_SOURCE } from "./motion-runtime.ts";
 export type { Injection, PreviewAudioConfig } from "./inject.ts";
 export { chromeArgs, gpuFlags } from "./args.ts";
 export type { GpuMode, ResolvedGpuMode, Viewport } from "./args.ts";

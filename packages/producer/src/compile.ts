@@ -4,6 +4,7 @@ import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import { parse, serialize } from "parse5";
 import { loadComposition } from "@frankframes/contract";
 import type { Composition, ResolvedClip } from "@frankframes/contract";
+import { annotateMotion } from "./motion.ts";
 
 interface P5Node {
   nodeName: string;
@@ -213,16 +214,7 @@ export interface AnnotateResult {
   annotations: number;
 }
 
-/**
- * Escreve o tempo resolvido no DOM: `data-ff-start`/`data-ff-end` em ms e
- * `data-ff-comp-start` no host da sub-composição. O runtime só lê esses valores;
- * toda a decisão de tempo fica no compilador.
- *
- * Início arredonda para baixo e fim para cima: o clip nunca perde o primeiro ou
- * o último frame por causa do truncamento de milissegundo.
- */
-export function annotateTiming(html: string, composition: Composition): AnnotateResult {
-  const document = parse(html) as unknown as P5Node;
+function annotateDocument(document: P5Node, composition: Composition): number {
   const timings = new Map<string, Timing>();
   collectTiming(composition.clips, 0, timings);
 
@@ -238,8 +230,34 @@ export function annotateTiming(html: string, composition: Composition): Annotate
     setAttr(node, "data-ff-comp-start", String(Math.floor(timing.compStart * 1000)));
     annotations++;
   }
+  return annotations;
+}
 
+/**
+ * Escreve o tempo resolvido no DOM: `data-ff-start`/`data-ff-end` em ms e
+ * `data-ff-comp-start` no host da sub-composição. O runtime só lê esses valores;
+ * toda a decisão de tempo fica no compilador.
+ *
+ * Início arredonda para baixo e fim para cima: o clip nunca perde o primeiro ou
+ * o último frame por causa do truncamento de milissegundo.
+ */
+export function annotateTiming(html: string, composition: Composition): AnnotateResult {
+  const document = parse(html) as unknown as P5Node;
+  const annotations = annotateDocument(document, composition);
   return { html: serialize(document as never), annotations };
+}
+
+export interface CompiledAnnotation extends AnnotateResult {
+  /** Alvos que receberam `data-ff-motion`. */
+  motion: number;
+}
+
+/** Tempo resolvido + motion, num parse só: o motion lê o `data-ff-comp-start` recém-escrito. */
+export function annotateCompiled(html: string, composition: Composition): CompiledAnnotation {
+  const document = parse(html) as unknown as P5Node;
+  const annotations = annotateDocument(document, composition);
+  const motion = annotateMotion(document, composition);
+  return { html: serialize(document as never), annotations, motion };
 }
 
 /** Conveniência do producer: merge + ids + contrato + anotação numa chamada. */
@@ -255,6 +273,6 @@ export async function compileComposition(options: {
   if (!composition.ok) {
     return { html: materialized, composition, warnings: merged.warnings, annotations: 0 };
   }
-  const annotated = annotateTiming(materialized, composition);
+  const annotated = annotateCompiled(materialized, composition);
   return { html: annotated.html, composition, warnings: merged.warnings, annotations: annotated.annotations };
 }

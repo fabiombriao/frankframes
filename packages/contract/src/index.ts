@@ -3,8 +3,23 @@ import type { Composition, Diagnostic } from "./types.ts";
 import { parseComposition } from "./parse.ts";
 import { resolveClips, resolveDuration, withMediaDurations } from "./resolve.ts";
 import { CODES, diag } from "./errors.ts";
+import { resolveMotion } from "./motion/index.ts";
 
-export type { Composition, Diagnostic, DurationResolution, Fps, RawClip, ResolvedClip, TimeExpr } from "./types.ts";
+export type {
+  Composition,
+  Diagnostic,
+  DurationResolution,
+  Fps,
+  MotionKey,
+  MotionKind,
+  MotionSource,
+  MotionTarget,
+  MotionTrack,
+  RawClip,
+  ResolvedClip,
+  TimeExpr,
+} from "./types.ts";
+export * from "./motion/index.ts";
 export { CODES } from "./errors.ts";
 export { parseComposition, findRoot, ATTRS } from "./parse.ts";
 export { parseTimeExpr, parseFps } from "./timing.ts";
@@ -26,6 +41,7 @@ export function loadComposition(html: string, options: LoadOptions = {}): Compos
   const clipsWithMedia = options.mediaDurations ? withMediaDurations(raw.clips, options.mediaDurations) : raw.clips;
   const clips = resolveClips(clipsWithMedia, diagnostics);
   const duration = resolveDuration(clips, raw.authoredDuration);
+  const motion = resolveMotion(raw.motion, clips, duration, diagnostics);
 
   if (duration.kind === "unresolved" && raw.id !== "") {
     const why =
@@ -51,6 +67,7 @@ export function loadComposition(html: string, options: LoadOptions = {}): Compos
     fps: raw.fps,
     clips,
     duration,
+    motion,
     diagnostics,
     ok: diagnostics.every((d) => d.severity !== "error"),
   };

@@ -129,6 +129,17 @@
           ],
           "acceptance": "Mesmo manifest passa em duas máquinas distintas com SwiftShader; diferença documentada quando GPU entra.",
           "jiraKey": "EDT-13"
+        },
+        {
+          "summary": "Animação do autor pausada desde a prontidão, sem depender da carga",
+          "points": 2,
+          "labels": [
+            "engine",
+            "determinismo",
+            "bug"
+          ],
+          "acceptance": "As animações CSS do autor ficam pausadas em 0 desde a prontidão, sem rodar em tempo real enquanto fontes e imagens carregam. Assim o raster do primeiro seek não depende de quanto tempo real passou. O mesmo frame dá o mesmo hash com 0 ms e com 2500 ms de espera antes do primeiro seek. Os goldens do catálogo batem sob 8 capturas em paralelo. Os goldens são regenerados no estado determinístico.",
+          "jiraKey": "EDT-67"
         }
       ],
       "jiraKey": "EDT-10"
@@ -281,6 +292,17 @@
           ],
           "acceptance": "Allowlist de códigos, sem path nem mensagem crua; documentado em docs/contract.md.",
           "jiraKey": "EDT-29"
+        },
+        {
+          "summary": "Prontidão falha alto quando uma fonte declarada não carrega",
+          "points": 1,
+          "labels": [
+            "engine",
+            "fontes",
+            "bug"
+          ],
+          "acceptance": "Em `settle()` do relógio, `face.load()` não engole erro. Uma face declarada que falha ao carregar rejeita a prontidão com código estável e `hint` com o nome da família, e o render para em vez de capturar com fonte de fallback. Há um teste com `@font-face` apontando para um arquivo inexistente.",
+          "jiraKey": "EDT-68"
         }
       ],
       "jiraKey": "EDT-26"

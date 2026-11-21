@@ -7,7 +7,9 @@ export { captureFrameAt, captureGolden, engineSignature, sampleFrames } from "./
 export type { GoldenBlock, GoldenFrame, GoldenManifest } from "./goldens.ts";
 export { resolveFfmpeg } from "./ffmpeg.ts";
 export type { FfmpegPair } from "./ffmpeg.ts";
-export { annotateTiming, mergeSubCompositions, compileComposition } from "./compile.ts";
+export { annotateCompiled, annotateTiming, mergeSubCompositions, compileComposition } from "./compile.ts";
+export { annotateMotion, toRuntimeSpec } from "./motion.ts";
+export type { MotionRuntimeSpec } from "./motion.ts";
 export { applyPatches, EditError, splitClip, explicitClipIds, locateClip, topLevelClip, referrersOf, removeRange, refSuffix } from "./edit.ts";
 export type { ClipLocation, ClipPatch, SplitRequest } from "./edit.ts";
 export { buildCaptionComposition } from "./captions.ts";

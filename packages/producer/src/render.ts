@@ -12,7 +12,7 @@ import { buildFrameSequenceArgs, buildMuxArgs, containerFor } from "@frankframes
 import type { Preset, VideoCodec } from "@frankframes/encode";
 import { assetPath, captureFramesInParallel, extractFramesCached, probeDuration, retryOnceIfTransient, startServer } from "@frankframes/engine";
 import type { MediaManifest } from "@frankframes/engine";
-import { annotateTiming, materializeClipIds, mergeSubCompositions } from "./compile.ts";
+import { annotateCompiled, materializeClipIds, mergeSubCompositions } from "./compile.ts";
 import { resolveFfmpeg } from "./ffmpeg.ts";
 import { mixAudio } from "./audio.ts";
 import { audioClipsFor } from "./preview-audio.ts";
@@ -52,6 +52,16 @@ export class RenderError extends Error {
     this.stage = stage;
     this.diagnostics = diagnostics;
   }
+}
+
+/**
+ * Falha do runtime do motion durante a prontidão da página (conflito de posse, alvo
+ * proibido, JSON inválido): sai com código próprio em vez de "erro interno".
+ */
+function motionFailure(error: unknown): RenderError | undefined {
+  const message = error instanceof Error ? error.message : String(error);
+  const match = /E_MOTION_[A-Z_]+: [^\r\n]*/.exec(message);
+  return match === null ? undefined : new RenderError("E_MOTION_RUNTIME", "capture", match[0]);
 }
 
 export interface PrepareOptions {
@@ -142,7 +152,7 @@ export async function prepare(options: PrepareOptions): Promise<PreparedComposit
     throw new RenderError("E_DURATION", "probe", `duração não resolvida (${composition.duration.reason})`, composition.diagnostics);
   }
 
-  const compiled = annotateTiming(materialized, composition);
+  const compiled = annotateCompiled(materialized, composition);
   if (compiled.annotations === 0) warnings.push("nenhum clip anotado: a composição não tem clips temporizados");
 
   const seconds = composition.duration.seconds;
@@ -297,6 +307,8 @@ export async function renderComposition(options: RenderOptions): Promise<RenderR
           },
         }),
       );
+    } catch (error) {
+      throw motionFailure(error) ?? error;
     } finally {
       await server.close();
     }

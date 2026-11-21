@@ -1,6 +1,7 @@
 // FrankFrames — proprietário. Ver LICENSE na raiz.
 import { CLOCK_SOURCE } from "./clock.ts";
 import { MEDIA_SHIM_SOURCE } from "./media-shim.ts";
+import { MOTION_SOURCE } from "./motion-runtime.ts";
 import { PREVIEW_AUDIO_SOURCE } from "./preview-audio.ts";
 import { PREVIEW_RELOAD_SOURCE, PREVIEW_UI_SOURCE } from "./preview-ui.ts";
 import type { Fps } from "@frankframes/contract";
@@ -28,7 +29,7 @@ export type PreviewAudioConfig = { src: string } | { error: string } | { disable
 
 /**
  * Monta o bloco que precisa rodar ANTES de qualquer script do autor, nesta ordem:
- * 1. relógio virtual; 2. manifesto de mídia; 3. shim de `<video>`; 4. áudio do preview
+ * 1. relógio virtual; 1b. runtime do motion; 2. manifesto de mídia; 3. shim de `<video>`; 4. áudio do preview
  * (precisa dos hooks do relógio e registrar-se antes da barra, que chama `startLive`).
  */
 export function injectionScript(injection: Injection = {}): string {
@@ -37,6 +38,8 @@ export function injectionScript(injection: Injection = {}): string {
     parts.push(`<style>${fontFaceCss(injection.fontsBase ?? "/__ff_fonts")}</style>`);
   }
   parts.push(`<script>${CLOCK_SOURCE}</script>`);
+  // Sem `data-ff-motion` no documento o gancho não faz nada.
+  parts.push(`<script>${MOTION_SOURCE}</script>`);
   if (injection.manifest) {
     parts.push(`<script>window.__ffMedia=${JSON.stringify(injection.manifest)};</script>`);
     if (!injection.disableMediaShim) parts.push(`<script>${MEDIA_SHIM_SOURCE}</script>`);
