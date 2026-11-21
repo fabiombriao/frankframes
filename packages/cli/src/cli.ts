@@ -14,6 +14,7 @@ import { RenderError, buildCaptionComposition, prepare, renderComposition, resol
 import { installLocalModel, resolveProvider } from "@frankframes/transcribe";
 import { installBlockFromUrl, listBlocks, readBlock } from "@frankframes/catalog";
 import { buildCatalogIndex, publishCatalog, serveCatalog } from "./catalog-server.ts";
+import { startGallery } from "./gallery.ts";
 import { runDoctor, runInit, runSkillInstall } from "./onboarding.ts";
 import { runSetup } from "./setup.ts";
 import { runUpgrade } from "./upgrade.ts";
@@ -35,6 +36,7 @@ uso:
   frankframes blocks index [--json]
   frankframes blocks publish <destino>
   frankframes blocks serve [raiz] [--port N]
+  frankframes gallery [--port N] [--root <dir>]
   frankframes init [diretório]
   frankframes doctor
   frankframes setup [--check] [--fonts-only]
@@ -62,6 +64,7 @@ interface Cli {
   provider?: string;
   language?: string;
   port?: number;
+  root?: string;
   gpu?: "auto" | "software" | "hardware";
   /** Flags booleanas reconhecidas por comando (`--open`, `--check`, `--cursor`…). */
   flags: string[];
@@ -82,6 +85,7 @@ function parseCli(argv: string[]): Cli {
     else if (arg === "--provider") cli.provider = argv[++i];
     else if (arg === "--language") cli.language = argv[++i];
     else if (arg === "--port") cli.port = Number(argv[++i]);
+    else if (arg === "--root") cli.root = argv[++i];
     else if (arg === "--gpu") cli.gpu = (argv[++i] ?? "auto") as "auto" | "software" | "hardware";
     else if (arg.startsWith("-")) {
       const known = ["--open", "--check", "--fonts-only", "--cursor", "--apply", "--size", "--no-loudness"];
@@ -197,6 +201,27 @@ async function main(): Promise<void> {
     const cursor = cli.flags.includes("--cursor");
     const destination = process.argv.filter((arg) => !arg.startsWith("-"))[3] ?? ".";
     await runSkillInstall(cursor ? "cursor" : "claude", destination);
+    process.exit(0);
+  }
+
+  if (cli.command === "gallery") {
+    const port = cli.port ?? 0;
+    if (!Number.isInteger(port) || port < 0 || port > 65535) {
+      process.stderr.write(`porta inválida: ${cli.port}\n`);
+      process.exit(2);
+    }
+    const server = await startGallery({ ...(cli.root !== undefined ? { root: resolve(cli.root) } : {}), port });
+    process.stdout.write(`galeria ${server.url}/\nCtrl+C encerra\n`);
+    const stopped = Promise.withResolvers<void>();
+    const stop = (): void => {
+      server.close().then(stopped.resolve, stopped.reject);
+    };
+    process.once("SIGINT", stop);
+    try {
+      await stopped.promise;
+    } finally {
+      process.off("SIGINT", stop);
+    }
     process.exit(0);
   }
 
