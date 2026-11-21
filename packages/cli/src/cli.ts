@@ -368,10 +368,13 @@ async function main(): Promise<void> {
         try {
           const installed = await installBlockFromUrl(slug, target);
           process.stdout.write(`${installed.destination} · ${installed.bytes} bytes · sha256 ${installed.sha256.slice(0, 12)}…\n`);
-          process.exit(0);
+          // `process.exit()` logo após fetch aborta no Node 24/Windows.
+          process.exitCode = 0;
+          return;
         } catch (error) {
           process.stderr.write(`falha ao instalar: ${(error as Error).message}\n`);
-          process.exit(1);
+          process.exitCode = 1;
+          return;
         }
       }
       const block = listBlocks().find((candidate) => candidate.slug === slug);
