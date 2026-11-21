@@ -51,8 +51,9 @@ O hook fica em `.git/hooks/pre-push` e não é versionado — cada clone instala
 - Teste que depende de Chrome ou FFmpeg faz `skip` explícito quando o binário não existe — nunca passa em silêncio.
 - A promessa de pixel só é verificada no modo `software` (SwiftShader); em `hardware` a garantia é por máquina.
 - Goldens comparam hash e, quando diverge, PSNR contra `catalog/goldens/<bloco>/<frame>.png`
-  (≥50 dB aceito como jitter de rasterização). A verificação usa `captureShots: 3`, independente do
-  modo rápido do render.
+  (≥50 dB aceito como jitter de rasterização). A verificação usa 5 leituras por frame e roda 4 blocos
+  em paralelo (`FRANKFRAMES_GOLDEN_SHOTS`, `FRANKFRAMES_GOLDENS_CONCURRENCY`), independente do modo
+  rápido do render.
 
 ## Quando migrar para servidor
 

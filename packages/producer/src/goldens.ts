@@ -31,6 +31,8 @@ export async function captureGolden(
   entry: string,
   options: { gpu?: GpuMode; ratios?: number[]; includePng?: boolean } = {},
 ): Promise<GoldenBlock> {
+  // Verificação pode rodar em paralelo; sob carga, exige mais leituras estáveis.
+  const shots = Math.max(1, Number(process.env.FRANKFRAMES_GOLDEN_SHOTS) || 5);
   const prepared = await prepare({ entry });
   const server = await startServer(prepared.entryDir, {
     ...(prepared.mediaDir !== undefined ? { mediaRoot: prepared.mediaDir } : {}),
@@ -42,7 +44,7 @@ export async function captureGolden(
     viewport: prepared.viewport,
     gpu: options.gpu ?? "software",
     // Goldens são verificação, não caminho de velocidade: exigem frames estáveis.
-    captureShots: 3,
+    captureShots: shots,
   });
 
   try {
@@ -53,6 +55,7 @@ export async function captureGolden(
     // composição. Uma rodada no primeiro frame amostrado é descartada.
     await session.seekFrame(samples[0]!, prepared.fps);
     await session.capture();
+    void shots;
 
     for (const frame of samples) {
       await session.seekFrame(frame, prepared.fps);

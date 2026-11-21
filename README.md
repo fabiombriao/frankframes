@@ -52,6 +52,9 @@ node packages/cli/src/cli.ts render entrada.html --gpu software --no-loudness
 node packages/cli/src/cli.ts render entrada.html --json
 node packages/cli/src/cli.ts blocks list
 node packages/cli/src/cli.ts blocks add title-card ./meu-video
+node packages/cli/src/cli.ts blocks index --json          # índice com sha256 de cada bloco
+node packages/cli/src/cli.ts blocks publish dist/catalogo # diretório pronto para hospedar
+node packages/cli/src/cli.ts blocks serve dist/catalogo   # servidor local com o catálogo
 node packages/cli/src/cli.ts transcribe audio.wav --language pt
 node packages/cli/src/cli.ts models install whisper-large-v3-turbo   # ~1,5 GB, só por este comando
 
@@ -79,6 +82,8 @@ skills/frankframes  skill para agente de código
 docs/getting-started.md  do zero ao MP4 em 5 minutos
 docs/contract.md    a especificação (fonte de verdade)
 docs/licensing.md   LGPL, patentes, marcas e o que o usuário pode distribuir
+docs/transitions.md encadear cenas e a regra do animation-delay absoluto
+examples/cena-dupla duas cenas com faixa de transição, 8 s
 docs/encode.md      presets e regras de licença
 docs/transcribe.md  política de custo da transcrição
 vendor/fonts        25 famílias OFL-1.1 (Inter é o padrão)

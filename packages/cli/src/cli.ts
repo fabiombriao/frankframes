@@ -13,6 +13,7 @@ import type { Preset, VideoCodec } from "@frankframes/encode";
 import { RenderError, buildCaptionComposition, prepare, renderComposition, resolveFfmpeg, toErrorPayload } from "@frankframes/producer";
 import { installLocalModel, resolveProvider } from "@frankframes/transcribe";
 import { installBlockFromUrl, listBlocks, readBlock } from "@frankframes/catalog";
+import { buildCatalogIndex, publishCatalog, serveCatalog } from "./catalog-server.ts";
 import { runDoctor, runInit, runSkillInstall } from "./onboarding.ts";
 import { runSetup } from "./setup.ts";
 import { runUpgrade } from "./upgrade.ts";
@@ -31,6 +32,9 @@ uso:
   frankframes models install whisper-large-v3-turbo
   frankframes blocks list
   frankframes blocks add <slug> [destino]
+  frankframes blocks index [--json]
+  frankframes blocks publish <destino>
+  frankframes blocks serve [raiz] [--port N]
   frankframes init [diretório]
   frankframes doctor
   frankframes setup [--check] [--fonts-only]
@@ -57,6 +61,7 @@ interface Cli {
   keep: boolean;
   provider?: string;
   language?: string;
+  port?: number;
   gpu?: "auto" | "software" | "hardware";
   /** Flags booleanas reconhecidas por comando (`--open`, `--check`, `--cursor`…). */
   flags: string[];
@@ -76,6 +81,7 @@ function parseCli(argv: string[]): Cli {
     else if (arg === "--workers") cli.workers = Number(argv[++i]);
     else if (arg === "--provider") cli.provider = argv[++i];
     else if (arg === "--language") cli.language = argv[++i];
+    else if (arg === "--port") cli.port = Number(argv[++i]);
     else if (arg === "--gpu") cli.gpu = (argv[++i] ?? "auto") as "auto" | "software" | "hardware";
     else if (arg.startsWith("-")) {
       const known = ["--open", "--check", "--fonts-only", "--cursor", "--apply", "--size", "--no-loudness"];
@@ -303,6 +309,54 @@ async function main(): Promise<void> {
       }
       process.exit(0);
     }
+    if (action === "index") {
+      const index = await buildCatalogIndex();
+      if (cli.json) {
+        process.stdout.write(`${JSON.stringify(index, null, 2)}\n`);
+      } else {
+        for (const block of index) {
+          process.stdout.write(
+            `${block.slug.padEnd(20)} ${block.durationSeconds}s  ${(block.sizeBytes / 1024).toFixed(1)} KiB  ${block.sha256.slice(0, 12)}…  ${block.name}\n`,
+          );
+        }
+        const bytes = index.reduce((total, block) => total + block.sizeBytes, 0);
+        process.stdout.write(`${index.length} bloco(s) · ${(bytes / 1024 / 1024).toFixed(2)} MiB de HTML\n`);
+      }
+      process.exit(0);
+    }
+    if (action === "publish") {
+      const destination = process.argv[4];
+      if (destination === undefined || destination.startsWith("-")) {
+        process.stderr.write("uso: frankframes blocks publish <destino>\n");
+        process.exit(2);
+      }
+      const published = await publishCatalog(destination);
+      process.stdout.write(
+        `${resolve(destination)} · ${published.files} arquivo(s) · ${(published.bytes / 1024 / 1024).toFixed(2)} MiB (${published.bytes} bytes)\n`,
+      );
+      process.exit(0);
+    }
+    if (action === "serve") {
+      const root = process.argv[4] === undefined || process.argv[4]!.startsWith("-") ? resolve("out", "catalog") : process.argv[4]!;
+      const port = cli.port ?? 0;
+      if (!Number.isInteger(port) || port < 0 || port > 65535) {
+        process.stderr.write(`porta inválida: ${cli.port}\n`);
+        process.exit(2);
+      }
+      const server = await serveCatalog(root, port);
+      process.stdout.write(`servindo ${resolve(root)} em ${server.url}\nCtrl+C encerra\n`);
+      const stopped = Promise.withResolvers<void>();
+      const stop = (): void => {
+        server.close().then(stopped.resolve, stopped.reject);
+      };
+      process.once("SIGINT", stop);
+      try {
+        await stopped.promise;
+      } finally {
+        process.off("SIGINT", stop);
+      }
+      process.exit(0);
+    }
     if (action === "add") {
       const slug = process.argv[4];
       if (slug === undefined) {
@@ -329,7 +383,7 @@ async function main(): Promise<void> {
       process.stdout.write(`${target} (${readBlock(slug).length} bytes de HTML)\n`);
       process.exit(0);
     }
-    process.stderr.write("uso: frankframes blocks list|add\n");
+    process.stderr.write("uso: frankframes blocks list|add|index|publish|serve\n");
     process.exit(2);
   }
 
