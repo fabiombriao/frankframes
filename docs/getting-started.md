@@ -23,7 +23,19 @@ node packages/cli/src/cli.ts init meu-video
 
 Gera `meu-video/index.html` com uma composição válida de 4 s, 1920×1080, 30 fps — e uma pasta `assets/`.
 
-## 3. Ver antes de renderizar
+## 3. Studio (player + timeline)
+
+```bash
+frankframes studio meu-video/index.html
+```
+
+Abre `http://127.0.0.1:<porta>/` com player no centro, timeline embaixo, inspetor e catálogo na lateral.
+Você pode arrastar a barra de um clip para mudar o início, arrastar a borda direita para mudar a duração,
+editar `data-start`, `data-duration`, `data-offset`, `data-volume`, `data-audio-role`, `data-playback-rate`
+e o texto no inspetor, e inserir blocos no ponto atual da timeline. Cada alteração é validada pelo contrato
+e gravada no HTML preservando formatação e comentários; erro de contrato não grava.
+
+## 4. Ver antes de renderizar
 
 ```bash
 node packages/cli/src/cli.ts preview meu-video/index.html --open
@@ -32,7 +44,7 @@ node packages/cli/src/cli.ts preview meu-video/index.html --open
 O preview compila a mesma página do render, roda o relógio em tempo real e recarrega sozinho quando você
 salva. A barra no rodapé tem play/pause e scrub por frame; o instante fica na URL (`#f=45`).
 
-## 4. Renderizar
+## 5. Renderizar
 
 ```bash
 node packages/cli/src/cli.ts render meu-video/index.html -o out/video.mp4 --preset draft --gpu software --no-loudness
@@ -46,7 +58,7 @@ Frames extraídos de vídeo ficam em cache: `<assetHome>/cache/frames`, com teto
 mais antigo primeiro. Dentro do repo, `<assetHome>` é `vendor/`; fora do repo, o cache fica em
 `~/.frankframes/cache/frames`.
 
-## 5. Editar a composição
+## 6. Editar a composição
 
 O contrato completo está em [`docs/contract.md`](contract.md). O mínimo:
 
@@ -73,7 +85,7 @@ Se o provedor devolver tempos por palavra, a legenda sai em **karaokê**: cada p
 instante exato (`animation-delay` absoluto) e as já faladas ficam na cor de destaque. Sem palavras,
 o texto quebra em linhas equilibradas e a fonte encolhe para caber na largura segura.
 
-## 6. Usar um bloco pronto
+## 7. Usar um bloco pronto
 
 ```bash
 node packages/cli/src/cli.ts blocks list

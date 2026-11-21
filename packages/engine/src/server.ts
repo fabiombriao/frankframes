@@ -51,7 +51,7 @@ export interface ServerOptions {
   /** Preview: relógio em tempo real + recarga por SSE. */
   live?: boolean;
   /** Preview com barra de controle (fps e total de frames). */
-  preview?: { fps: { num: number; den: number }; frames: number };
+  preview?: { fps: { num: number; den: number }; frames: number; id?: string };
 }
 
 const MEDIA_PREFIX = "/__ff_media/";

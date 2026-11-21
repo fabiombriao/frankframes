@@ -18,6 +18,7 @@ import { startGallery } from "./gallery.ts";
 import { runDoctor, runInit, runSkillInstall } from "./onboarding.ts";
 import { runSetup } from "./setup.ts";
 import { runUpgrade } from "./upgrade.ts";
+import { startStudio } from "./studio-server.ts";
 import type { RenderStage } from "@frankframes/producer";
 
 const HELP = `frankframes — vídeo determinístico a partir de HTML
@@ -28,6 +29,7 @@ uso:
                                     [--workers N] [--gpu auto|software|hardware] [--no-loudness]
                                     [--keep] [--json]
   frankframes preview <arquivo.html> [--open]
+  frankframes studio <arquivo.html> [--port N]
   frankframes transcribe <audio> [--provider local|groq|openai-compatible] [--language pt] [--json]
   frankframes captions <audio> [-o legenda.html] [--size 1920x1080] [--language pt]
   frankframes models install whisper-large-v3-turbo
@@ -425,7 +427,7 @@ async function main(): Promise<void> {
     const serverOptions: Parameters<typeof startServer>[1] = {
       page,
       live: true,
-      preview: { fps: prepared.fps, frames: prepared.totalFrames },
+      preview: { fps: prepared.fps, frames: prepared.totalFrames, id: prepared.composition.id },
       ...(prepared.manifest !== undefined ? { manifest: prepared.manifest } : {}),
       ...(prepared.mediaDir !== undefined ? { mediaRoot: prepared.mediaDir } : {}),
     };
@@ -451,7 +453,7 @@ async function main(): Promise<void> {
         const next = await prepare({ entry, ffmpeg: pair.ffmpeg, ffprobe: pair.ffprobe, workDir });
         page.html = next.compiledHtml;
         serverOptions.manifest = next.manifest;
-        serverOptions.preview = { fps: next.fps, frames: next.totalFrames };
+        serverOptions.preview = { fps: next.fps, frames: next.totalFrames, id: next.composition.id };
         prepared = next;
         server.notify();
         process.stdout.write(`recompilado em ${Date.now() - started} ms · ${next.totalFrames} frames\n`);
@@ -494,6 +496,27 @@ async function main(): Promise<void> {
     } finally {
       if (!closing) shutdown(0);
     }
+    return;
+  }
+
+  if (cli.command === "studio") {
+    if (cli.file === undefined) {
+      process.stderr.write("uso: frankframes studio <arquivo.html> [--port N]\n");
+      process.exit(2);
+    }
+    const server = await startStudio({ entry: resolve(cli.file), ...(cli.port !== undefined ? { port: cli.port } : {}) });
+    process.stdout.write(`studio ${server.url}\n`);
+    const stopped = Promise.withResolvers<void>();
+    const stop = (): void => {
+      server.close().then(stopped.resolve, stopped.reject);
+    };
+    process.once("SIGINT", stop);
+    try {
+      await stopped.promise;
+    } finally {
+      process.off("SIGINT", stop);
+    }
+    process.exitCode = 0;
     return;
   }
 

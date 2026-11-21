@@ -7,6 +7,10 @@ export const PREVIEW_UI_SOURCE = `(() => {
   const meta = window.__ffPreviewMeta || { fps: { num: 30, den: 1 }, frames: 90 };
   const fps = meta.fps.num / meta.fps.den;
   const total = Math.max(1, meta.frames);
+  // Instante salvo é por composição: abrir outro arquivo não pode herdar o tempo.
+  const storageKey = "__ffTime:" + (meta.id || "preview");
+  const durationMs = (total / fps) * 1000;
+  const clampMs = (value) => Math.min(Math.max(0, value), Math.max(0, durationMs - 1));
   const frameMs = (frame) => (frame * 1000 * meta.fps.den) / meta.fps.num;
 
   const bar = document.createElement("div");
@@ -45,7 +49,7 @@ export const PREVIEW_UI_SOURCE = `(() => {
   };
 
   const goToFrame = (frame) => {
-    const ms = frameMs(frame);
+    const ms = clampMs(frameMs(frame));
     window.__ff.stopLive();
     window.__ff.seek(ms);
     history.replaceState(null, "", "#f=" + frame);
@@ -67,13 +71,31 @@ export const PREVIEW_UI_SOURCE = `(() => {
 
   window.__ff.liveHooks.push(paint);
 
+  // Instante salvo por composição, e sempre dentro da duração: abrir outro
+  // arquivo (ou um arquivo mais curto) não pode herdar um tempo inválido.
+  let lastPersist = 0;
+  const persist = () => {
+    const now = window.__ff.now();
+    if (now - lastPersist < 250) return;
+    lastPersist = now;
+    try {
+      sessionStorage.setItem(storageKey, String(Math.round(now)));
+    } catch {}
+  };
+  window.__ff.liveHooks.push(persist);
+  window.addEventListener("pagehide", () => {
+    try {
+      sessionStorage.setItem(storageKey, String(Math.round(window.__ff.now())));
+    } catch {}
+  });
+
   const fromHash = /#f=(\\d+)/.exec(location.hash);
-  const fromSession = Number(sessionStorage.getItem("__ffTime") || 0);
+  const fromSession = clampMs(Number(sessionStorage.getItem(storageKey) || 0));
   if (fromHash) {
-    goToFrame(Number(fromHash[1]));
+    goToFrame(Math.min(total - 1, Math.max(0, Number(fromHash[1]))));
     paint();
   } else {
-    window.__ff.startLive(fromSession || 0);
+    window.__ff.startLive(fromSession);
     paint();
   }
 

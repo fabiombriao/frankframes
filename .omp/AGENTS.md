@@ -12,7 +12,7 @@ packages/engine      browser pinado, relógio virtual, seek, captura, mídia for
 packages/producer    compile (sub-composições) -> probe -> extract -> capture -> audio -> encode -> assemble
 packages/transcribe  local (opt-in), Groq, OpenAI-compatible
 packages/catalog     leitura dos blocos
-packages/cli         lint, render, preview, transcribe, blocks, models, browser, init, doctor, setup
+packages/cli         lint, render, preview, studio, transcribe, blocks, models, browser, init, doctor, setup
 catalog/blocks       48 composições prontas (16:9 e 9:16)
 skills/frankframes   skill para agente (fonte em skills/, cópia em packages/cli/skill)
 ```

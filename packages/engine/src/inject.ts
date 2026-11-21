@@ -15,7 +15,7 @@ export interface Injection {
   /** Preview: relógio em tempo real e recarga por SSE. */
   live?: boolean;
   /** Preview com barra de controle; `frames` alimenta o scrub. */
-  preview?: { fps: Fps; frames: number };
+  preview?: { fps: Fps; frames: number; id?: string };
 }
 
 /**

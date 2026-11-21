@@ -1,0 +1,863 @@
+(() => {
+  "use strict";
+
+  const SNAP = 0.05;
+  const MIN_DURATION = 0.1;
+  const FRAME_POLL_MS = 100;
+  const PLAYER_WIDTH = 1920;
+  const PLAYER_HEIGHT = 1080;
+
+  const fileNameEl = document.getElementById("fileName");
+  const totalDurationEl = document.getElementById("totalDuration");
+  const compositionFpsEl = document.getElementById("compositionFps");
+  const connectionEl = document.getElementById("connection");
+  const player = document.getElementById("player");
+  const playerFrame = document.getElementById("playerFrame");
+  const inspector = document.getElementById("inspector");
+  const inspectorEmpty = document.getElementById("inspectorEmpty");
+  const clipTagEl = document.getElementById("clipTag");
+  const clipIdEl = document.getElementById("clipId");
+  const fieldStart = document.getElementById("fieldStart");
+  const fieldDuration = document.getElementById("fieldDuration");
+  const fieldOffset = document.getElementById("fieldOffset");
+  const fieldVolume = document.getElementById("fieldVolume");
+  const fieldRole = document.getElementById("fieldRole");
+  const fieldRate = document.getElementById("fieldRate");
+  const fieldText = document.getElementById("fieldText");
+  const applyButton = document.getElementById("applyButton");
+  const compositionDiagnostics = document.getElementById("compositionDiagnostics");
+  const inspectorDiagnostics = document.getElementById("inspectorDiagnostics");
+  const blocksStatus = document.getElementById("blocksStatus");
+  const blocksList = document.getElementById("blocksList");
+  const blocksDiagnostics = document.getElementById("blocksDiagnostics");
+  const ruler = document.getElementById("ruler");
+  const timelinePanel = document.querySelector(".timeline-panel");
+  const timelineBody = document.getElementById("timelineBody");
+  const timelineRows = document.getElementById("timelineRows");
+  const timelineEmpty = document.getElementById("timelineEmpty");
+  const playheadEl = document.getElementById("playhead");
+  const playheadTrack = document.querySelector(".playhead-track");
+
+  const state = {
+    clips: [],
+    total: 0,
+    fps: 30,
+    fileName: "index.html",
+    selectedId: null,
+    inspectorDirty: false,
+    playhead: 0,
+  };
+
+  let drag = null;
+  let mutationQueue = Promise.resolve();
+
+  /* Helpers */
+
+  function asNumber(value) {
+    return typeof value === "number" && Number.isFinite(value) ? value : null;
+  }
+
+  function clamp(value, min, max) {
+    return Math.min(max, Math.max(min, value));
+  }
+
+  function snap(value) {
+    return Math.round(value / SNAP) * SNAP;
+  }
+
+  function formatNumber(value) {
+    if (value === null || value === undefined) return "";
+    return String(Math.round(value * 1000) / 1000);
+  }
+
+  function formatSeconds(value) {
+    return Math.round(value * 100) / 100 + "s";
+  }
+
+  function baseName(path) {
+    const parts = String(path ?? "").split(/[\\/]/);
+    return parts[parts.length - 1] || "index.html";
+  }
+
+  function normalizeFps(fps) {
+    if (asNumber(fps)) return fps;
+    if (fps && typeof fps === "object") {
+      const num = asNumber(fps.num);
+      const den = asNumber(fps.den);
+      if (num !== null && num > 0) return num / (den !== null && den > 0 ? den : 1);
+    }
+    return 30;
+  }
+
+  function normalizeClip(raw, index) {
+    const start = asNumber(raw.start);
+    let duration = asNumber(raw.duration) ?? asNumber(raw.authoredDuration);
+    const end = asNumber(raw.end);
+    if (duration === null && start !== null && end !== null) duration = Math.max(0, end - start);
+    const role = raw.role ?? raw.audioRole;
+    return {
+      id: typeof raw.id === "string" && raw.id ? raw.id : "clip-" + index,
+      tag: typeof raw.tag === "string" && raw.tag ? raw.tag : "div",
+      start,
+      duration,
+      end: end !== null ? end : start !== null && duration !== null ? start + duration : null,
+      offset: asNumber(raw.offset) ?? 0,
+      volume: asNumber(raw.volume),
+      role: role === "voice" || role === "music" || role === "sfx" ? role : null,
+      playbackRate: asNumber(raw.playbackRate) ?? 1,
+      text: typeof raw.text === "string" ? raw.text : null,
+    };
+  }
+
+  function findClip(id) {
+    return state.clips.find((clip) => clip.id === id) ?? null;
+  }
+
+  function setConnection(text, isError) {
+    connectionEl.textContent = text;
+    connectionEl.classList.toggle("is-error", Boolean(isError));
+    connectionEl.classList.toggle("is-live", !isError);
+  }
+
+  function renderDiagnostics(container, diagnostics) {
+    container.replaceChildren();
+    for (const diagnostic of diagnostics) {
+      const item = document.createElement("p");
+      const severity = diagnostic.severity === "warning" ? "warning" : diagnostic.severity === "info" ? "info" : "error";
+      item.className = "diagnostic " + severity;
+      item.textContent = diagnostic.message;
+      if (diagnostic.hint) {
+        const hint = document.createElement("span");
+        hint.className = "hint";
+        hint.textContent = diagnostic.hint;
+        item.append(hint);
+      }
+      container.append(item);
+    }
+  }
+
+  function normalizeDiagnostics(payload) {
+    const output = [];
+    const add = (value, forced) => {
+      if (!value) return;
+      if (typeof value === "string") {
+        output.push({ severity: forced || "error", message: value });
+        return;
+      }
+      if (typeof value !== "object" || typeof value.message !== "string") return;
+      const severity = value.severity === "warning" ? "warning" : value.severity === "info" ? "info" : forced || "error";
+      output.push({ severity, message: value.message, hint: typeof value.hint === "string" ? value.hint : undefined });
+    };
+    if (Array.isArray(payload)) {
+      for (const entry of payload) add(entry);
+    } else if (payload && typeof payload === "object") {
+      for (const entry of Array.isArray(payload.diagnostics) ? payload.diagnostics : []) add(entry);
+      for (const entry of Array.isArray(payload.errors) ? payload.errors : []) add(entry, "error");
+      for (const entry of Array.isArray(payload.warnings) ? payload.warnings : []) add(entry, "warning");
+      if (payload.ok === false) add(payload.message, "error");
+    }
+    return output;
+  }
+
+  async function readJson(response) {
+    const text = await response.text();
+    if (!text.trim()) return {};
+    try {
+      return JSON.parse(text);
+    } catch (error) {
+      throw new Error("resposta inválida do servidor (HTTP " + response.status + ")");
+    }
+  }
+
+  /* Composição */
+
+  function applyComposition(payload) {
+    const data = payload && typeof payload.composition === "object" && payload.composition !== null ? payload.composition : payload;
+    if (!data || typeof data !== "object") throw new Error("composição inválida");
+
+    state.fileName = baseName(data.entry ?? data.file ?? data.fileName ?? data.id);
+    state.fps = normalizeFps(data.fps);
+    state.clips = (Array.isArray(data.clips) ? data.clips : []).map(normalizeClip);
+
+    const declared = asNumber(data.duration) ?? asNumber(data.seconds);
+    const maxEnd = state.clips.reduce((max, clip) => (clip.end !== null && clip.end > max ? clip.end : max), 0);
+    state.total = Math.max(0, declared !== null ? declared : maxEnd);
+    state.playhead = clamp(state.playhead, 0, state.total);
+
+    renderTop();
+    renderTimeline();
+    paintPlayhead();
+
+    if (state.selectedId !== null && !findClip(state.selectedId)) {
+      clearInspector();
+    } else if (state.selectedId !== null) {
+      updateSelectionStyles();
+      if (!state.inspectorDirty) fillInspector();
+    }
+  }
+
+  async function refreshComposition() {
+    try {
+      const response = await fetch("/api/composition", { cache: "no-store", headers: { accept: "application/json" } });
+      const payload = await readJson(response);
+      if (!response.ok) throw new Error(payload.message || "HTTP " + response.status);
+      applyComposition(payload);
+      const diagnostics = arrayOrEmpty(payload.diagnostics).length
+        ? normalizeDiagnostics(payload.diagnostics)
+        : normalizeDiagnostics(payload.composition ? payload.composition.diagnostics : []);
+      renderDiagnostics(compositionDiagnostics, diagnostics);
+      setConnection("ao vivo", false);
+    } catch (error) {
+      setConnection("desconectado", true);
+      renderDiagnostics(compositionDiagnostics, [
+        { severity: "error", message: "Não foi possível carregar a composição: " + error.message },
+      ]);
+    }
+  }
+
+  function arrayOrEmpty(value) {
+    return Array.isArray(value) ? value : [];
+  }
+
+  function renderTop() {
+    fileNameEl.textContent = state.fileName;
+    totalDurationEl.textContent = state.total > 0 ? formatSeconds(state.total) : "--";
+    const fps = state.fps;
+    compositionFpsEl.textContent = Number.isInteger(fps) ? fps + " fps" : fps.toFixed(2) + " fps";
+  }
+
+  /* Inspector */
+
+  function clearInspector() {
+    state.selectedId = null;
+    state.inspectorDirty = false;
+    inspector.hidden = true;
+    inspectorEmpty.hidden = false;
+    renderDiagnostics(inspectorDiagnostics, []);
+    updateSelectionStyles();
+  }
+
+  function fillInspector() {
+    const clip = state.selectedId === null ? null : findClip(state.selectedId);
+    if (!clip) {
+      clearInspector();
+      return;
+    }
+    inspector.hidden = false;
+    inspectorEmpty.hidden = true;
+    clipTagEl.textContent = clip.tag;
+    clipIdEl.textContent = clip.id;
+    fieldStart.value = formatNumber(clip.start);
+    fieldDuration.value = formatNumber(clip.duration);
+    fieldOffset.value = formatNumber(clip.offset);
+    fieldVolume.value = formatNumber(clip.volume);
+    fieldRole.value = clip.role ?? "";
+    fieldRate.value = formatNumber(clip.playbackRate);
+    fieldText.value = clip.text ?? "";
+    state.inspectorDirty = false;
+    renderDiagnostics(inspectorDiagnostics, []);
+  }
+
+  function selectClip(id) {
+    if (!findClip(id)) return;
+    state.selectedId = id;
+    state.inspectorDirty = false;
+    updateSelectionStyles();
+    fillInspector();
+  }
+
+  function updateSelectionStyles() {
+    for (const bar of timelineRows.querySelectorAll(".clip-bar")) {
+      bar.classList.toggle("is-selected", bar.dataset.clipId === state.selectedId);
+    }
+  }
+
+  function originalFor(clip, key) {
+    switch (key) {
+      case "data-start":
+        return clip.start;
+      case "data-duration":
+        return clip.duration;
+      case "data-offset":
+        return clip.offset;
+      case "data-volume":
+        return clip.volume;
+      case "data-audio-role":
+        return clip.role;
+      case "data-playback-rate":
+        return clip.playbackRate;
+      default:
+        return null;
+    }
+  }
+
+  async function applyChanges() {
+    const clip = state.selectedId === null ? null : findClip(state.selectedId);
+    if (!clip) return;
+
+    const attributes = {};
+    const errors = [];
+    const numericFields = [
+      [fieldStart, "data-start"],
+      [fieldDuration, "data-duration"],
+      [fieldOffset, "data-offset"],
+      [fieldVolume, "data-volume"],
+      [fieldRate, "data-playback-rate"],
+    ];
+
+    for (const [element, key] of numericFields) {
+      const raw = element.value.trim();
+      const original = originalFor(clip, key);
+      if (raw === "") {
+        if (original !== null) attributes[key] = null;
+        continue;
+      }
+      const value = Number(raw);
+      if (!Number.isFinite(value)) {
+        errors.push({ severity: "error", message: key + " precisa ser um número." });
+        continue;
+      }
+      if (original === null || Math.abs(value - original) > 1e-9) attributes[key] = String(value);
+    }
+
+    const role = fieldRole.value;
+    if (role === "") {
+      if (clip.role !== null) attributes["data-audio-role"] = null;
+    } else if (role !== clip.role) {
+      attributes["data-audio-role"] = role;
+    }
+
+    if (errors.length) {
+      renderDiagnostics(inspectorDiagnostics, errors);
+      return;
+    }
+
+    const textChanged = fieldText.value !== (clip.text ?? "");
+    if (!Object.keys(attributes).length && !textChanged) {
+      renderDiagnostics(inspectorDiagnostics, [{ severity: "info", message: "Nenhuma alteração para aplicar." }]);
+      return;
+    }
+
+    const body = { attributes };
+    if (textChanged) body.text = fieldText.value;
+
+    applyButton.disabled = true;
+    try {
+      const result = await mutate("POST", "/api/clips/" + encodeURIComponent(clip.id), body);
+      if (!result.ok) {
+        renderDiagnostics(inspectorDiagnostics, result.diagnostics);
+        return;
+      }
+      state.inspectorDirty = false;
+      await refreshComposition();
+      if (findClip(clip.id)) {
+        state.selectedId = clip.id;
+        fillInspector();
+      }
+      const diagnostics = result.diagnostics.length
+        ? result.diagnostics
+        : [{ severity: "info", message: "Alterações aplicadas." }];
+      renderDiagnostics(inspectorDiagnostics, diagnostics);
+    } finally {
+      applyButton.disabled = false;
+    }
+  }
+
+  /* Timeline */
+
+  function chooseStep(total) {
+    if (total <= 10) return 1;
+    if (total <= 30) return 2;
+    if (total <= 60) return 5;
+    if (total <= 120) return 10;
+    return Math.ceil(total / 12);
+  }
+
+  function renderRuler() {
+    ruler.replaceChildren();
+    if (state.total <= 0) {
+      timelinePanel.style.setProperty("--tick-size", "100%");
+      return;
+    }
+    const step = chooseStep(state.total);
+    timelinePanel.style.setProperty("--tick-size", (step / state.total) * 100 + "%");
+    for (let time = 0; time <= state.total + 1e-9; time += step) {
+      const tick = document.createElement("div");
+      tick.className = "tick";
+      tick.style.left = clamp((time / state.total) * 100, 0, 100) + "%";
+      const label = document.createElement("span");
+      label.textContent = formatSeconds(time);
+      tick.append(label);
+      ruler.append(tick);
+    }
+  }
+
+  function renderTimeline() {
+    const scrollTop = timelineBody.scrollTop;
+    timelineRows.replaceChildren();
+    renderRuler();
+
+    if (!state.clips.length) {
+      timelineEmpty.hidden = false;
+      timelineBody.scrollTop = 0;
+      playheadTrack.style.height = "";
+      return;
+    }
+    timelineEmpty.hidden = true;
+
+    const ordered = [...state.clips].sort((a, b) => {
+      const delta = (a.start ?? 0) - (b.start ?? 0);
+      return delta !== 0 ? delta : a.id.localeCompare(b.id);
+    });
+
+    for (const clip of ordered) {
+      const row = document.createElement("div");
+      row.className = "timeline-row";
+
+      const label = document.createElement("div");
+      label.className = "row-label";
+      const tag = document.createElement("span");
+      tag.className = "row-tag";
+      tag.textContent = clip.tag;
+      const name = document.createElement("span");
+      name.className = "row-name";
+      name.textContent = clip.id;
+      label.append(tag, name);
+
+      const lane = document.createElement("div");
+      lane.className = "lane";
+
+      const bar = document.createElement("button");
+      bar.type = "button";
+      bar.className = "clip-bar";
+      bar.dataset.clipId = clip.id;
+      if (clip.start === null) bar.classList.add("is-unresolved");
+      if (clip.id === state.selectedId) bar.classList.add("is-selected");
+      bar.dataset.start = formatNumber(clip.start);
+      bar.dataset.duration = formatNumber(clip.duration);
+      positionBar(bar, clip);
+      bar.addEventListener("pointerdown", onBarPointerDown);
+      bar.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          selectClip(clip.id);
+        }
+      });
+
+      if (clip.start !== null) {
+        const handle = document.createElement("span");
+        handle.className = "resize-handle";
+        handle.dataset.handle = "resize";
+        handle.setAttribute("aria-hidden", "true");
+        bar.append(handle);
+      }
+
+      lane.append(bar);
+      row.append(label, lane);
+      timelineRows.append(row);
+    }
+
+    timelineBody.scrollTop = scrollTop;
+    playheadTrack.style.height = Math.max(timelineBody.clientHeight, timelineRows.scrollHeight) + "px";
+  }
+
+  function barLabel(clip) {
+    const start = clip.start === null ? "início não resolvido" : "início " + formatNumber(clip.start) + "s";
+    const duration = clip.duration === null ? "duração não definida" : "duração " + formatNumber(clip.duration) + "s";
+    return "Clip " + clip.id + " (" + clip.tag + "), " + start + ", " + duration;
+  }
+
+  function positionBar(bar, clip) {
+    const start = clip.start ?? 0;
+    const duration = clip.duration ?? 0;
+    bar.style.left = state.total > 0 ? clamp((start / state.total) * 100, 0, 100) + "%" : "0%";
+    bar.style.width = state.total > 0 ? clamp((duration / state.total) * 100, 0, 100) + "%" : "0%";
+    bar.dataset.start = formatNumber(clip.start);
+    bar.dataset.duration = formatNumber(clip.duration);
+    bar.setAttribute("aria-label", barLabel(clip));
+  }
+
+  function updateBarGeometry(clip, bar) {
+    const target = bar ?? findBar(clip.id);
+    if (target) positionBar(target, clip);
+    if (!state.inspectorDirty) {
+      if (clip.start !== null) fieldStart.value = formatNumber(clip.start);
+      if (clip.duration !== null) fieldDuration.value = formatNumber(clip.duration);
+      clipIdEl.textContent = clip.id;
+    }
+  }
+
+  function findBar(id) {
+    for (const bar of timelineRows.querySelectorAll(".clip-bar")) {
+      if (bar.dataset.clipId === id) return bar;
+    }
+    return null;
+  }
+
+  function paintPlayhead() {
+    const ratio = state.total > 0 ? clamp(state.playhead / state.total, 0, 1) : 0;
+    playheadEl.style.left = ratio * 100 + "%";
+    playheadEl.hidden = state.total <= 0;
+  }
+
+  /* Arrasto */
+
+  function onBarPointerDown(event) {
+    if (event.button !== 0) return;
+    const bar = event.currentTarget;
+    const clip = findClip(bar.dataset.clipId);
+    if (!clip) return;
+    selectClip(clip.id);
+    if (clip.start === null || state.total <= 0) return;
+
+    const lane = bar.parentElement;
+    const laneWidth = lane.getBoundingClientRect().width;
+    if (laneWidth <= 0) return;
+
+    const handle = event.target instanceof Element ? event.target.closest(".resize-handle") : null;
+    drag = {
+      bar,
+      clip,
+      mode: handle ? "resize" : "move",
+      pointerId: event.pointerId,
+      originX: event.clientX,
+      originStart: clip.start,
+      originDuration: clip.duration ?? 0,
+      laneWidth,
+      moved: false,
+    };
+    event.preventDefault();
+    try {
+      bar.setPointerCapture(event.pointerId);
+    } catch (error) {
+      /* captura indisponível: listeners na window continuam o arrasto */
+    }
+    window.addEventListener("pointermove", onDragMove);
+    window.addEventListener("pointerup", onDragEnd);
+    window.addEventListener("pointercancel", onDragEnd);
+  }
+
+  function onDragMove(event) {
+    if (!drag || event.pointerId !== drag.pointerId) return;
+    const deltaPx = event.clientX - drag.originX;
+    if (Math.abs(deltaPx) >= 2) drag.moved = true;
+    const deltaSeconds = (deltaPx / drag.laneWidth) * state.total;
+
+    if (drag.mode === "move") {
+      drag.clip.start = snap(Math.max(0, drag.originStart + deltaSeconds));
+      if (drag.clip.duration !== null) drag.clip.end = drag.clip.start + drag.clip.duration;
+    } else {
+      drag.clip.duration = snap(Math.max(MIN_DURATION, drag.originDuration + deltaSeconds));
+      drag.clip.end = drag.clip.start === null ? null : drag.clip.start + drag.clip.duration;
+    }
+    updateBarGeometry(drag.clip, drag.bar);
+  }
+
+  function onDragEnd(event) {
+    if (!drag || event.pointerId !== drag.pointerId) return;
+    const finished = drag;
+    drag = null;
+    window.removeEventListener("pointermove", onDragMove);
+    window.removeEventListener("pointerup", onDragEnd);
+    window.removeEventListener("pointercancel", onDragEnd);
+    try {
+      finished.bar.releasePointerCapture(finished.pointerId);
+    } catch (error) {
+      /* o ponteiro já pode ter sido liberado */
+    }
+    if (!finished.moved) return;
+
+    if (finished.mode === "move" && finished.clip.start !== finished.originStart) {
+      queuePatch(finished.clip.id, { "data-start": formatNumber(finished.clip.start) });
+    } else if (finished.mode === "resize" && finished.clip.duration !== finished.originDuration) {
+      queuePatch(finished.clip.id, { "data-duration": formatNumber(finished.clip.duration) });
+    }
+  }
+
+  function nudgeSelected(direction) {
+    const clip = state.selectedId === null ? null : findClip(state.selectedId);
+    if (!clip || clip.start === null) return;
+    const next = snap(Math.max(0, clip.start + direction * SNAP));
+    if (next === clip.start) return;
+    clip.start = next;
+    if (clip.duration !== null) clip.end = next + clip.duration;
+    updateBarGeometry(clip);
+    queuePatch(clip.id, { "data-start": formatNumber(clip.start) });
+  }
+
+  function queuePatch(id, attributes) {
+    mutationQueue = mutationQueue
+      .then(async () => {
+        const result = await mutate("POST", "/api/clips/" + encodeURIComponent(id), { attributes });
+        if (!result.ok) {
+          renderDiagnostics(inspectorDiagnostics, result.diagnostics);
+          await refreshComposition();
+          return;
+        }
+        if (asNumber(result.payload.duration) !== null) {
+          state.total = Math.max(0, result.payload.duration);
+          renderTop();
+          renderTimeline();
+          paintPlayhead();
+        }
+      })
+      .catch((error) => {
+        renderDiagnostics(inspectorDiagnostics, [
+          { severity: "error", message: "Falha ao salvar a edição: " + error.message },
+        ]);
+      });
+    return mutationQueue;
+  }
+
+  /* Blocos */
+
+  async function loadBlocks() {
+    try {
+      const response = await fetch("/api/blocks", { cache: "no-store", headers: { accept: "application/json" } });
+      const payload = await readJson(response);
+      if (!response.ok) throw new Error(payload.message || "HTTP " + response.status);
+      const blocks = Array.isArray(payload) ? payload : arrayOrEmpty(payload.blocks);
+      renderBlocks(blocks);
+      blocksStatus.hidden = blocks.length > 0;
+      blocksStatus.textContent = blocks.length ? "" : "Nenhum bloco disponível.";
+    } catch (error) {
+      blocksStatus.hidden = false;
+      blocksStatus.textContent = "Falha ao carregar blocos.";
+      renderDiagnostics(blocksDiagnostics, [
+        { severity: "error", message: "Não foi possível carregar os blocos: " + error.message },
+      ]);
+    }
+  }
+
+  function renderBlocks(blocks) {
+    blocksList.replaceChildren();
+    for (const block of blocks) {
+      const slug = typeof block.slug === "string" ? block.slug : "";
+      const name = typeof block.name === "string" && block.name ? block.name : slug || "bloco";
+      const duration = asNumber(block.durationSeconds) ?? asNumber(block.duration) ?? 0;
+      const item = document.createElement("li");
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "block-button";
+      button.setAttribute("aria-label", "Inserir bloco " + name + ", " + formatSeconds(duration) + ", no tempo atual");
+      const nameEl = document.createElement("span");
+      nameEl.className = "block-name";
+      nameEl.textContent = name;
+      const durationEl = document.createElement("span");
+      durationEl.className = "block-duration";
+      durationEl.textContent = formatSeconds(duration);
+      button.append(nameEl, durationEl);
+      button.addEventListener("click", () => insertBlock(block, button));
+      item.append(button);
+      blocksList.append(item);
+    }
+  }
+
+  async function insertBlock(block, button) {
+    const name = String(block.name ?? block.slug ?? "");
+    const template = /subt[ií]tulo|subtitle/i.test(name + " " + String(block.slug ?? "")) ? "subtitle" : "title";
+    const duration = asNumber(block.durationSeconds);
+    if (duration === null || duration <= 0) {
+      renderDiagnostics(blocksDiagnostics, [{ severity: "error", message: "Bloco sem duração válida: " + name }]);
+      return;
+    }
+    const start = snap(Math.max(0, state.playhead));
+    button.disabled = true;
+    try {
+      const result = await mutate("POST", "/api/clips", { template, start, duration });
+      if (!result.ok) {
+        renderDiagnostics(blocksDiagnostics, result.diagnostics);
+        return;
+      }
+      await refreshComposition();
+      const id = typeof result.payload.id === "string" ? result.payload.id : null;
+      if (id && findClip(id)) {
+        selectClip(id);
+      }
+      const diagnostics = result.diagnostics.length
+        ? result.diagnostics
+        : [{ severity: "info", message: "Bloco inserido em " + formatSeconds(start) + "." }];
+      renderDiagnostics(blocksDiagnostics, diagnostics);
+    } finally {
+      button.disabled = false;
+    }
+  }
+
+  /* Mutação */
+
+  async function mutate(method, url, body) {
+    try {
+      const response = await fetch(url, {
+        method,
+        cache: "no-store",
+        headers: { "content-type": "application/json", accept: "application/json" },
+        body: JSON.stringify(body),
+      });
+      const payload = await readJson(response);
+      const diagnostics = normalizeDiagnostics(payload);
+      if (!response.ok || payload.ok === false) {
+        if (typeof payload.message === "string" && payload.message.trim() && !diagnostics.some((item) => item.message === payload.message)) {
+          diagnostics.unshift({ severity: "error", message: payload.message });
+        }
+        if (!diagnostics.length) {
+          diagnostics.push({ severity: "error", message: "HTTP " + response.status });
+        }
+        return { ok: false, payload, diagnostics };
+      }
+      return { ok: true, payload, diagnostics };
+    } catch (error) {
+      return {
+        ok: false,
+        payload: null,
+        diagnostics: [{ severity: "error", message: "Falha de rede: " + error.message }],
+      };
+    }
+  }
+
+  /* Player, eventos e atalhos */
+
+  let lastPlayerWidth = -1;
+
+  function fitPlayer() {
+    const width = playerFrame.clientWidth;
+    if (width <= 0) return;
+    if (width === lastPlayerWidth) return;
+    lastPlayerWidth = width;
+    const scale = width / PLAYER_WIDTH;
+    player.style.transform = "scale(" + scale + ")";
+    playerFrame.style.height = PLAYER_HEIGHT * scale + "px";
+  }
+
+  function observePlayerSize() {
+    if (typeof ResizeObserver !== "function") return;
+    const observer = new ResizeObserver(() => fitPlayer());
+    observer.observe(playerFrame);
+  }
+
+  function readPlayerTime() {
+    try {
+      const win = player.contentWindow;
+      if (win && win.__ff && typeof win.__ff.now === "function") {
+        const value = Number(win.__ff.now());
+        return Number.isFinite(value) ? value : null;
+      }
+    } catch (error) {
+      return null;
+    }
+    return null;
+  }
+
+  function reloadPreview() {
+    const timeMs = readPlayerTime();
+    if (timeMs !== null) {
+      try {
+        sessionStorage.setItem("__ffTime", String(Math.round(timeMs)));
+      } catch (error) {
+        /* sessionStorage indisponível: o preview começa do zero */
+      }
+    }
+    try {
+      if (player.contentWindow) player.contentWindow.location.reload();
+      else player.src = "/preview";
+    } catch (error) {
+      player.src = "/preview";
+    }
+  }
+
+  function connectEvents() {
+    let source;
+    try {
+      source = new EventSource("/api/events");
+    } catch (error) {
+      setConnection("sem eventos", true);
+      return;
+    }
+    source.onopen = () => setConnection("ao vivo", false);
+    source.onerror = () => setConnection("reconectando", true);
+    const onChange = () => {
+      reloadPreview();
+      refreshComposition();
+    };
+    source.addEventListener("change", onChange);
+    source.onmessage = (event) => {
+      if (String(event.data).trim() === "change") onChange();
+    };
+  }
+
+  function togglePlayback() {
+    let clicked = false;
+    try {
+      const doc = player.contentDocument;
+      const button = doc ? doc.querySelector("[data-ff-play]") : null;
+      if (button) {
+        button.click();
+        clicked = true;
+      }
+    } catch (error) {
+      /* documento do preview inacessível */
+    }
+    if (!clicked) {
+      try {
+        if (player.contentWindow) player.contentWindow.postMessage({ type: "ff-toggle" }, "*");
+        else setConnection("player indisponível", true);
+      } catch (error) {
+        setConnection("player indisponível", true);
+      }
+    }
+  }
+
+  function isEditing(event) {
+    const target = event.target;
+    return (
+      target instanceof HTMLElement &&
+      (target.matches("input, textarea, select") || target.isContentEditable)
+    );
+  }
+
+  document.addEventListener("keydown", (event) => {
+    if (event.code === "Space" && !isEditing(event)) {
+      event.preventDefault();
+      togglePlayback();
+      return;
+    }
+    if (event.defaultPrevented || isEditing(event)) return;
+    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+    if (state.selectedId === null) return;
+    event.preventDefault();
+    nudgeSelected(event.key === "ArrowRight" ? 1 : -1);
+  });
+
+  inspector.addEventListener("submit", (event) => {
+    event.preventDefault();
+    applyChanges();
+  });
+
+  inspector.addEventListener("input", () => {
+    state.inspectorDirty = true;
+  });
+
+  inspector.addEventListener("change", () => {
+    state.inspectorDirty = true;
+  });
+
+  window.addEventListener("resize", () => {
+    fitPlayer();
+    playheadTrack.style.height = Math.max(timelineBody.clientHeight, timelineRows.scrollHeight) + "px";
+    paintPlayhead();
+  });
+
+  setInterval(() => {
+    const timeMs = readPlayerTime();
+    if (timeMs === null) return;
+    state.playhead = state.total > 0 ? clamp(timeMs / 1000, 0, state.total) : Math.max(0, timeMs / 1000);
+    paintPlayhead();
+  }, FRAME_POLL_MS);
+
+  renderTop();
+  renderTimeline();
+  fitPlayer();
+  observePlayerSize();
+  refreshComposition();
+  loadBlocks();
+  connectEvents();
+})();
