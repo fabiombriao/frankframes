@@ -727,6 +727,30 @@ textarea {
   background: rgba(0, 0, 0, 0.12);
 }
 
+/* Faixa de transição (EDT-54): sobreposição de B com A, hachurada no começo da barra de B. */
+.ff-transition {
+  position: absolute;
+  top: 5px;
+  bottom: 5px;
+  z-index: 1;
+  min-width: 4px;
+  padding: 0;
+  border: 1px solid #8ba7c5;
+  border-radius: 3px;
+  background: repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.38) 0 3px, rgba(255, 255, 255, 0.08) 3px 6px);
+  cursor: pointer;
+}
+
+.ff-transition:hover,
+.ff-transition:focus-visible {
+  border-color: var(--focus);
+  background: repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.55) 0 3px, rgba(255, 255, 255, 0.15) 3px 6px);
+}
+
+.ff-transition.is-selected {
+  border-color: #ffc2cd;
+}
+
 .playhead-track {
   position: absolute;
   top: 0;

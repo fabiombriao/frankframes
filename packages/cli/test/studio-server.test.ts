@@ -204,3 +204,70 @@ test("o Studio serve timeline-math.js como JavaScript", async () => {
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+test("POST /api/clips/<id>/transition grava, entra no histórico e recusa corpo inválido", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "ff-studio-transition-"));
+  const entry = join(dir, "comp.html");
+  await writeFile(entry, HTML, "utf8");
+  let server: StudioServer | undefined;
+  const send = async (id: string, body: unknown) => {
+    const response = await fetch(`${server!.url}api/clips/${id}/transition`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    return { status: response.status, json: (await response.json()) as Record<string, unknown> };
+  };
+  const undo = () =>
+    fetch(`${server!.url}api/undo`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+  try {
+    server = await startStudio({ entry });
+    const initial = await readFile(entry, "utf8");
+
+    const created = await send("b", { preset: "dissolver", dur: 0.5 });
+    assert.equal(created.status, 200, JSON.stringify(created.json));
+    const written = await readFile(entry, "utf8");
+    assert.match(written, /data-start="a - 0\.5"/);
+    assert.match(written, /data-transition="dissolver"/);
+    assert.equal(loadComposition(written).ok, true);
+
+    const composition = (await (await fetch(`${server.url}api/composition`)).json()) as {
+      clips: Array<{ id: string; start: number | null; motion: Record<string, Record<string, unknown>> }>;
+    };
+    const b = composition.clips.find((clip) => clip.id === "b");
+    assert.equal(b?.start, 0.5);
+    assert.deepEqual(
+      { preset: b?.motion.transition?.preset, dur: b?.motion.transition?.dur, partner: b?.motion.transition?.partner },
+      { preset: "dissolver", dur: 0.5, partner: "a" },
+    );
+    assert.equal(composition.clips.find((clip) => clip.id === "a")?.motion.transition, undefined);
+
+    const longer = await send("b", { preset: "dissolver", dur: 0.8 });
+    assert.equal(longer.status, 200);
+    assert.match(await readFile(entry, "utf8"), /data-start="a - 0\.8"/);
+
+    assert.equal((await undo()).status, 200);
+    assert.equal(await readFile(entry, "utf8"), written, "desfazer volta à duração anterior");
+    assert.equal((await undo()).status, 200);
+    assert.equal(await readFile(entry, "utf8"), initial, "e à composição sem transição");
+
+    const negative = await send("b", { preset: "dissolver", dur: -1 });
+    assert.equal(negative.status, 400);
+    assert.equal(negative.json.code, "E_ATTRIBUTE_INVALID");
+    assert.equal((await send("b", { preset: "subir", dur: 0.5 })).status, 400, "preset que não é de transição");
+    assert.equal((await send("b", { preset: "dissolver", dur: 5 })).status, 400, "sobreposição maior que os clips");
+    const badDir = await send("b", { preset: "cortina", dur: 0.5, params: { dir: "diagonal" } });
+    assert.equal(badDir.status, 400, "o contrato recusa dir inválido");
+    assert.equal(badDir.json.code, "E_CONTRACT_INVALID");
+    const noPreset = await send("b", { dur: 0.5 });
+    assert.equal(noPreset.status, 400);
+    assert.equal(noPreset.json.code, "E_BODY_INVALID");
+    const gap = await send("a", { preset: "dissolver", dur: 0.5 });
+    assert.equal(gap.status, 400);
+    assert.equal(gap.json.code, "E_TRANSITION_GAP");
+    assert.equal(await readFile(entry, "utf8"), initial, "pedidos recusados não tocam no arquivo");
+  } finally {
+    await server?.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});

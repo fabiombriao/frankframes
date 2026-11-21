@@ -14,6 +14,7 @@ import { assetPath, injectEngine, probeDuration } from "@frankframes/engine";
 import type { PreviewAudioConfig } from "@frankframes/engine";
 import {
   applyPatches,
+  applyTransition,
   EditError,
   explicitClipIds,
   prepare,
@@ -193,6 +194,24 @@ function motionOf(source: MotionSource): Record<string, unknown> {
     out["split"] = { mode, order, stagger, explicit };
   }
   return out;
+}
+
+/**
+ * `transition` ganha a sobreposição (`dur`, o deslocamento negativo de `data-start`) e o parceiro A (o id
+ * referenciado). Só leitura: a escrita é `POST /api/clips/<id>/transition`.
+ */
+function withTransition(motion: Record<string, unknown>, clip: ResolvedClip): Record<string, unknown> {
+  const entry = motion["transition"] as MotionEntry | undefined;
+  if (entry === undefined) return motion;
+  const expr = clip.startExpr;
+  return {
+    ...motion,
+    transition: {
+      ...entry,
+      dur: expr.kind === "reference" && expr.offset < 0 ? Math.round(-expr.offset * 1e6) / 1e6 : null,
+      partner: expr.kind === "reference" ? expr.refId : null,
+    },
+  };
 }
 
 /** Tipo de linha na timeline: áudio; vídeo (inclui imagem e sub-composição); texto para o resto. */
@@ -487,7 +506,10 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
         fadeIn: clip.fadeIn ?? null,
         fadeOut: clip.fadeOut ?? null,
         hasKeyframes: clip.keyframes !== undefined,
-        motion: motionOf(ownMotion.get(clip.id) ?? { clipId: clip.id, ordinal: 0, tag: clip.tag, own: true, attrs: {} }),
+        motion: withTransition(
+          motionOf(ownMotion.get(clip.id) ?? { clipId: clip.id, ordinal: 0, tag: clip.tag, own: true, attrs: {} }),
+          clip,
+        ),
         keyframes: ownMotion.get(clip.id)?.keyframes ?? null,
         hasChildren: clip.children.length > 0 || clip.isSubComposition,
         parentId,
@@ -630,6 +652,34 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
     const composition = validated(next, "o corte deixaria o contrato inválido");
     await commit(`dividir ${clipId}`, source, next);
     sendJson(res, 200, { ok: true, id: newId, duration: durationOf(composition), history: history.state() });
+  };
+
+  /** `POST /api/clips/<id>/transition` com `{preset, dur, params?}`; ver `applyTransition`. */
+  const transition = async (clipId: string, req: IncomingMessage, res: ServerResponse): Promise<void> => {
+    const body = objectBody(await bodyJson(req));
+    const preset = body.preset;
+    if (preset !== null && typeof preset !== "string") {
+      throw new ReplyError(400, "E_BODY_INVALID", '"preset" precisa ser o nome de um preset de transição ou null');
+    }
+    const params: Record<string, string> = {};
+    if (body.params !== undefined) {
+      for (const [key, item] of Object.entries(objectBody(body.params))) {
+        if (typeof item !== "string") throw new ReplyError(400, "E_BODY_INVALID", `parâmetro "${key}" precisa ser texto`);
+        params[key] = item;
+      }
+    }
+    const request = preset === null ? { clipId, preset } : { clipId, preset, dur: numeric(body, "dur"), params };
+    const source = await readFile(entryPath, "utf8");
+    let next: string;
+    try {
+      next = applyTransition(source, request);
+    } catch (error) {
+      if (error instanceof EditError) throw new ReplyError(400, error.code, error.message);
+      throw error;
+    }
+    const composition = validated(next, "a transição deixaria o contrato inválido");
+    if (next !== source) await commit(`transição ${clipId}`, source, next);
+    sendJson(res, 200, { ok: true, duration: durationOf(composition), diagnostics: composition.diagnostics, history: history.state() });
   };
 
   const travel = async (direction: "undo" | "redo", res: ServerResponse): Promise<void> => {
@@ -777,6 +827,11 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
         const splitMatch = /^([^/]+)\/split$/.exec(rest);
         if (splitMatch !== null) {
           await serial(() => split(splitMatch[1]!, req, res));
+          return;
+        }
+        const transitionMatch = /^([^/]+)\/transition$/.exec(rest);
+        if (transitionMatch !== null) {
+          await serial(() => transition(transitionMatch[1]!, req, res));
           return;
         }
         if (rest === "" || rest.includes("/")) {

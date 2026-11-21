@@ -714,8 +714,10 @@ Qualquer outra falha de medição continua falhando alto.
 - **Movimento** (§7b). `GET /api/composition` traz, por clip, `motion` com só as chaves presentes no HTML
   (`enter`, `exit`, `emphasis`, `camera`, `transition`), cada uma como `{raw, preset, params}` (`preset` é
   `null` quando o texto não é válido), mais `split` quando há `data-split`, e `keyframes` (somente leitura;
-  `null` sem `data-keyframes`). Fontes passivas (filhos que só herdam) não aparecem. `transition` é só leitura:
-  o Studio mostra, não grava.
+  `null` sem `data-keyframes`). Fontes passivas (filhos que só herdam) não aparecem. `transition` ganha
+  `dur` (a sobreposição: o deslocamento negativo de `data-start`, `null` se não for uma referência com
+  deslocamento negativo) e `partner` (o id de A referenciado em `data-start`, ou `null`); ambos são só leitura
+  e a escrita é `POST /api/clips/<id>/transition`.
 - **Presets** (`GET /api/motion/presets`). Devolve `{enter, exit, emphasis, camera, transition}`, cada lista
   com `{name, label, dur, curve, keys}`; `keys` descreve os parâmetros aceitos (`type`, `default`, `min`,
   `max`, `values`, `doc`). `transition` não tem `dur` nem `at` (a duração é a sobreposição). A miniatura de
@@ -726,6 +728,24 @@ Qualquer outra falha de medição continua falhando alto.
   intacto na falha), e a escolha entra no histórico, então Ctrl+Z desfaz. O cliente só escreve parâmetros que
   diferem do default do preset (`subir dur=0.8`); trocar de preset preserva `dur`, `at` e `curve` que o
   novo preset aceita e descarta o resto.
+- **Transição entre clips adjacentes** (`POST /api/clips/<id>/transition`, corpo `{preset, dur, params?}`,
+  `<id>` é o clip B que entra). `preset` é o nome de um preset de transição (`dissolver`, `cortina`, `empurrar`,
+  `zoom`, `iris`) ou `null` para remover; `dur` (> 0, segundos) é a sobreposição e `params` os parâmetros do
+  preset (`dir`...; sem `dur` nem `at`, §7b.10). A escrita é uma só e atômica sobre o clip B: `data-transition`
+  recebe `<preset> [chave=valor ...]` e `data-start` recebe `<id de A> - <dur>`. A é o clip da raiz que termina
+  exatamente onde B começa (tolerância de 1 µs) ou, se B já tem transição, o que o `data-start` de B
+  referencia. Se A não tem `data-clip-id`, ele ganha um id explícito (`clip-N`) no mesmo patch, porque o id
+  automático (`div#1`) não é referenciável. `preset: null` volta a `data-start="<id de A>"` (B adjacente a A, na
+  duração original de A) e tira `data-transition`; sem transição para remover, nada muda e nada entra no
+  histórico. Mudar só o `dur` só desloca B: o resto da timeline que referencia o fim de B anda junto, e clips
+  com início absoluto não se movem. Falhas: B sem nenhum clip terminando onde ele começa (inclusive o
+  primeiro clip, ou B dentro de sub-composição) é `E_TRANSITION_GAP`; `preset` que não é de transição, `dur` ≤ 0
+  e parâmetros ilegíveis são `E_ATTRIBUTE_INVALID` (corpo sem `preset` string ou `null`: `E_BODY_INVALID`); o que o
+  contrato recusa depois da escrita (sobreposição maior que A ou B, `dir` inválido) é `E_CONTRACT_INVALID` com os
+  diagnósticos. Todas respondem 400 e deixam o arquivo intacto; o sucesso entra no histórico (Ctrl+Z desfaz).
+  O inspetor mostra a seção "Transição" só quando B já tem transição ou há um clip da raiz encostado nele, e a
+  timeline desenha uma faixa hachurada de largura `dur` no começo da barra de B; clicar nela seleciona B e leva
+  à seção.
 
 As escritas são serializadas: duas edições nunca intercalam leitura e gravação do mesmo arquivo.
 

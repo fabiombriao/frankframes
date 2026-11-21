@@ -15,3 +15,14 @@ export function lastFrameTime(total, fps) {
 export function roundToFrame(time, fps) {
   return Math.round(time * fps) / fps;
 }
+
+/**
+ * Faixa `[start, start + length)` na escala da timeline, em % da largura (0–100), cortada nas bordas.
+ * Serve à barra do clip e à faixa de transição, que usam a mesma régua.
+ */
+export function percentSpan(start, length, total) {
+  if (!(total > 0)) return { left: 0, width: 0 };
+  const left = Math.min(100, Math.max(0, (start / total) * 100));
+  const right = Math.min(100, Math.max(0, ((start + length) / total) * 100));
+  return { left, width: right - left };
+}

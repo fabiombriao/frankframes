@@ -1,5 +1,5 @@
-import { lastFrameTime } from "/timeline-math.js";
-import { renderMotionSection } from "/motion.js";
+import { lastFrameTime, percentSpan } from "/timeline-math.js";
+import { renderMotionSection, renderTransitionSection } from "/motion.js";
 
 (() => {
   "use strict";
@@ -31,6 +31,7 @@ import { renderMotionSection } from "/motion.js";
   const compositionDiagnostics = document.getElementById("compositionDiagnostics");
   const inspectorDiagnostics = document.getElementById("inspectorDiagnostics");
   const motionSection = document.getElementById("motionSection");
+  const transitionSection = document.getElementById("transitionSection");
   const blocksStatus = document.getElementById("blocksStatus");
   const blocksList = document.getElementById("blocksList");
   const blocksDiagnostics = document.getElementById("blocksDiagnostics");
@@ -266,6 +267,7 @@ import { renderMotionSection } from "/motion.js";
     state.inspectorDirty = false;
     inspector.hidden = true;
     motionSection.hidden = true;
+    transitionSection.hidden = true;
     inspectorEmpty.hidden = false;
     renderDiagnostics(inspectorDiagnostics, []);
     updateSelectionStyles();
@@ -290,9 +292,12 @@ import { renderMotionSection } from "/motion.js";
     fieldText.value = clip.text ?? "";
     state.inspectorDirty = false;
     renderDiagnostics(inspectorDiagnostics, []);
-    if (state.motionPresets === null) motionSection.hidden = true;
-    else {
+    if (state.motionPresets === null) {
+      motionSection.hidden = true;
+      transitionSection.hidden = true;
+    } else {
       renderMotionSection(motionSection, clip, state.motionPresets, ({ attribute, value }) => queuePatch(clip.id, { [attribute]: value }));
+      renderTransitionSection(transitionSection, clip, state.clips, state.motionPresets, (change) => queueTransition(clip.id, change));
     }
   }
 
@@ -321,6 +326,9 @@ import { renderMotionSection } from "/motion.js";
   function updateSelectionStyles() {
     for (const bar of timelineRows.querySelectorAll(".clip-bar")) {
       bar.classList.toggle("is-selected", bar.dataset.clipId === state.selectedId);
+    }
+    for (const strip of timelineRows.querySelectorAll(".ff-transition")) {
+      strip.classList.toggle("is-selected", strip.dataset.clipId === state.selectedId);
     }
     updateToolbar();
   }
@@ -669,12 +677,41 @@ import { renderMotionSection } from "/motion.js";
       }
 
       lane.append(bar);
+      const strip = transitionStrip(clip);
+      if (strip !== null) lane.append(strip);
       row.append(label, lane);
       timelineRows.append(row);
     }
 
     timelineBody.scrollTop = scrollTop;
     playheadTrack.style.height = Math.max(timelineBody.clientHeight, timelineRows.scrollHeight) + "px";
+  }
+
+  /* Faixa hachurada da transição: largura = sobreposição (dur), no começo da barra de B. */
+  function transitionStrip(clip) {
+    const entry = clip.motion.transition;
+    if (!entry || typeof entry.dur !== "number" || entry.dur <= 0 || clip.start === null) return null;
+    const strip = document.createElement("button");
+    strip.type = "button";
+    strip.className = "ff-transition";
+    strip.dataset.clipId = clip.id;
+    if (clip.id === state.selectedId) strip.classList.add("is-selected");
+    positionStrip(strip, clip);
+    strip.addEventListener("click", () => {
+      selectClip(clip.id);
+      transitionSection.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      transitionSection.querySelector("[data-motion-picker]")?.focus();
+    });
+    return strip;
+  }
+
+  function positionStrip(strip, clip) {
+    const entry = clip.motion.transition;
+    const span = percentSpan(clip.start ?? 0, entry.dur, state.total);
+    strip.style.left = span.left + "%";
+    strip.style.width = span.width + "%";
+    strip.title = "Transição " + (entry.preset ?? "") + " com " + (entry.partner ?? "?") + ", " + formatNumber(entry.dur) + "s";
+    strip.setAttribute("aria-label", strip.title + ". Abre a seção Transição.");
   }
 
   function barLabel(clip) {
@@ -696,6 +733,8 @@ import { renderMotionSection } from "/motion.js";
   function updateBarGeometry(clip, bar) {
     const target = bar ?? findBar(clip.id);
     if (target) positionBar(target, clip);
+    const strip = timelineRows.querySelector('.ff-transition[data-clip-id="' + CSS.escape(clip.id) + '"]');
+    if (strip) positionStrip(strip, clip);
     if (!state.inspectorDirty) {
       if (clip.start !== null) fieldStart.value = formatNumber(clip.start);
       if (clip.duration !== null) fieldDuration.value = formatNumber(clip.duration);
@@ -823,6 +862,22 @@ import { renderMotionSection } from "/motion.js";
         renderDiagnostics(inspectorDiagnostics, [
           { severity: "error", message: "Falha ao salvar a edição: " + error.message },
         ]);
+      });
+    return mutationQueue;
+  }
+
+  /** `POST /api/clips/<id>/transition`; o início de B muda, então recarrega a composição inteira. */
+  function queueTransition(id, change) {
+    mutationQueue = mutationQueue
+      .then(async () => {
+        const result = await mutate("POST", "/api/clips/" + encodeURIComponent(id) + "/transition", change);
+        if (result.payload && result.payload.history) applyHistory(result.payload.history);
+        state.inspectorDirty = false;
+        await refreshComposition();
+        if (!result.ok) renderDiagnostics(inspectorDiagnostics, result.diagnostics);
+      })
+      .catch((error) => {
+        renderDiagnostics(inspectorDiagnostics, [{ severity: "error", message: "Falha ao salvar a transição: " + error.message }]);
       });
     return mutationQueue;
   }

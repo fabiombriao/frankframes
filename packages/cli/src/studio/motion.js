@@ -349,3 +349,105 @@ export function renderMotionSection(container, clip, presets, onChange) {
 
   if (refocus !== undefined) container.querySelector(`[data-motion-picker="${refocus}"]`)?.focus();
 }
+
+/* ------------------------- Transição (EDT-54) ------------------------- */
+
+/** Sobreposição inicial ao criar uma transição, em segundos. */
+export const DEFAULT_TRANSITION_DUR = 0.5;
+const ADJACENT_EPS = 1e-6;
+
+/**
+ * Clip A com o qual `clip` (B) pode ter transição: o parceiro já declarado (`motion.transition.partner`)
+ * ou o irmão anterior que termina exatamente onde B começa. `null` quando não há. Só olha a raiz
+ * (`parentId` igual) e exige A antes de B; quem decide de verdade é o servidor (`E_TRANSITION_GAP`).
+ */
+export function transitionPartner(clips, clip) {
+  const declared = clip.motion?.transition?.partner ?? null;
+  if (declared !== null) return clips.find((item) => item.id === declared) ?? null;
+  if (clip.start === null || clip.parentId !== null) return null;
+  const before = clips.filter(
+    (item) =>
+      item.id !== clip.id &&
+      item.parentId === null &&
+      item.start !== null &&
+      item.end !== null &&
+      item.start < clip.start &&
+      Math.abs(item.end - clip.start) <= ADJACENT_EPS,
+  );
+  return before.length === 0 ? null : before[before.length - 1];
+}
+
+/**
+ * Parâmetros que sobram ao trocar de preset (só os que o novo aceita, com valor permitido) sem os vazios
+ * e sem os iguais ao padrão. `presets` é a lista do tipo `transition`.
+ */
+export function transitionParams(preset, params, presets) {
+  const info = infoOf(preset, presets);
+  const kept = {};
+  for (const [key, value] of Object.entries(params)) {
+    const spec = info.keys[key];
+    if (spec === undefined || typeof value !== "string" || value === "" || isDefault(spec, value)) continue;
+    if (Array.isArray(spec.values) && !spec.values.includes(value)) continue;
+    kept[key] = value;
+  }
+  return kept;
+}
+
+/**
+ * Seção "Transição": seletor de preset (só os do tipo `transition`), `dur` (a sobreposição com A, em
+ * segundos) e `dir` quando o preset aceita. Aparece só se B já tem transição ou há um irmão anterior
+ * encostado nele. `onChange({ preset: nome | null, dur?, params? })` vira `POST /api/clips/<id>/transition`.
+ */
+export function renderTransitionSection(container, clip, clips, presets, onChange) {
+  const partner = clip.tag === "audio" ? null : transitionPartner(clips, clip);
+  const entry = clip.motion?.transition ?? null;
+  container.hidden = partner === null && entry === null;
+  if (container.hidden || editingIn(container)) return;
+  const refocus = container.contains(document.activeElement) ? document.activeElement.dataset.motionPicker : undefined;
+  container.dataset.clipId = clip.id;
+  container.replaceChildren(element("h3", "motion-heading", "Transição"));
+  const locked = clip.editable !== true;
+  const list = presets.transition ?? [];
+  const preset = entry === null ? null : entry.preset;
+  const info = preset === null ? undefined : list.find((item) => item.name === preset);
+  const dur = entry !== null && typeof entry.dur === "number" ? entry.dur : DEFAULT_TRANSITION_DUR;
+
+  const row = element("div", "motion-row");
+  row.dataset.kind = "transition";
+  row.append(element("span", "motion-row-label", partner === null ? "Com o clip anterior" : `Com ${partner.id}`));
+  row.append(
+    createPresetPicker(
+      "transition",
+      list,
+      preset,
+      (next) => {
+        if (next === null) onChange({ preset: null });
+        else onChange({ preset: next, dur, params: transitionParams(next, entry === null ? {} : entry.params, list) });
+      },
+      { disabled: locked, label: "Transição" },
+    ),
+  );
+
+  if (entry !== null && info !== undefined) {
+    const params = entry.params;
+    const fields = element("div", "motion-fields");
+    fields.append(
+      textField("dur", String(dur), String(DEFAULT_TRANSITION_DUR), locked, (text) => onChange({ preset, dur: Number(text), params })),
+    );
+    if (info.keys.dir !== undefined) {
+      fields.append(
+        textField("dir", params.dir ?? "", String(info.keys.dir.default), locked, (text) => {
+          const next = { ...params };
+          if (text === "") delete next.dir;
+          else next.dir = text;
+          onChange({ preset, dur, params: transitionParams(preset, next, list) });
+        }, (text) => text.replace(/\s+/g, "")),
+      );
+    }
+    row.append(fields);
+    row.append(element("code", "motion-raw", entry.raw));
+  }
+  container.append(row);
+  if (locked) container.append(element("p", "motion-note", "Clip sem data-clip-id explícito: edite a transição no HTML."));
+  if (refocus !== undefined) container.querySelector(`[data-motion-picker="${refocus}"]`)?.focus();
+}

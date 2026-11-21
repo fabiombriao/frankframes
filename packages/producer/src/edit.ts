@@ -1,6 +1,6 @@
 // FrankFrames — proprietário. Ver LICENSE na raiz.
 import { parse } from "parse5";
-import { loadComposition } from "@frankframes/contract";
+import { listPresets, loadComposition, parseMotionValue } from "@frankframes/contract";
 import type { Composition, ResolvedClip } from "@frankframes/contract";
 
 interface P5Location {
@@ -34,7 +34,8 @@ export class EditError extends Error {
     | "E_TEXT_NOT_EDITABLE"
     | "E_ATTRIBUTE_INVALID"
     | "E_SPLIT_UNSUPPORTED"
-    | "E_SPLIT_OUT_OF_RANGE";
+    | "E_SPLIT_OUT_OF_RANGE"
+    | "E_TRANSITION_GAP";
 
   constructor(code: EditError["code"], message: string) {
     super(message);
@@ -317,4 +318,127 @@ export function splitClip(source: string, request: SplitRequest): string {
     patches.push({ clipId: referrer.id, attributes: { "data-start": `${newId}${refSuffix(offset)}` } });
   }
   return applyPatches(inserted, patches);
+}
+
+/** Tolerância para dizer que A termina onde B começa (segundos). */
+const ADJACENT_EPS = 1e-6;
+const REFERENCE_ID = /^[A-Za-z0-9_.:-]+$/;
+
+export interface TransitionRequest {
+  /** Clip B, o que entra. */
+  clipId: string;
+  /** Preset de transição, ou `null` para remover a transição e deixar B encostado em A. */
+  preset: string | null;
+  /** Sobreposição em segundos (> 0); obrigatória com preset. */
+  dur?: number;
+  /** Chaves do preset (`dir`, `fx`...); a validação fina é do contrato. */
+  params?: Record<string, string>;
+}
+
+/** Próximo `clip-N` livre entre os ids da composição e os `data-clip-id` do arquivo. */
+function freeClipId(source: string, used: string[]): string {
+  const taken = new Set([...used, ...[...source.matchAll(/\bdata-clip-id\s*=\s*["']([^"']+)["']/g)].map((m) => m[1] ?? "")]);
+  let n = 1;
+  for (const id of taken) {
+    const match = /^clip-(\d+)$/.exec(id);
+    if (match) n = Math.max(n, Number(match[1]) + 1);
+  }
+  while (taken.has(`clip-${n}`)) n += 1;
+  return `clip-${n}`;
+}
+
+/**
+ * Dá `data-clip-id` ao clip sem id explícito (id automático `tag#n` não cabe em `data-start`).
+ * O elemento é achado pelo próprio contrato: o candidato certo é o que, ao ganhar o id, deixa a lista de ids
+ * da composição igual à original com `partner.id` trocado por `newId`.
+ */
+function nameClip(source: string, partner: ResolvedClip, allIds: string[], newId: string): string {
+  const expected = allIds.map((id) => (id === partner.id ? newId : id));
+  for (const node of walk(parseSource(source).childNodes)) {
+    if (node.nodeName !== partner.tag) continue;
+    if (attr(node, "data-clip-id") !== undefined || attr(node, "data-composition-id") !== undefined) continue;
+    const tag = node.sourceCodeLocation?.startTag;
+    if (!tag) continue;
+    // Elemento vazio `<img ... />`: o atributo entra antes da barra.
+    const at = source[tag.endOffset - 2] === "/" ? tag.endOffset - 2 : tag.endOffset - 1;
+    const candidate = `${source.slice(0, at)} data-clip-id="${newId}"${source.slice(at)}`;
+    const ids = flatten(loadComposition(candidate).clips).map((clip) => clip.id);
+    if (ids.length === expected.length && ids.every((id, index) => id === expected[index])) return candidate;
+  }
+  throw new EditError(
+    "E_CLIP_NOT_FOUND",
+    `clip "${partner.id}" não tem data-clip-id e não foi possível localizá-lo no arquivo; dê um data-clip-id a ele`,
+  );
+}
+
+/**
+ * Liga o clip B a quem termina onde ele começa (A) por uma transição (§7b.10): B passa a começar `dur` antes
+ * do fim de A (`data-start="<A> - <dur>"`) e ganha `data-transition`. Com `preset: null` a transição sai e B
+ * volta a começar no fim de A. A é o clip da raiz, anterior a B no documento, que termina no início de B, ou
+ * o que B já referencia numa transição existente; nenhum → `E_TRANSITION_GAP`. Se A não tem `data-clip-id`, ele
+ * é gravado no mesmo resultado. Função pura: o contrato do resultado é validado por quem chama.
+ */
+export function applyTransition(source: string, request: TransitionRequest): string {
+  const { clipId, preset } = request;
+  const params = request.params ?? {};
+  const composition = loadComposition(source);
+  const all = flatten(composition.clips);
+  const clip = topLevelClip(composition, clipId, "E_TRANSITION_GAP", "transição só entre clips da raiz");
+  const location = locateClip(source, clipId);
+  if (clip.start === undefined) {
+    throw new EditError("E_TRANSITION_GAP", `clip "${clipId}" não tem início resolvido; corrija o contrato antes`);
+  }
+
+  // Texto do atributo, validado antes de qualquer outra coisa para não gravar lixo.
+  let value: string | undefined;
+  if (preset !== null) {
+    const dur = request.dur;
+    if (typeof dur !== "number" || !Number.isFinite(dur) || dur <= 0) {
+      throw new EditError("E_ATTRIBUTE_INVALID", '"dur" da transição precisa ser um número > 0');
+    }
+    if (!listPresets("transition").some((item) => item.name === preset)) {
+      throw new EditError(
+        "E_ATTRIBUTE_INVALID",
+        `"${preset}" não é um preset de transição (${listPresets("transition").map((item) => item.name).join(", ")})`,
+      );
+    }
+    value = [preset, ...Object.entries(params).map(([key, item]) => `${key}=${item}`)].join(" ");
+    const parsed = parseMotionValue(value);
+    const same =
+      parsed.ok &&
+      parsed.preset === preset &&
+      Object.keys(parsed.params).length === Object.keys(params).length &&
+      Object.entries(params).every(([key, item]) => parsed.params[key] === item);
+    if (!same) throw new EditError("E_ATTRIBUTE_INVALID", `parâmetros inválidos para a transição: ${JSON.stringify(params)}`);
+  }
+
+  // Parceiro A: o referenciado com sobreposição (transição existente) ou o que termina onde B começa.
+  const before = composition.clips.slice(0, composition.clips.indexOf(clip));
+  const expr = clip.startExpr;
+  const hasTransition = attr(location.node, "data-transition") !== undefined;
+  const overlapping = expr.kind === "reference" && expr.offset < 0;
+  let partner: ResolvedClip | undefined;
+  if (overlapping) partner = before.find((item) => item.id === expr.refId);
+  partner ??= [...before]
+    .reverse()
+    .find((item) => item.end !== undefined && Math.abs(item.end - clip.start!) <= ADJACENT_EPS);
+
+  if (preset === null && !hasTransition && !overlapping) return source;
+  if (partner === undefined) {
+    throw new EditError("E_TRANSITION_GAP", `nenhum clip termina onde "${clipId}" começa; encoste um clip nele antes de criar a transição`);
+  }
+
+  let named = source;
+  let reference = partner.id;
+  if (!REFERENCE_ID.test(partner.id)) {
+    reference = freeClipId(source, all.map((item) => item.id));
+    named = nameClip(source, partner, all.map((item) => item.id), reference);
+  }
+
+  if (preset === null) {
+    return applyPatches(named, [{ clipId, attributes: { "data-transition": null, "data-start": reference } }]);
+  }
+  return applyPatches(named, [
+    { clipId, attributes: { "data-start": `${reference}${refSuffix(-request.dur!)}`, "data-transition": value! } },
+  ]);
 }

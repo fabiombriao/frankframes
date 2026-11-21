@@ -1,7 +1,7 @@
 // FrankFrames — proprietário. Ver LICENSE na raiz.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { applyPatches, EditError, splitClip } from "../src/edit.ts";
+import { applyPatches, applyTransition, EditError, splitClip } from "../src/edit.ts";
 import { loadComposition } from "@frankframes/contract";
 
 const SOURCE = `<!doctype html>
@@ -99,4 +99,93 @@ test("split recusa corte fora do clip e clip inexistente", () => {
 test("split recusa clip com automação de volume", () => {
   const source = SPLIT_SOURCE.replace('data-fade-in="0.5"', `data-keyframes='[{"time":0,"volume":1}]'`);
   assert.throws(() => splitClip(source, { clipId: "v", at: 2, newId: "x" }), (error: unknown) => error instanceof EditError && error.code === "E_SPLIT_UNSUPPORTED");
+});
+
+/* ------------------------- applyTransition (EDT-54) ------------------------- */
+
+function clipOf(source: string, id: string) {
+  const composition = loadComposition(source);
+  assert.equal(composition.ok, true, JSON.stringify(composition.diagnostics));
+  const clip = composition.clips.find((item) => item.id === id);
+  assert.ok(clip !== undefined, `clip ${id}`);
+  return clip;
+}
+
+test("applyTransition em clips encostados grava data-transition e a sobreposição em data-start", () => {
+  const out = applyTransition(SOURCE, { clipId: "b", preset: "dissolver", dur: 0.5 });
+  assert.match(out, /data-clip-id="b"[^>]*data-start="a - 0\.5"/);
+  assert.match(out, /data-transition="dissolver"/);
+  assert.ok(out.includes("<!-- comentário que precisa sobreviver -->"));
+  const b = clipOf(out, "b");
+  assert.equal(b.start, 0.5);
+  assert.equal(b.end, 2.5);
+  assert.equal(clipOf(out, "a").end, 1, "A não muda");
+});
+
+test("outro dur muda só o deslocamento do data-start", () => {
+  const first = applyTransition(SOURCE, { clipId: "b", preset: "dissolver", dur: 0.5 });
+  const second = applyTransition(first, { clipId: "b", preset: "dissolver", dur: 0.8 });
+  assert.equal(second, first.replace('data-start="a - 0.5"', 'data-start="a - 0.8"'));
+  assert.ok(Math.abs((clipOf(second, "b").start ?? 0) - 0.2) < 1e-9);
+});
+
+test("trocar o preset mantém a sobreposição e aceita parâmetros do preset", () => {
+  const first = applyTransition(SOURCE, { clipId: "b", preset: "dissolver", dur: 0.5 });
+  const out = applyTransition(first, { clipId: "b", preset: "cortina", dur: 0.5, params: { dir: "left" } });
+  assert.match(out, /data-transition="cortina dir=left"/);
+  assert.match(out, /data-start="a - 0\.5"/);
+  assert.equal(loadComposition(out).ok, true);
+});
+
+test("preset null volta a adjacente: data-start pelo fim de A e sem data-transition", () => {
+  const first = applyTransition(SOURCE, { clipId: "b", preset: "dissolver", dur: 0.5 });
+  const back = applyTransition(first, { clipId: "b", preset: null });
+  assert.equal(back, SOURCE);
+  assert.equal(applyTransition(SOURCE, { clipId: "b", preset: null }), SOURCE, "sem transição, nada a remover");
+});
+
+test("B com vão antes falha com E_TRANSITION_GAP", () => {
+  const gap = SOURCE.replace('data-start="a" data-duration="2"', 'data-start="2" data-duration="1.5"');
+  assert.throws(
+    () => applyTransition(gap, { clipId: "b", preset: "dissolver", dur: 0.5 }),
+    (error: unknown) => error instanceof EditError && error.code === "E_TRANSITION_GAP",
+  );
+  assert.throws(
+    () => applyTransition(SOURCE, { clipId: "a", preset: "dissolver", dur: 0.5 }),
+    (error: unknown) => error instanceof EditError && error.code === "E_TRANSITION_GAP",
+    "o primeiro clip não tem A",
+  );
+  assert.throws(
+    () => applyTransition(SOURCE, { clipId: "nao-existe", preset: "dissolver", dur: 0.5 }),
+    (error: unknown) => error instanceof EditError && error.code === "E_CLIP_NOT_FOUND",
+  );
+});
+
+test("A sem data-clip-id ganha um id explícito no mesmo patch e o resultado carrega", () => {
+  // A sem id (o id automático `div#1` não serve em data-start); B começa em tempo absoluto.
+  const anonymous = SOURCE.replace('<div data-clip-id="a" data-start="0"', '<div data-start="0"').replace(
+    'data-clip-id="b" data-start="a"',
+    'data-clip-id="b" data-start="1"',
+  );
+  const out = applyTransition(anonymous, { clipId: "b", preset: "dissolver", dur: 0.4 });
+  const named = /<div data-start="0"[^>]*data-clip-id="([^"]+)"/.exec(out);
+  assert.ok(named !== null, "A ganhou data-clip-id");
+  assert.match(out, new RegExp(`data-start="${named[1]} - 0\\.4"`));
+  assert.ok(Math.abs((clipOf(out, "b").start ?? 0) - 0.6) < 1e-9);
+  assert.equal(clipOf(out, named[1]!).end, 1, "A continua onde estava");
+});
+
+test("preset que não é de transição e dur inválido falham com E_ATTRIBUTE_INVALID", () => {
+  for (const request of [
+    { clipId: "b", preset: "subir", dur: 0.5 },
+    { clipId: "b", preset: "dissolver", dur: 0 },
+    { clipId: "b", preset: "dissolver", dur: -1 },
+    { clipId: "b", preset: "dissolver", dur: 0.5, params: { dir: "left=right" } },
+  ]) {
+    assert.throws(
+      () => applyTransition(SOURCE, request),
+      (error: unknown) => error instanceof EditError && error.code === "E_ATTRIBUTE_INVALID",
+      JSON.stringify(request),
+    );
+  }
 });

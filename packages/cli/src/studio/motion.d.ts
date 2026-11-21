@@ -48,3 +48,38 @@ export function renderMotionSection(
   presets: MotionPresets,
   onChange: (change: MotionChange) => void,
 ): void;
+
+export const DEFAULT_TRANSITION_DUR: number;
+
+export interface TransitionEntry extends MotionEntry {
+  /** Sobreposição com o clip anterior, em segundos (`null` se `data-start` não for referência negativa). */
+  dur: number | null;
+  /** Id do clip A referenciado em `data-start`, ou `null`. */
+  partner: string | null;
+}
+
+export interface TransitionChange {
+  preset: string | null;
+  dur?: number;
+  params?: Record<string, string>;
+}
+
+export interface TransitionClip {
+  id: string;
+  tag: string;
+  start: number | null;
+  end: number | null;
+  parentId: string | null;
+  editable?: boolean;
+  motion?: Record<string, MotionEntry | TransitionEntry>;
+}
+
+export function transitionPartner(clips: TransitionClip[], clip: TransitionClip): TransitionClip | null;
+export function transitionParams(preset: string, params: Record<string, string>, presets: PresetItem[]): Record<string, string>;
+export function renderTransitionSection(
+  container: HTMLElement,
+  clip: TransitionClip,
+  clips: TransitionClip[],
+  presets: MotionPresets,
+  onChange: (change: TransitionChange) => void,
+): void;
