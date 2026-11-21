@@ -107,10 +107,12 @@ O contrato promete isto ao autor, e o engine tem que cumprir:
 4. **Vídeo fora de banda**: frames extraídos por FFmpeg e `<video>` substituído por `<img>`; o Chrome não
    decodifica vídeo durante a captura.
 5. **Prontidão explícita** antes do frame 0: fontes, imagens (`decode()`), metadados de mídia, N ticks de warmup.
-6. **Captura só depois de três screenshots consecutivos idênticos.** A primeira captura de cada sessão
-   é descartada; depois de cada seek, `__ff.settle` espera dois frames de compositor e um `setTimeout`
-   (que cai **depois** do paint). Uma camada atrasada pode repetir o mesmo frame velho duas vezes; três
-   capturas iguais é improvável.
+6. **Uma captura por frame, depois do paint.** A primeira captura de cada sessão é descartada; depois
+   de cada seek, `__ff.settle` espera dois frames de compositor e um `setTimeout` (que cai **depois** do
+   paint) antes do screenshot. Com software + `--disable-gpu-compositing`, uma leitura já é estável —
+   medido em 3 comparações dos 24 blocos e 2 renders de vídeo real.
+   Existe um modo conservador por variável de ambiente: `FRANKFRAMES_CAPTURE_SHOTS=3` exige três
+   screenshots consecutivos idênticos (para hardware ou máquina sob carga).
    - em software, `--disable-gpu-compositing`: o compositor SwiftShader re-apresenta raster parcial em
      camadas com `clip-path`/`transform`;
    - **composição com vídeo roda sempre em software.** O compositor de GPU atrasa a textura da `<img>`

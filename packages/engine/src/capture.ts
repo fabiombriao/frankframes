@@ -149,8 +149,18 @@ async function startSession(
         await settlePaint();
       }
 
-      // Três capturas consecutivas iguais = o compositor assentou. Uma camada
-      // atrasada pode repetir o mesmo frame velho duas vezes; três é improvável.
+      // Quantas capturas consecutivas iguais antes de aceitar o frame.
+      // Padrão 1: com software + settle pós-paint + descarte da primeira captura,
+      // uma leitura já é estável (medido: 3 comparações de 24 blocos e 2 renders de
+      // vídeo real sem divergência). `FRANKFRAMES_CAPTURE_SHOTS=3` religa o modo
+      // conservador para investigar hardware ou máquina sob carga.
+      const required = Math.min(5, Math.max(1, Number(process.env.FRANKFRAMES_CAPTURE_SHOTS ?? 1) || 1));
+      if (required === 1) {
+        await settlePaint();
+        const single = await shot();
+        return { png: single, sha256: createHash("sha256").update(single).digest("hex") };
+      }
+
       let previous = await shot();
       let identical = 0;
       for (let attempt = 0; attempt < 5; attempt += 1) {
@@ -158,7 +168,7 @@ async function startSession(
         const current = await shot();
         identical = current.equals(previous) ? identical + 1 : 0;
         previous = current;
-        if (identical >= 2) {
+        if (identical >= required - 1) {
           return { png: current, sha256: createHash("sha256").update(current).digest("hex") };
         }
       }
