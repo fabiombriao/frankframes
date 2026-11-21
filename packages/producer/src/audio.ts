@@ -325,6 +325,14 @@ export async function measureLoudness(
   }
 }
 
+/**
+ * Silêncio digital: o `loudnorm` mede `-inf` e recusa o próprio resultado ("Result too large").
+ * Só esse caso é tratado; medida ilegível ou outra falha continua falhando alto.
+ */
+export function isSilentMeasurement(measured: MeasuredLoudness): boolean {
+  return /^-inf$/i.test(measured.i.trim());
+}
+
 /** FFmpeg >= 8 removeu `-filter_complex_script`; a grafia nova lê o mesmo arquivo. */
 const scriptOptions = new Map<string, Promise<string>>();
 
@@ -366,6 +374,7 @@ export async function mixAudio(options: MixOptions): Promise<{ outPath: string; 
   const scriptOption = await scriptOptionFor(options.ffmpeg);
   try {
     let measured: MeasuredLoudness | undefined;
+    let normalize = true;
     if (loudness !== undefined) {
       const analysis = join(workspace, "analysis.wav");
       const analysisFilter = join(workspace, "analysis.txt");
@@ -383,11 +392,17 @@ export async function mixAudio(options: MixOptions): Promise<{ outPath: string; 
       );
       measured = (await measureLoudness(options.ffmpeg, analysis, options.signal)) ?? undefined;
       if (measured === undefined) initial.warnings.push("loudness não medido; mix entregue sem normalização de dois passes");
+      else if (isSilentMeasurement(measured)) {
+        // Nada a normalizar: o mix sai como está, com o aviso explícito.
+        initial.warnings.push("áudio silencioso: loudnorm não aplicado");
+        measured = undefined;
+        normalize = false;
+      }
     }
 
     const final = buildAudioGraph(options.clips, options.totalSeconds, options.masterGain ?? 1, {
       duck: options.duck,
-      ...(loudness !== undefined ? { loudness } : {}),
+      ...(loudness !== undefined && normalize ? { loudness } : {}),
       ...(measured !== undefined ? { measured } : {}),
     });
     const scriptPath = join(workspace, "filter.txt");

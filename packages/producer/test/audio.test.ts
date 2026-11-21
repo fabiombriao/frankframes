@@ -6,7 +6,7 @@ import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import { buildAudioGraph, mixAudio } from "../src/audio.ts";
+import { buildAudioGraph, isSilentMeasurement, mixAudio } from "../src/audio.ts";
 import type { AudioClip } from "../src/audio.ts";
 
 const run = promisify(execFile);
@@ -268,4 +268,59 @@ test("integração: automação de volume aplicada, medida no arquivo", { timeou
   const loud = await meanVolume(out, 0.05, 0.3);
   const quiet = await meanVolume(out, 0.9, 0.2);
   assert.ok(loud - quiet > 8, `esperado ao menos 8 dB entre topo e vale, obtido ${(loud - quiet).toFixed(1)} dB`);
+});
+
+test("silêncio digital: medida -inf não é normalizável", () => {
+  const measured = { i: "-inf", tp: "-inf", lra: "0.00", thresh: "-70.00", offset: "inf" };
+  assert.equal(isSilentMeasurement(measured), true);
+  assert.equal(isSilentMeasurement({ ...measured, i: "-INF" }), true);
+  assert.equal(isSilentMeasurement({ ...measured, i: "-14.31", tp: "-1.00", offset: "-0.05" }), false);
+  // Medida ilegível não é silêncio: segue o caminho de falha de sempre.
+  assert.equal(isSilentMeasurement({ ...measured, i: "" }), false);
+  assert.equal(isSilentMeasurement({ ...measured, i: "lixo" }), false);
+});
+
+for (const [format, extension] of [["aac", "m4a"], ["wav", "wav"]] as const) {
+  test(`integração: faixa em silêncio digital sai sem loudnorm e avisa (${format})`, { timeout: 120_000 }, async (t) => {
+    if (!(await binaryAvailable(FFMPEG))) return t.skip("ffmpeg não encontrado");
+    if (!(await binaryAvailable(FFPROBE))) return t.skip("ffprobe não encontrado");
+
+    const workspace = await mkdtemp(join(tmpdir(), "ff-silence-"));
+    const silent = join(workspace, "silencio.wav");
+    const outPath = join(workspace, `mix.${extension}`);
+    await run(FFMPEG, [
+      "-hide_banner", "-loglevel", "error",
+      "-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo", "-t", "2", "-y", silent,
+    ]);
+
+    const result = await mixAudio({
+      ffmpeg: FFMPEG,
+      clips: [clip({ clipId: "mudo", file: silent, start: 0, duration: 2 })],
+      totalSeconds: 2,
+      outPath,
+      format,
+    });
+
+    assert.ok(result.warnings.some((warning) => /áudio silencioso: loudnorm não aplicado/.test(warning)), JSON.stringify(result.warnings));
+    const { stdout } = await run(FFPROBE, ["-v", "error", "-show_entries", "format=duration", "-of", "json", outPath]);
+    const duration = Number((JSON.parse(stdout) as { format: { duration: string } }).format.duration);
+    assert.ok(duration >= 1.95 && duration <= 2.1, `duração fora da faixa: ${duration}`);
+  });
+}
+
+test("integração: silêncio misturado a um tom continua normalizado em -14 LUFS", { timeout: 120_000 }, async (t) => {
+  if (!(await binaryAvailable(FFMPEG))) return t.skip("ffmpeg não encontrado");
+  const workspace = await mkdtemp(join(tmpdir(), "ff-silence-mix-"));
+  const silent = join(workspace, "silencio.wav");
+  const tone = join(workspace, "tom.wav");
+  await run(FFMPEG, ["-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo", "-t", "2", "-y", silent]);
+  await run(FFMPEG, ["-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "sine=frequency=300:sample_rate=48000:duration=2", "-ac", "2", "-y", tone]);
+
+  const result = await mixAudio({
+    ffmpeg: FFMPEG,
+    clips: [clip({ clipId: "mudo", file: silent, duration: 2 }), clip({ clipId: "tom", file: tone, duration: 2 })],
+    totalSeconds: 2,
+    outPath: join(workspace, "mix.m4a"),
+  });
+  assert.ok(!result.warnings.some((warning) => /silencioso/.test(warning)), "com tom no mix, a normalização segue ligada");
 });

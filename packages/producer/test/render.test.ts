@@ -122,3 +122,28 @@ test("vp9 com áudio gera WebM com Opus", { timeout: 600_000 }, async (t) => {
   assert.match(probe.stdout, /codec_name=vp9/);
   assert.match(probe.stdout, /codec_name=opus/, "WebM não aceita AAC; o áudio precisa ser Opus");
 });
+
+test("faixa em silêncio digital: o render termina com áudio e avisa que o loudnorm não foi aplicado", { timeout: 600_000 }, async (t) => {
+  if (!(await ffmpegAvailable())) return t.skip("ffmpeg/ffprobe não encontrados");
+
+  const workspace = await mkdtemp(join(tmpdir(), "ff-e2e-silence-"));
+  const entry = join(workspace, "index.html");
+  await writeFile(entry, COMPOSITION);
+  await run(FFMPEG, [
+    "-hide_banner", "-loglevel", "error",
+    "-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo", "-t", "2", "-y", join(workspace, "beep.wav"),
+  ]);
+
+  const result = await renderComposition({
+    entry,
+    outPath: join(workspace, "mudo.mp4"),
+    ffmpeg: FFMPEG,
+    ffprobe: FFPROBE,
+    codec: "av1",
+    preset: "draft",
+    workers: 1,
+  });
+  assert.equal(result.frames, 45);
+  assert.equal(result.hasAudio, true, "o MP4 mantém a trilha, mesmo muda");
+  assert.ok(result.warnings.some((warning) => /áudio silencioso: loudnorm não aplicado/.test(warning)), JSON.stringify(result.warnings));
+});

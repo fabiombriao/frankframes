@@ -163,6 +163,9 @@ deriva passa de meio frame; o `<audio>` nativo da página fica mudo, para o som 
 bloquear o som, a barra mostra "Som bloqueado — clique para ativar". Falha do mix aparece na barra
 (`E_PREVIEW_AUDIO`) e em `__ff.liveErrors`, sem derrubar o vídeo. Acima de 20 min o áudio do preview fica
 desligado, com aviso na barra. O servidor entrega o mix em `/__ff_audio/<sha256>.wav` (só nomes de 64 hex).
+Se o mix inteiro é silêncio digital, não há o que normalizar: o loudnorm não é aplicado e o aviso
+`áudio silencioso: loudnorm não aplicado` sai nos avisos do render (e no log do preview, quando o mix é feito).
+Qualquer outra falha de medição continua falhando alto.
 
 ## 9d. Studio
 
