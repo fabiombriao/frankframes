@@ -395,3 +395,59 @@ export function presetsOf(kind: MotionKind): PresetDef[] {
 export function listPresets(kind?: MotionKind): PresetDef[] {
   return kind === undefined ? [...PRESETS] : presetsOf(kind);
 }
+
+/** Tipo de uma chave aceita por um preset, para a UI escolher o campo. */
+export type PresetKeyType = "seconds" | "anchor" | "curve" | "number" | "int" | "distance" | "dir";
+
+/** Uma chave de `data-<kind>` (`dur`, `at`, `curve` ou parâmetro do preset), como a UI a vê. */
+export interface PresetKeyInfo {
+  type: PresetKeyType;
+  /** Valor quando a chave é omitida; `null` quando o padrão depende do contexto (ver `doc`). */
+  default: number | string | null;
+  min?: number;
+  max?: number;
+  values?: string[];
+  doc: string;
+}
+
+/** Descrição serializável de um preset (rota `GET /api/motion/presets` do Studio). */
+export interface PresetInfo {
+  name: string;
+  label: string;
+  kind: MotionKind;
+  /** Duração padrão por ciclo; em câmera e transição é só referência (docs/contract.md §7b.4). */
+  dur: number;
+  curve: string;
+  /** Câmera: sem `dur`, o movimento vai do `at` até o fim do clip. */
+  fillsClip: boolean;
+  keys: Record<string, PresetKeyInfo>;
+}
+
+/** Padrão de `at` por tipo; ênfase começa onde a entrada termina, então não tem padrão fixo. */
+const AT_DEFAULT: Readonly<Record<MotionKind, string | null>> = { enter: "0", exit: "end", emphasis: null, camera: "0", transition: null };
+
+/** Chaves aceitas pelo preset, na ordem `dur`, `at`, `curve` e depois as próprias; transição não tem `dur` nem `at` (§7b.10). */
+export function describePreset(preset: PresetDef): PresetInfo {
+  const keys: Record<string, PresetKeyInfo> = {};
+  if (preset.kind !== "transition") {
+    keys["dur"] = {
+      type: "seconds",
+      default: preset.fillsClip === true ? null : preset.dur,
+      min: 0,
+      doc: preset.fillsClip === true ? "segundos > 0; sem dur, vai do at até o fim do clip" : "segundos > 0",
+    };
+    keys["at"] = { type: "anchor", default: AT_DEFAULT[preset.kind], doc: "instante: 0.5, 50%, end ou end-0.3" };
+  }
+  keys["curve"] = { type: "curve", default: preset.curve, doc: "nome (suave, freio, arranque, vaivem, mola...) ou cubic-bezier(...)" };
+  for (const spec of preset.params) {
+    if (spec.kind === "dir") keys[spec.key] = { type: "dir", default: spec.default, values: [...DIRECTIONS], doc: spec.doc };
+    else if (spec.kind === "distance") keys[spec.key] = { type: "distance", default: spec.default, doc: spec.doc };
+    else keys[spec.key] = { type: spec.kind, default: spec.default, min: spec.min, max: spec.max, doc: spec.doc };
+  }
+  return { name: preset.name, label: preset.label, kind: preset.kind, dur: preset.dur, curve: preset.curve, fillsClip: preset.fillsClip === true, keys };
+}
+
+/** Descrição de todos os presets de um tipo, na ordem do catálogo. */
+export function describePresets(kind: MotionKind): PresetInfo[] {
+  return presetsOf(kind).map(describePreset);
+}

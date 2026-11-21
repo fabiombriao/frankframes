@@ -8,8 +8,8 @@ import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { basename, dirname, extname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { loadComposition } from "@frankframes/contract";
-import type { ResolvedClip } from "@frankframes/contract";
+import { describePresets, listPresets, loadComposition, parseComposition, parseMotionValue } from "@frankframes/contract";
+import type { MotionKind, MotionSource, ResolvedClip } from "@frankframes/contract";
 import { assetPath, injectEngine, probeDuration } from "@frankframes/engine";
 import type { PreviewAudioConfig } from "@frankframes/engine";
 import {
@@ -23,7 +23,7 @@ import {
   splitClip,
 } from "@frankframes/producer";
 import type { ClipPatch, PreparedComposition } from "@frankframes/producer";
-import { listBlocks } from "@frankframes/catalog";
+import { listBlocks, motionThumbPath } from "@frankframes/catalog";
 import { HistoryStaleError, StudioHistory } from "./studio-history.ts";
 import { IMAGE_SECONDS, MediaUploadError, mediaKind, mediaMarkup, storeMedia, supportedExtensions } from "./studio-media.ts";
 
@@ -45,9 +45,13 @@ const STUDIO_FILES: Record<string, string> = {
   "/index.html": "index.html",
   "/app.js": "app.js",
   "/timeline-math.js": "timeline-math.js",
+  "/motion.js": "motion.js",
   "/style.css": "style.css",
 };
 const MEDIA_PREFIX = "/__ff_media/";
+/** Miniaturas GIF dos presets de motion (`<preset>.gif`), do catálogo. */
+const MOTION_PREFIX = "/__ff_motion/";
+const MOTION_KINDS: readonly MotionKind[] = ["enter", "exit", "emphasis", "camera", "transition"];
 const FONTS_PREFIX = "/__ff_fonts/";
 const AUDIO_PREFIX = "/__ff_audio/";
 const AUDIO_NAME = /^[0-9a-f]{64}\.wav$/;
@@ -160,6 +164,34 @@ function flattenClips(clips: ResolvedClip[]): FlatClip[] {
     }
   };
   visit(clips, null);
+  return out;
+}
+
+/** Um atributo de motion como o Studio o mostra: texto bruto e, se a gramática fecha, preset e chaves. */
+interface MotionEntry {
+  raw: string;
+  /** `null` quando o texto não segue `preset chave=valor` (o contrato aponta o erro). */
+  preset: string | null;
+  params: Record<string, string>;
+}
+
+/**
+ * Motion do elemento do próprio clip (ordinal 0) para o inspetor. Fonte passiva (só `style`, sem atributo)
+ * não tem chave em `attrs`, então não vira entrada. Leitura apenas: a escrita passa por `POST /api/clips/<id>`.
+ */
+function motionOf(source: MotionSource): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const kind of MOTION_KINDS) {
+    const raw = source.attrs[kind];
+    if (raw === undefined) continue;
+    const parsed = parseMotionValue(raw);
+    const entry: MotionEntry = parsed.ok ? { raw, preset: parsed.preset, params: parsed.params } : { raw, preset: null, params: {} };
+    out[kind] = entry;
+  }
+  if (source.split !== undefined) {
+    const { mode, order, stagger, explicit } = source.split;
+    out["split"] = { mode, order, stagger, explicit };
+  }
   return out;
 }
 
@@ -427,6 +459,11 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
     const source = await readFile(entryPath, "utf8");
     const composition = loadComposition(source);
     const explicit = explicitClipIds(source);
+    // Elemento próprio de cada clip (ordinal 0): é o que o inspetor edita.
+    const ownMotion = new Map<string, MotionSource>();
+    for (const item of parseComposition(source).motion) {
+      if (item.own && item.ordinal === 0) ownMotion.set(item.clipId, item);
+    }
     return {
       entry: entryPath,
       id: composition.id,
@@ -450,6 +487,8 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
         fadeIn: clip.fadeIn ?? null,
         fadeOut: clip.fadeOut ?? null,
         hasKeyframes: clip.keyframes !== undefined,
+        motion: motionOf(ownMotion.get(clip.id) ?? { clipId: clip.id, ordinal: 0, tag: clip.tag, own: true, attrs: {} }),
+        keyframes: ownMotion.get(clip.id)?.keyframes ?? null,
         hasChildren: clip.children.length > 0 || clip.isSubComposition,
         parentId,
         // Só clip de topo com data-clip-id explícito aceita ferramentas de edição.
@@ -662,6 +701,21 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
       }
       if (pathname === "/api/history") {
         sendJson(res, 200, history.state());
+        return;
+      }
+      if (pathname === "/api/motion/presets") {
+        sendJson(res, 200, Object.fromEntries(MOTION_KINDS.map((kind) => [kind, describePresets(kind)])));
+        return;
+      }
+      if (pathname.startsWith(MOTION_PREFIX)) {
+        // Só `<preset>.gif` de um preset que existe: o nome vira caminho, então nada de `..` nem de barra.
+        const file = pathname.slice(MOTION_PREFIX.length);
+        const name = file.endsWith(".gif") ? file.slice(0, -4) : "";
+        if (!listPresets().some((preset) => preset.name === name)) {
+          send(res, 404, "não encontrado\n", "text/plain; charset=utf-8");
+          return;
+        }
+        send(res, 200, await readFile(motionThumbPath(name)), "image/gif");
         return;
       }
       if (pathname === "/api/events") {

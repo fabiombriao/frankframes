@@ -1,4 +1,5 @@
 import { lastFrameTime } from "/timeline-math.js";
+import { renderMotionSection } from "/motion.js";
 
 (() => {
   "use strict";
@@ -29,6 +30,7 @@ import { lastFrameTime } from "/timeline-math.js";
   const applyButton = document.getElementById("applyButton");
   const compositionDiagnostics = document.getElementById("compositionDiagnostics");
   const inspectorDiagnostics = document.getElementById("inspectorDiagnostics");
+  const motionSection = document.getElementById("motionSection");
   const blocksStatus = document.getElementById("blocksStatus");
   const blocksList = document.getElementById("blocksList");
   const blocksDiagnostics = document.getElementById("blocksDiagnostics");
@@ -59,6 +61,7 @@ import { lastFrameTime } from "/timeline-math.js";
     playhead: 0,
     history: { canUndo: false, canRedo: false, undo: null, redo: null },
     busy: false,
+    motionPresets: null,
   };
 
   let drag = null;
@@ -126,6 +129,8 @@ import { lastFrameTime } from "/timeline-math.js";
       fadeIn: asNumber(raw.fadeIn),
       fadeOut: asNumber(raw.fadeOut),
       hasKeyframes: raw.hasKeyframes === true,
+      motion: raw.motion !== null && typeof raw.motion === "object" ? raw.motion : {},
+      keyframes: Array.isArray(raw.keyframes) ? raw.keyframes : null,
       hasChildren: raw.hasChildren === true,
       parentId: typeof raw.parentId === "string" ? raw.parentId : null,
       editable: raw.editable === true,
@@ -260,6 +265,7 @@ import { lastFrameTime } from "/timeline-math.js";
     state.selectedId = null;
     state.inspectorDirty = false;
     inspector.hidden = true;
+    motionSection.hidden = true;
     inspectorEmpty.hidden = false;
     renderDiagnostics(inspectorDiagnostics, []);
     updateSelectionStyles();
@@ -284,6 +290,24 @@ import { lastFrameTime } from "/timeline-math.js";
     fieldText.value = clip.text ?? "";
     state.inspectorDirty = false;
     renderDiagnostics(inspectorDiagnostics, []);
+    if (state.motionPresets === null) motionSection.hidden = true;
+    else {
+      renderMotionSection(motionSection, clip, state.motionPresets, ({ attribute, value }) => queuePatch(clip.id, { [attribute]: value }));
+    }
+  }
+
+  async function loadMotionPresets() {
+    try {
+      const response = await fetch("/api/motion/presets", { cache: "no-store", headers: { accept: "application/json" } });
+      const payload = await readJson(response);
+      if (!response.ok) throw new Error(payload.message || "HTTP " + response.status);
+      state.motionPresets = payload;
+      if (state.selectedId !== null && !state.inspectorDirty) fillInspector();
+    } catch (error) {
+      renderDiagnostics(toolDiagnostics, [
+        { severity: "error", message: "Não foi possível carregar os presets de movimento: " + error.message },
+      ]);
+    }
   }
 
   function selectClip(id) {
@@ -783,8 +807,9 @@ import { lastFrameTime } from "/timeline-math.js";
         const result = await mutate("POST", "/api/clips/" + encodeURIComponent(id), { attributes });
         if (result.payload && result.payload.history) applyHistory(result.payload.history);
         if (!result.ok) {
-          renderDiagnostics(inspectorDiagnostics, result.diagnostics);
+          // Recarrega antes: o refresh repinta o inspetor e apagaria o diagnóstico recém-mostrado.
           await refreshComposition();
+          renderDiagnostics(inspectorDiagnostics, result.diagnostics);
           return;
         }
         if (asNumber(result.payload.duration) !== null) {
@@ -1125,6 +1150,7 @@ import { lastFrameTime } from "/timeline-math.js";
   observePlayerSize();
   refreshComposition();
   refreshHistory();
+  loadMotionPresets();
   loadBlocks();
   connectEvents();
 })();

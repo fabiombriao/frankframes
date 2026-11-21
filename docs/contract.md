@@ -711,6 +711,22 @@ Qualquer outra falha de medição continua falhando alto.
   `hasChildren`, `parentId`). Ferramentas de edição só operam em clip `editable`: de topo e com
   `data-clip-id` explícito no arquivo.
 
+- **Movimento** (§7b). `GET /api/composition` traz, por clip, `motion` com só as chaves presentes no HTML
+  (`enter`, `exit`, `emphasis`, `camera`, `transition`), cada uma como `{raw, preset, params}` (`preset` é
+  `null` quando o texto não é válido), mais `split` quando há `data-split`, e `keyframes` (somente leitura;
+  `null` sem `data-keyframes`). Fontes passivas (filhos que só herdam) não aparecem. `transition` é só leitura:
+  o Studio mostra, não grava.
+- **Presets** (`GET /api/motion/presets`). Devolve `{enter, exit, emphasis, camera, transition}`, cada lista
+  com `{name, label, dur, curve, keys}`; `keys` descreve os parâmetros aceitos (`type`, `default`, `min`,
+  `max`, `values`, `doc`). `transition` não tem `dur` nem `at` (a duração é a sobreposição). A miniatura de
+  cada preset sai em `GET /__ff_motion/<name>.gif`; nome fora da lista de presets (inclusive `../`) é 404.
+- **Escolher um preset** não tem rota própria: o inspetor chama `POST /api/clips/<id>` com
+  `{attributes: {"data-enter": "<texto>" | null}}` (idem `data-exit`, `data-emphasis`, `data-camera`). O texto
+  passa pelo contrato antes de gravar (`E_MOTION_PRESET_UNKNOWN`, `E_CONTRACT_INVALID` com `hint`; arquivo
+  intacto na falha), e a escolha entra no histórico, então Ctrl+Z desfaz. O cliente só escreve parâmetros que
+  diferem do default do preset (`subir dur=0.8`); trocar de preset preserva `dur`, `at` e `curve` que o
+  novo preset aceita e descarta o resto.
+
 As escritas são serializadas: duas edições nunca intercalam leitura e gravação do mesmo arquivo.
 
 ## 10. Compatibilidade
