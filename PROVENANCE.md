@@ -48,3 +48,4 @@ abertura do nosso código.
 | 2026-11-20 | licença proprietária atribuída a Fábio Morales Brião (CNPJ 34.681.339/0001-12) |
 | 2026-11-20 | contrato próprio implementado (`packages/contract`), política de encode com guarda GPL (`packages/encode`), CLI `lint` |
 | 2026-11-21 | contrato de motion (`data-enter/exit/emphasis/camera/transition`, §7b): gramática, curvas e presets em português escritos do zero a partir de CSS/WAAPI; sem nomes, sintaxe ou texto de outro framework |
+| 2026-11-21 | 26 presets de motion e miniaturas geradas pelo próprio engine (EDT-51) |

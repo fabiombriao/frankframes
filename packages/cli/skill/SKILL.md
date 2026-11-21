@@ -57,9 +57,34 @@ duração medida pelo probe. Sem uma das duas, a composição fica `unresolved` 
 
 ## Animação
 
-Use apenas CSS (`@keyframes`, `transform`, `opacity`, `clip-path`) ou WAAPI declarativa. Animações
-devem ser função do tempo da linha do tempo, não de interação: nada de `:hover`, clique, scroll ou
-evento. Não use JavaScript, `<script>` nem bibliotecas de animação.
+Para entrada, saída e ênfase, use primeiro os atributos de motion (§7b do contrato) e só depois CSS:
+`data-enter`, `data-exit`, `data-emphasis` e, para valores por tempo, `data-keyframes`. Eles são
+determinísticos, têm tempo local ao clip e são validados antes do render. A lista completa, com chaves e
+miniaturas, está em `docs/motion.md`. O formato é `preset chave=valor ...`; toda chave é opcional.
+
+```html
+<h1 data-clip-id="titulo" data-start="0" data-duration="4"
+    data-enter="subir distance=24 at=0.2" data-emphasis="pulsar" data-exit="apagar">Olá</h1>
+<div data-clip-id="selo" data-start="0" data-duration="3" data-enter="saltar amount=0.4 dur=0.9">Novo</div>
+<img data-clip-id="foto" data-start="0" data-duration="5" src="foto.png" data-enter="abrir dir=up">
+```
+
+Presets de entrada (12): `surgir`, `subir`, `descer`, `chegar-esquerda`, `chegar-direita`, `crescer`,
+`assentar`, `focar`, `girar`, `abrir`, `erguer`, `saltar`. De saída (8): `apagar`, `partir-cima`,
+`partir-baixo`, `partir-esquerda`, `partir-direita`, `recuar`, `desfocar`, `fechar`. De ênfase (6):
+`pulsar`, `balancar`, `tremer`, `respirar`, `piscar`, `quicar`.
+
+Chaves comuns: `dur` (segundos), `at` (instante: `0.5`, `50%`, `end`, `end-0.3`) e `curve` (`suave`,
+`freio`, `arranque`, `vaivem`, `mola`, `cubic-bezier(...)`). Cada preset acrescenta `distance`
+(`32`, `32px` ou `10%`), `amount`, `dir` (`left|right|up|down`) ou `repeat`. `mola` só assenta com `dur` longo
+o bastante (`saltar dur=0.3` dá `E_CURVE_INVALID`).
+
+CSS `@keyframes` continua valendo para o que motion não cobre (cor, stroke, largura). Nesse caso, e em
+qualquer animação própria, use apenas CSS (`@keyframes`, `transform`, `opacity`, `clip-path`) ou WAAPI
+declarativa: animações devem ser função do tempo da linha do tempo, não de interação (nada de `:hover`,
+clique, scroll ou evento). Não use JavaScript, `<script>` nem bibliotecas de animação. Não declare no
+`style` do mesmo elemento uma propriedade que o motion controla (`scale`, `rotate`, `translate`,
+`filter`, `clip-path`): para posição ou rotação fixas use `transform`.
 
 Evite depender de estado acumulado entre frames. Se a composição precisa parecer "já animada" em um
 instante arbitrário, prefira `animation-fill-mode: both` e curvas fechadas.

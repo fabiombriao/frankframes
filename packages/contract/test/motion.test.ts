@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { parse } from "parse5";
-import { CODES, emitEasing, evaluateCurve, loadComposition, mergeSegments, motionElements, parseCurve, parseMotionValue, resolveCurve } from "../src/index.ts";
+import { CODES, emitEasing, evaluateCurve, listPresets, loadComposition, mergeSegments, motionElements, parseCurve, parseMotionValue, resolveCurve } from "../src/index.ts";
 import type { Composition } from "../src/index.ts";
 
 const SUAVE = "cubic-bezier(0.34, 0.1, 0.18, 1)";
@@ -587,4 +587,195 @@ test("mola em preset: surgir dur=1 curve=mola emite linear() na chave", () => {
   const c = clip('data-enter="surgir dur=1 curve=mola"');
   assert.equal(c.ok, true, JSON.stringify(c.diagnostics));
   assert.ok(trackOf(c, "opacity").keys[0]?.easing?.startsWith("linear(0, "));
+});
+
+// ---------- EDT-51: 26 presets próprios (docs/motion.md) ----------
+
+const ATTR_OF_KIND = { enter: "data-enter", exit: "data-exit", emphasis: "data-emphasis" } as const;
+const NEUTRAL: Record<string, number | string> = {
+  opacity: 1,
+  "--ff-x": 0,
+  "--ff-y": 0,
+  "--ff-sx": 1,
+  "--ff-sy": 1,
+  "--ff-rot": 0,
+  "--ff-blur": 0,
+  "clip-path": "inset(0% 0% 0% 0%)",
+};
+
+test("presets: 12 de entrada, 8 de saída, 6 de ênfase; nomes únicos e ASCII", () => {
+  assert.equal(listPresets("enter").length, 12);
+  assert.equal(listPresets("exit").length, 8);
+  assert.equal(listPresets("emphasis").length, 6);
+  assert.equal(listPresets().length, 26);
+  const names = listPresets().map((p) => p.name);
+  assert.equal(new Set(names).size, names.length);
+  for (const name of names) assert.match(name, /^[a-z][a-z0-9-]*$/);
+  for (const preset of listPresets()) assert.ok(preset.label.length > 0, preset.name);
+});
+
+test("presets: todos com parâmetros padrão montam trilhas sem diagnóstico", () => {
+  for (const preset of listPresets()) {
+    const attr = ATTR_OF_KIND[preset.kind as keyof typeof ATTR_OF_KIND];
+    const c = clip(`${attr}="${preset.name}"`);
+    assert.equal(c.ok, true, `${preset.name}: ${JSON.stringify(c.diagnostics)}`);
+    assert.deepEqual(c.diagnostics, [], preset.name);
+    assert.ok((c.motion["c"]?.[0]?.tracks.length ?? 0) > 0, `${preset.name} sem trilhas`);
+  }
+});
+
+test("presets: entrada termina no neutro, saída começa nele, ênfase começa e termina nele", () => {
+  for (const preset of listPresets()) {
+    const attr = ATTR_OF_KIND[preset.kind as keyof typeof ATTR_OF_KIND];
+    const c = clip(`${attr}="${preset.name}"`);
+    for (const track of c.motion["c"]![0]!.tracks) {
+      const neutral = NEUTRAL[track.prop];
+      assert.notEqual(neutral, undefined, `${preset.name}: propriedade sem neutro ${track.prop}`);
+      const first = track.keys[0]!;
+      const last = track.keys[track.keys.length - 1]!;
+      assert.equal(last.easing, null, `${preset.name} ${track.prop}: última chave sem easing`);
+      if (preset.kind === "enter") assert.equal(last.value, neutral, `${preset.name} ${track.prop} termina`);
+      else if (preset.kind === "exit") assert.equal(first.value, neutral, `${preset.name} ${track.prop} começa`);
+      else {
+        assert.equal(first.value, neutral, `${preset.name} ${track.prop} começa`);
+        assert.equal(last.value, neutral, `${preset.name} ${track.prop} termina`);
+      }
+    }
+  }
+});
+
+test("presets: entrada parte do deslocamento e saída termina nele (valores da tabela)", () => {
+  const first = (attrs: string, prop: string) => trackOf(clip(attrs), prop).keys[0]?.value;
+  const last = (attrs: string, prop: string) => {
+    const keys = trackOf(clip(attrs), prop).keys;
+    return keys[keys.length - 1]?.value;
+  };
+  assert.equal(first('data-enter="subir"', "--ff-y"), 32);
+  assert.equal(first('data-enter="descer"', "--ff-y"), -32);
+  assert.equal(first('data-enter="chegar-esquerda"', "--ff-x"), -48);
+  assert.equal(first('data-enter="chegar-direita"', "--ff-x"), 48);
+  assert.equal(first('data-enter="crescer"', "--ff-sx"), 0.8);
+  assert.equal(first('data-enter="assentar"', "--ff-sy"), 1.12);
+  assert.equal(first('data-enter="focar"', "--ff-blur"), 12);
+  assert.equal(first('data-enter="girar"', "--ff-rot"), -12);
+  assert.equal(first('data-enter="girar"', "--ff-sx"), 0.9);
+  assert.equal(first('data-enter="erguer"', "--ff-y"), 24);
+  assert.equal(first('data-enter="saltar"', "--ff-sx"), 0.6);
+  assert.equal(last('data-exit="partir-cima"', "--ff-y"), -32);
+  assert.equal(last('data-exit="partir-baixo"', "--ff-y"), 32);
+  assert.equal(last('data-exit="partir-esquerda"', "--ff-x"), -48);
+  assert.equal(last('data-exit="partir-direita"', "--ff-x"), 48);
+  assert.equal(last('data-exit="recuar"', "--ff-sx"), 0.85);
+  assert.equal(last('data-exit="desfocar"', "--ff-blur"), 12);
+});
+
+test("presets: distance aceita px, % e sinal; fora da faixa ou com unidade inválida dá E_MOTION_PARAM", () => {
+  assert.equal(trackOf(clip('data-enter="subir distance=10%"'), "--ff-y").keys[0]?.value, "10%");
+  assert.equal(trackOf(clip('data-enter="subir distance=-20px"'), "--ff-y").keys[0]?.value, -20);
+  assert.equal(trackOf(clip('data-enter="subir distance=0"'), "--ff-y").keys[0]?.value, 0);
+  assert.equal(trackOf(clip('data-enter="subir distance=2000"'), "--ff-y").keys[0]?.value, 2000);
+  assert.equal(trackOf(clip('data-enter="subir distance=200%"'), "--ff-y").keys[0]?.value, "200%");
+  for (const bad of ["2001", "201%", "3em", "abc"]) {
+    const c = clip(`data-enter="subir distance=${bad}"`);
+    assert.equal(c.ok, false, JSON.stringify(bad));
+    assert.ok(codes(c).includes("E_MOTION_PARAM"), `${bad}: ${JSON.stringify(codes(c))}`);
+  }
+});
+
+test("presets: amount fora da faixa de cada preset dá E_MOTION_PARAM com a faixa no hint", () => {
+  const cases = [
+    'data-enter="crescer amount=0"',
+    'data-enter="crescer amount=6"',
+    'data-enter="focar amount=101"',
+    'data-enter="girar amount=181"',
+    'data-exit="recuar amount=-1"',
+    'data-emphasis="piscar amount=2"',
+    'data-emphasis="balancar amount=-3"',
+    'data-emphasis="tremer repeat=21"',
+  ];
+  for (const attrs of cases) {
+    const c = clip(attrs);
+    assert.equal(c.ok, false, attrs);
+    const error = c.diagnostics.find((d) => d.code === "E_MOTION_PARAM");
+    assert.ok(error, `${attrs}: ${JSON.stringify(c.diagnostics)}`);
+    assert.match(error.hint ?? "", /\[/, attrs);
+  }
+});
+
+test("abrir e fechar: dir escolhe o recorte; valor inválido dá E_MOTION_PARAM", () => {
+  const open = (dir: string) => trackOf(clip(`data-enter="abrir dir=${dir}"`), "clip-path").keys[0]?.value;
+  assert.equal(open("up"), "inset(100% 0% 0% 0%)");
+  assert.equal(open("down"), "inset(0% 0% 100% 0%)");
+  assert.equal(open("left"), "inset(0% 0% 0% 100%)");
+  assert.equal(open("right"), "inset(0% 100% 0% 0%)");
+  assert.equal(trackOf(clip('data-enter="abrir"'), "clip-path").keys[0]?.value, "inset(0% 100% 0% 0%)");
+  const closeKeys = trackOf(clip('data-exit="fechar"'), "clip-path").keys;
+  assert.equal(closeKeys[closeKeys.length - 1]?.value, "inset(0% 0% 0% 100%)");
+  const closeUp = trackOf(clip('data-exit="fechar dir=up"'), "clip-path").keys;
+  assert.equal(closeUp[closeUp.length - 1]?.value, "inset(100% 0% 0% 0%)");
+  const bad = clip('data-enter="abrir dir=diagonal"');
+  assert.equal(bad.ok, false);
+  assert.ok(codes(bad).includes("E_MOTION_PARAM"));
+});
+
+test("presets de ênfase: ciclos repetem e a duração total é dur × repeat", () => {
+  const once = clip('data-emphasis="tremer"').motion["c"]![0]!.tracks[0]!;
+  const thrice = clip('data-emphasis="tremer repeat=3"').motion["c"]![0]!.tracks[0]!;
+  assert.equal(once.keys.length, 6);
+  assert.equal(thrice.keys.length, 3 * 5 + 1);
+  assert.equal(once.duration, 0.4);
+  assert.equal(thrice.duration, 1.2);
+  assert.deepEqual(
+    once.keys.map((k) => k.value),
+    [0, 6, -6, 3, -3, 0],
+  );
+  assert.deepEqual(
+    trackOf(clip('data-emphasis="balancar"'), "--ff-rot").keys.map((k) => k.value),
+    [0, 4, -4, 0],
+  );
+  assert.deepEqual(
+    trackOf(clip('data-emphasis="piscar"'), "opacity").keys.map((k) => k.value),
+    [1, 0.2, 1],
+  );
+});
+
+test("curvas mistas: saltar e quicar usam duas curvas e curve= do autor vale para todas", () => {
+  const saltar = clip('data-enter="saltar"');
+  assert.equal(saltar.ok, true, JSON.stringify(saltar.diagnostics));
+  assert.equal(trackOf(saltar, "opacity").keys[0]?.easing, SUAVE);
+  assert.ok(trackOf(saltar, "--ff-sx").keys[0]?.easing?.startsWith("linear(0, "), "escala usa a mola");
+
+  const quicar = trackOf(clip('data-emphasis="quicar"'), "--ff-y").keys;
+  assert.notEqual(quicar[0]?.easing, quicar[1]?.easing, "sobe com freio e volta com arranque");
+  assert.deepEqual(
+    quicar.map((k) => k.value),
+    [0, -16, 0],
+  );
+
+  const forced = clip('data-enter="saltar curve=linear"');
+  assert.equal(trackOf(forced, "opacity").keys[0]?.easing, "linear");
+  assert.equal(trackOf(forced, "--ff-sx").keys[0]?.easing, "linear");
+  const forcedBounce = trackOf(clip('data-emphasis="quicar curve=linear"'), "--ff-y").keys;
+  assert.equal(forcedBounce[0]?.easing, "linear");
+  assert.equal(forcedBounce[1]?.easing, "linear");
+});
+
+test("saltar dur=0.3 dá E_CURVE_INVALID (mola não assenta) e o padrão assenta", () => {
+  const c = clip('data-enter="saltar dur=0.3"');
+  assert.equal(c.ok, false);
+  const error = c.diagnostics.find((d) => d.code === "E_CURVE_INVALID");
+  assert.ok(error, JSON.stringify(c.diagnostics));
+  assert.match(error.hint ?? "", /0\.59/);
+  assert.equal(clip('data-enter="saltar"').ok, true);
+  // meio ciclo curto demais para a mola
+  assert.equal(clip('data-emphasis="quicar curve=mola"').ok, false);
+  assert.equal(clip('data-emphasis="quicar curve=mola dur=2"').ok, true);
+});
+
+test("presets: parâmetro de outro preset é rejeitado", () => {
+  const c = clip('data-enter="surgir distance=10"');
+  assert.equal(c.ok, false);
+  assert.ok(codes(c).includes("E_MOTION_PARAM"));
+  assert.equal(clip('data-enter="subir amount=2"').ok, false);
+  assert.equal(clip('data-enter="focar dir=left"').ok, false);
 });

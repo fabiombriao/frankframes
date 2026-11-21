@@ -80,5 +80,18 @@ export function readBlock(slug: string, file = "index.html"): string {
   return readFileSync(target, "utf8");
 }
 
+/** Diretório das miniaturas dos presets de motion (`<nome>.gif`, docs/motion.md). */
+export const MOTION_THUMBS_DIR = fileURLToPath(new URL("../../../catalog/motion/thumbs/", import.meta.url));
+
+/** Caminho absoluto da miniatura de um preset. Lança para nome inválido ou miniatura ausente. */
+export function motionThumbPath(name: string): string {
+  if (!SLUG.test(name)) throw new Error(`nome de preset inválido: ${JSON.stringify(name)}`);
+  const file = join(MOTION_THUMBS_DIR, `${name}.gif`);
+  if (!existsSync(file) || !statSync(file).isFile()) {
+    throw new Error(`miniatura inexistente para o preset "${name}": rode node scripts/generate-motion-thumbs.ts`);
+  }
+  return file;
+}
+
 export { installBlockFromUrl, readBlockHtml } from "./remote.ts";
 export type { InstalledBlock } from "./remote.ts";

@@ -26,6 +26,7 @@ const FAST_TESTS = [
   "packages/transcribe/test/openai.test.ts",
   "packages/transcribe/test/resolve.test.ts",
   "packages/catalog/test/catalog.test.ts",
+  "packages/catalog/test/motion-thumbs.test.ts",
   "packages/producer/test/compile.test.ts",
   "packages/producer/test/motion-compile.test.ts",
   "packages/producer/test/plan.test.ts",

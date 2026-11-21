@@ -4,13 +4,13 @@
  * `data-exit`, `data-emphasis`, `data-camera` e `data-transition` e os traduz em
  * trilhas por propriedade CSS, com tempo local ao clip dono. Puro: sem DOM nem I/O.
  */
-import type { Diagnostic, DurationResolution, MotionKind, MotionSource, MotionTarget, MotionTrack, ResolvedClip } from "../types.ts";
+import type { Diagnostic, DurationResolution, MotionKind, MotionSource, MotionTarget, MotionTrack, MotionValue, ResolvedClip } from "../types.ts";
 import { CODES, diag } from "../errors.ts";
 import { emitEasing, resolveCurve, springSettleSeconds } from "./curves.ts";
 import { parseAnchor, parseMotionValue, parseNumber, parseSeconds } from "./grammar.ts";
 import type { Anchor } from "./grammar.ts";
-import { presetsOf } from "./presets.ts";
-import type { ParamSpec, PresetDef } from "./presets.ts";
+import { DIRECTIONS, parseDistance, presetsOf } from "./presets.ts";
+import type { Direction, ParamSpec, PresetDef } from "./presets.ts";
 import { keyframeSegments, mergeSegments, ownedProperties } from "./tracks.ts";
 import type { Segment } from "./tracks.ts";
 
@@ -20,8 +20,8 @@ export { MAX_KEYFRAMES, parseKeyframes } from "./keyframes.ts";
 export type { KeyframeContext, ParsedKeyframes } from "./keyframes.ts";
 export { parseAnchor, parseMotionValue } from "./grammar.ts";
 export type { Anchor, ParsedValue } from "./grammar.ts";
-export { PRESETS, presetsOf } from "./presets.ts";
-export type { ParamSpec, PresetDef } from "./presets.ts";
+export { DIRECTIONS, PRESETS, listPresets, parseDistance, presetsOf } from "./presets.ts";
+export type { Direction, ParamSpec, PresetContext, PresetDef } from "./presets.ts";
 export { CSS_PROP_OF, MOTION_PROPERTIES, OWNED_BY_PROP, bindingsFor, keyframeSegments, mergeSegments, ownedProperties } from "./tracks.ts";
 export type { MergeResult, Segment, SpringFailure } from "./tracks.ts";
 export { MOTION_ATTRS, hasKeyframes, hasMotion, isHost, isTimed, motionAttrsOf, motionElements } from "./targets.ts";
@@ -268,13 +268,29 @@ function planPreset(input: PlanInput): Planned | "failed" | "waiting" {
   }
 
   const values: Record<string, number> = {};
+  const distances: Record<string, MotionValue> = {};
+  const dirs: Record<string, Direction> = {};
   for (const spec of preset.params) {
-    values[spec.key] = spec.default;
     const text = params[spec.key];
-    if (text === undefined) continue;
-    const n = spec.kind === "int" ? (/^\d+$/.test(text) ? Number(text) : null) : parseNumber(text);
-    if (n === null || n < spec.min || n > spec.max) paramError(`${spec.key} inválido: ${JSON.stringify(text)}`, describeRange(spec));
-    else values[spec.key] = n;
+    if (spec.kind === "distance") {
+      distances[spec.key] = spec.default;
+      if (text === undefined) continue;
+      const parsedDistance = parseDistance(text);
+      if (parsedDistance === null) paramError(`${spec.key} inválido: ${JSON.stringify(text)}`, describeRange(spec));
+      else distances[spec.key] = parsedDistance;
+    } else if (spec.kind === "dir") {
+      dirs[spec.key] = spec.default;
+      if (text === undefined) continue;
+      const found = DIRECTIONS.find((d) => d === text);
+      if (found === undefined) paramError(`${spec.key} inválido: ${JSON.stringify(text)}`, describeRange(spec));
+      else dirs[spec.key] = found;
+    } else {
+      values[spec.key] = spec.default;
+      if (text === undefined) continue;
+      const n = spec.kind === "int" ? (/^\d+$/.test(text) ? Number(text) : null) : parseNumber(text);
+      if (n === null || n < spec.min || n > spec.max) paramError(`${spec.key} inválido: ${JSON.stringify(text)}`, describeRange(spec));
+      else values[spec.key] = n;
+    }
   }
 
   let anchor: Anchor | null = null;
@@ -339,7 +355,15 @@ function planPreset(input: PlanInput): Planned | "failed" | "waiting" {
     }
   }
 
-  let segments = preset.build({ curve: resolved.curve.css, params: values });
+  // `curve=` do autor vale para todos os trechos; sem ele, presets de curva mista pedem a padrão de cada nome.
+  const authored = params["curve"] !== undefined ? resolved.curve.css : undefined;
+  const curveFor = (name: string): string => {
+    if (authored !== undefined) return authored;
+    const other = resolveCurve(name);
+    if (!other.curve) throw new Error(`preset ${preset.name}: curva padrão interna inválida: ${name}`);
+    return other.curve.css;
+  };
+  let segments = preset.build({ curve: resolved.curve.css, curveFor, params: values, distances, dirs });
   const spring = resolved.curve;
   if (spring.spring !== undefined) {
     // A mola só vira easing sabendo a duração de cada trecho: do offset da chave ao da próxima.

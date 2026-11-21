@@ -124,6 +124,8 @@ reproduz. CSS `@keyframes` continua permitido; os atributos de motion são a for
 
 Atributo reservado aceita só a gramática de §7b.4: qualquer valor dá `E_MOTION_PRESET_UNKNOWN`.
 
+Os presets de `data-enter`, `data-exit` e `data-emphasis` estão em [`docs/motion.md`](motion.md).
+
 `data-keyframes` (clip ou descendente) tem formato próprio, em JSON: §7b.7.
 
 ### 7b.4 Gramática
@@ -154,13 +156,31 @@ Chaves comuns a todo preset; cada preset acrescenta as dele:
 Chaves de uso geral nos presets que as declaram: `distance` (distância), `amount` (número; unidade
 depende do preset), `dir` (`left|right|up|down`), `repeat` (inteiro 1..20), `fx`/`fy` (número em [0,1]).
 
-Presets disponíveis (a lista completa e as chaves de cada um ficam em `docs/motion.md`, quando existir):
+Presets disponíveis: 26, sendo 12 de `data-enter`, 8 de `data-exit` e 6 de `data-emphasis`. A lista (nome, label,
+movimento, `dur` e curva padrão, chaves e miniatura de cada um) é a de [`docs/motion.md`](motion.md), que é a fonte
+de verdade; esta seção fixa só as regras comuns:
 
-| Atributo | Preset | Movimento | `dur` | Curva | Chaves próprias |
-|---|---|---|---|---|---|
-| `data-enter` | `surgir` | `opacity` 0→1 | 0.5 | `suave` | — |
-| `data-exit` | `apagar` | `opacity` 1→0 | 0.5 | `suave` | — |
-| `data-emphasis` | `pulsar` | `scaleX` e `scaleY` 1→`amount`→1 | 0.6 | `suave` | `amount` em [0.5,3] (padrão 1.08), `repeat` |
+- Entrada vai do deslocamento até o neutro; saída vai do neutro até o deslocamento; ênfase sai do neutro e volta a
+  ele (neutros em §7b.6). `dur` é por ciclo na ênfase; a duração total é `dur × repeat`.
+- Nomes ASCII em `kebab-case`; o `label` em português com acento serve só à UI.
+- `curve=` do autor substitui todas as curvas do preset, inclusive as de dois trechos (`saltar`, `quicar`).
+- Faixas das chaves de uso geral (valor fora da faixa é `E_MOTION_PARAM`, e o hint traz a faixa):
+
+| Chave | Tipo | Faixa | Padrão |
+|---|---|---|---|
+| `distance` | distância (`px` ou `%`, com sinal) | \|n\| ≤ 2000 px ou ≤ 200 % | por preset (16, 32 ou 48 px) |
+| `amount` de escala (`crescer`, `assentar`, `recuar`, `saltar`, `respirar`) | número | [0.05,5] | por preset |
+| `amount` de escala em `pulsar` (já existente) | número | [0.5,3] | 1.08 |
+| `amount` em graus (`girar`, `balancar`) | número | [0,180] | por preset |
+| `amount` em px (`focar`, `desfocar`: blur; `tremer`: deslocamento) | número | blur [0,100]; `tremer` [0,200] | 12, 12 e 6 |
+| `amount` de opacidade (`piscar`) | número | [0,1] | 0.2 |
+| `dir` (`abrir`, `fechar`) | `left`, `right`, `up` ou `down` | — | `abrir` right, `fechar` left |
+| `repeat` (ênfase) | inteiro | [1,20] | 1 |
+
+- Uma chave que o preset não declara é `E_MOTION_PARAM` (`surgir distance=10`, `focar dir=left`).
+- Mola em preset: `saltar` usa `mola` na escala e `suave` na opacidade; com `dur=0.3` a mola não assenta
+  e dá `E_CURVE_INVALID` (mínimo de 0.59 s por trecho; o padrão de 0.7 s assenta). Em `quicar` cada meio ciclo é
+  um trecho, então `curve=mola` pede `dur` ≥ 1.18 s.
 
 Diagnósticos de gramática (todos `error`, com `clipId` e `hint`):
 
