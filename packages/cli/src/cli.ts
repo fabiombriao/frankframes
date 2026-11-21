@@ -10,7 +10,17 @@ import { loadComposition } from "@frankframes/contract";
 import { PINNED_BROWSER, assetPath, checkPinnedBrowser, startServer } from "@frankframes/engine";
 import { assertCodecAllowed, assertFfmpegAllowed, containerFor, detectFfmpeg } from "@frankframes/encode";
 import type { Preset, VideoCodec } from "@frankframes/encode";
-import { RenderError, buildCaptionComposition, prepare, renderComposition, resolveFfmpeg, toErrorPayload } from "@frankframes/producer";
+import {
+  PreviewAudioError,
+  RenderError,
+  buildCaptionComposition,
+  prepare,
+  renderComposition,
+  renderPreviewAudio,
+  resolveFfmpeg,
+  toErrorPayload,
+} from "@frankframes/producer";
+import type { PreviewAudioConfig } from "@frankframes/engine";
 import { installLocalModel, resolveProvider } from "@frankframes/transcribe";
 import { installBlockFromUrl, listBlocks, readBlock } from "@frankframes/catalog";
 import { buildCatalogIndex, publishCatalog, serveCatalog } from "./catalog-server.ts";
@@ -422,12 +432,36 @@ async function main(): Promise<void> {
     const workDir = await mkdtemp(join(tmpdir(), "ff-preview-"));
     let prepared = await prepare({ entry, ffmpeg: pair.ffmpeg, ffprobe: pair.ffprobe, workDir });
 
+    // Mix do preview = mesmo grafo do render. Falha vira aviso na barra, nunca derruba o vídeo.
+    const audioDir = resolve(assetPath("cache", "preview-audio"));
+    const mixPreviewAudio = async (source: typeof prepared): Promise<PreviewAudioConfig | undefined> => {
+      const mixStarted = Date.now();
+      try {
+        const result = await renderPreviewAudio({ prepared: source, ffmpeg: pair.ffmpeg, cacheDir: audioDir });
+        if (result === null) return undefined;
+        if ("disabled" in result) return { disabled: result.disabled };
+        process.stdout.write(`áudio do preview ${result.cached ? "do cache" : "mixado"} em ${Date.now() - mixStarted} ms\n`);
+        for (const warning of result.warnings) process.stderr.write(`áudio: ${warning}\n`);
+        return { src: `/__ff_audio/${result.key}.wav` };
+      } catch (error) {
+        const text =
+          error instanceof PreviewAudioError
+            ? `${error.code}: ${error.message} (${error.hint})`
+            : `E_PREVIEW_AUDIO: ${(error as Error).message}`;
+        process.stderr.write(`${text}\n`);
+        return { error: text };
+      }
+    };
+    const firstAudio = await mixPreviewAudio(prepared);
+
     // O servidor lê `page`/`manifest` a cada request: mutar o objeto já recarrega.
     const page = { path: basename(entry), html: prepared.compiledHtml };
     const serverOptions: Parameters<typeof startServer>[1] = {
       page,
       live: true,
       preview: { fps: prepared.fps, frames: prepared.totalFrames, id: prepared.composition.id },
+      audioDir,
+      ...(firstAudio !== undefined ? { audio: firstAudio } : {}),
       ...(prepared.manifest !== undefined ? { manifest: prepared.manifest } : {}),
       ...(prepared.mediaDir !== undefined ? { mediaRoot: prepared.mediaDir } : {}),
     };
@@ -454,6 +488,9 @@ async function main(): Promise<void> {
         page.html = next.compiledHtml;
         serverOptions.manifest = next.manifest;
         serverOptions.preview = { fps: next.fps, frames: next.totalFrames, id: next.composition.id };
+        const nextAudio = await mixPreviewAudio(next);
+        if (nextAudio !== undefined) serverOptions.audio = nextAudio;
+        else delete serverOptions.audio;
         prepared = next;
         server.notify();
         process.stdout.write(`recompilado em ${Date.now() - started} ms · ${next.totalFrames} frames\n`);

@@ -11,7 +11,17 @@ import { fileURLToPath } from "node:url";
 import { loadComposition } from "@frankframes/contract";
 import type { ResolvedClip } from "@frankframes/contract";
 import { assetPath, injectEngine, probeDuration } from "@frankframes/engine";
-import { applyPatches, EditError, explicitClipIds, prepare, resolveFfmpeg, splitClip } from "@frankframes/producer";
+import type { PreviewAudioConfig } from "@frankframes/engine";
+import {
+  applyPatches,
+  EditError,
+  explicitClipIds,
+  prepare,
+  PreviewAudioError,
+  renderPreviewAudio,
+  resolveFfmpeg,
+  splitClip,
+} from "@frankframes/producer";
 import type { ClipPatch, PreparedComposition } from "@frankframes/producer";
 import { listBlocks } from "@frankframes/catalog";
 import { HistoryStaleError, StudioHistory } from "./studio-history.ts";
@@ -25,6 +35,8 @@ export interface StudioServer {
 export interface StudioOptions {
   entry: string;
   port?: number;
+  /** Cache dos mixes de preview; padrão `cache/preview-audio` do FRANKFRAMES_HOME. */
+  audioCacheDir?: string;
 }
 
 const STUDIO_DIR = fileURLToPath(new URL("./studio/", import.meta.url));
@@ -37,6 +49,8 @@ const STUDIO_FILES: Record<string, string> = {
 };
 const MEDIA_PREFIX = "/__ff_media/";
 const FONTS_PREFIX = "/__ff_fonts/";
+const AUDIO_PREFIX = "/__ff_audio/";
+const AUDIO_NAME = /^[0-9a-f]{64}\.wav$/;
 /** Arquivos do projeto (ex.: `assets/`) vistos pelo preview via `<base>`. */
 const SITE_PREFIX = "/__ff_site/";
 const MAX_BODY_BYTES = 1024 * 1024;
@@ -246,6 +260,7 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
   const entryPath = resolve(options.entry);
   const entryDir = dirname(entryPath);
   const entryName = basename(entryPath);
+  const audioCacheDir = resolve(options.audioCacheDir ?? assetPath("cache", "preview-audio"));
   const port = options.port ?? 0;
   if (!Number.isInteger(port) || port < 0 || port > 65535) {
     throw new Error(`porta inválida: ${String(options.port)}`);
@@ -324,6 +339,29 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
   const durationOf = (composition: ReturnType<typeof loadComposition>): number | null =>
     composition.duration.kind === "unresolved" ? null : composition.duration.seconds;
 
+  /**
+   * Mix do preview (o mesmo grafo do render). Falha do mix não derruba o vídeo: vira `{error}`
+   * e aparece na barra do preview.
+   */
+  const previewAudioConfig = async (prepared: PreparedComposition): Promise<PreviewAudioConfig | null> => {
+    const started = performance.now();
+    try {
+      const { ffmpeg } = await resolveFfmpeg();
+      const result = await renderPreviewAudio({ prepared, ffmpeg, cacheDir: audioCacheDir });
+      if (result === null) return null;
+      if ("disabled" in result) return { disabled: result.disabled };
+      process.stderr.write(
+        `studio: áudio do preview ${result.key.slice(0, 8)} ${result.cached ? "do cache" : "mixado"} em ${Math.round(performance.now() - started)} ms\n`,
+      );
+      for (const warning of result.warnings) process.stderr.write(`studio: áudio: ${warning}\n`);
+      return { src: `${AUDIO_PREFIX}${result.key}.wav` };
+    } catch (error) {
+      const text = error instanceof PreviewAudioError ? `${error.code}: ${error.message} (${error.hint})` : `E_PREVIEW_AUDIO: ${(error as Error).message}`;
+      process.stderr.write(`studio: ${text}\n`);
+      return { error: text };
+    }
+  };
+
   const loadPreview = async (): Promise<{ prepared: PreparedComposition; html: string }> => {
     const current = await stat(entryPath);
     if (preview !== undefined && preview.mtimeMs === current.mtimeMs) {
@@ -332,10 +370,12 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
     const workDir = await mkdtemp(join(tmpdir(), "ff-studio-"));
     workDirs.add(workDir);
     const prepared = await prepare({ entry: entryPath, workDir });
+    const audio = await previewAudioConfig(prepared);
     const html = injectEngine(prepared.compiledHtml, {
       manifest: prepared.manifest,
       fontsBase: "/__ff_fonts",
       live: true,
+      ...(audio !== null ? { audio } : {}),
       // O Studio recarrega pelo próprio /api/events; a barra não abre /__ff_reload (404 aqui).
       preview: { fps: prepared.fps, frames: prepared.totalFrames, id: prepared.composition.id, reload: false },
     }).replace(/<head[^>]*>/i, (head) => `${head}<base href="${SITE_PREFIX}">`);
@@ -653,6 +693,16 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
       }
       if (pathname.startsWith(FONTS_PREFIX)) {
         await serveAsset(res, resolve(assetPath("fonts")), pathname.slice(FONTS_PREFIX.length));
+        return;
+      }
+      if (pathname.startsWith(AUDIO_PREFIX)) {
+        // Só a chave do mix (sha256): nada de caminho vindo da URL.
+        const name = pathname.slice(AUDIO_PREFIX.length);
+        if (!AUDIO_NAME.test(name)) {
+          send(res, 404, "não encontrado\n", "text/plain; charset=utf-8");
+          return;
+        }
+        await serveAsset(res, audioCacheDir, name);
         return;
       }
       if (pathname === "/favicon.ico") {

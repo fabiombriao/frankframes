@@ -154,6 +154,16 @@ SSE; o instante atual é guardado em `sessionStorage` (nunca acima do último fr
 recarga. `__ff.transportHooks` recebe `start`, `stop`, `seek`, `end` e `loop`. Sem `__ff.setLiveBounds`
 o relógio ao vivo é ilimitado; a barra de controle sempre o chama.
 
+**Áudio no preview** é o mesmo mix do render (mesmo grafo: volume, fades, `data-offset`,
+`data-playback-rate` com tom preservado, `data-keyframes`, ducking de `music` sob `voice` e loudnorm de
+entrega), feito pelo FFmpeg em WAV e guardado em `cache/preview-audio/<sha256>.wav`. A chave só muda quando
+muda algo que entra no mix (faixas, tempos, arquivos de mídia), então editar texto ou layout não refaz o
+áudio. O navegador toca o WAV pelo Web Audio, sincronizado com o relógio ao vivo, e recomeça o som quando a
+deriva passa de meio frame; o `<audio>` nativo da página fica mudo, para o som sair só do mix. Se o navegador
+bloquear o som, a barra mostra "Som bloqueado — clique para ativar". Falha do mix aparece na barra
+(`E_PREVIEW_AUDIO`) e em `__ff.liveErrors`, sem derrubar o vídeo. Acima de 20 min o áudio do preview fica
+desligado, com aviso na barra. O servidor entrega o mix em `/__ff_audio/<sha256>.wav` (só nomes de 64 hex).
+
 ## 9d. Studio
 
 `frankframes studio` edita o HTML da entrada; toda escrita passa pelo contrato antes de ir para o disco

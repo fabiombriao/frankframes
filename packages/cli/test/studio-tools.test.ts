@@ -1,7 +1,7 @@
 // FrankFrames — proprietário. Ver LICENSE na raiz.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadComposition } from "@frankframes/contract";
@@ -107,8 +107,8 @@ const PNG = Buffer.from(
   "base64",
 );
 
-/** WAV PCM mono 8 kHz de silêncio. */
-function wav(seconds: number): Buffer {
+/** WAV PCM mono 8 kHz: silêncio, ou um tom de 440 Hz quando `amplitude` > 0. */
+function wav(seconds: number, amplitude = 0): Buffer {
   const rate = 8000;
   const samples = Math.round(rate * seconds);
   const buffer = Buffer.alloc(44 + samples * 2);
@@ -124,6 +124,7 @@ function wav(seconds: number): Buffer {
   buffer.writeUInt16LE(16, 34);
   buffer.write("data", 36);
   buffer.writeUInt32LE(samples * 2, 40);
+  if (amplitude > 0) for (let i = 0; i < samples; i++) buffer.writeInt16LE(Math.round(Math.sin((2 * Math.PI * 440 * i) / rate) * amplitude), 44 + i * 2);
   return buffer;
 }
 
@@ -193,5 +194,82 @@ test("estúdio importa áudio medindo a duração com ffprobe", async (t) => {
     assert.equal(broken.status, 400);
     assert.equal(broken.json.code, "E_MEDIA_PROBE");
     await assert.rejects(readFile(join(dir, "assets", "quebrado.mp3")), "arquivo ilegível não fica no projeto");
+  });
+});
+
+const AUDIO_HTML = `<!doctype html>
+<html lang="pt-BR">
+<head><meta charset="utf-8"><title>teste</title></head>
+<body style="margin:0;background:#000">
+<div data-composition-id="teste-audio" data-width="640" data-height="360" data-fps="30" data-duration="2">
+  <audio data-clip-id="musica" src="assets/musica.wav" data-start="0" data-duration="1.5" data-volume="0.5"></audio>
+</div>
+</body>
+</html>
+`;
+
+/** Estúdio com cache de áudio próprio: o teste nunca toca o cache do usuário. */
+async function withAudioStudio(html: string, run: (server: StudioServer, dir: string) => Promise<void>): Promise<void> {
+  const dir = await mkdtemp(join(tmpdir(), "ff-studio-audio-"));
+  await mkdir(join(dir, "assets"), { recursive: true });
+  await writeFile(join(dir, "assets", "musica.wav"), wav(1.5, 12000)); // tom: loudnorm não mede silêncio
+  const entry = join(dir, "comp.html");
+  await writeFile(entry, html, "utf8");
+  let server: StudioServer | undefined;
+  try {
+    server = await startStudio({ entry, audioCacheDir: join(dir, "cache-audio") });
+    await run(server, dir);
+  } finally {
+    await server?.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+}
+
+test("estúdio injeta o mix do preview e serve o WAV pela chave", async (t) => {
+  try {
+    await resolveFfmpeg();
+  } catch (error) {
+    t.skip(`ffmpeg indisponível: ${(error as Error).message}`);
+    return;
+  }
+  await withAudioStudio(AUDIO_HTML, async (server) => {
+    const html = await (await fetch(`${server.url}preview`)).text();
+    const match = /window\.__ffPreviewAudio=(\{[^;]*\});/.exec(html);
+    assert.ok(match !== null, "o preview carrega a configuração de áudio");
+    const config = JSON.parse(match[1]!.replaceAll("\u003c", "<")) as { src?: string; error?: string };
+    assert.equal(config.error, undefined, config.error ?? "sem erro");
+    assert.match(config.src ?? "", /^\/__ff_audio\/[0-9a-f]{64}\.wav$/);
+
+    const response = await fetch(`${server.url}${config.src!.slice(1)}`);
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get("content-type"), "audio/wav");
+    const body = Buffer.from(await response.arrayBuffer());
+    assert.equal(body.subarray(0, 4).toString("latin1"), "RIFF");
+    assert.equal(body.subarray(8, 12).toString("latin1"), "WAVE");
+  });
+});
+
+test("estúdio sem faixa de áudio não injeta mix e recusa nomes fora da chave", () =>
+  withStudio(async (server) => {
+    const html = await (await fetch(`${server.url}preview`)).text();
+    assert.ok(!html.includes("__ffPreviewAudio"), "sem áudio, sem runtime");
+    for (const name of ["../x.wav", "..%2Fx.wav", "musica.wav", `${"a".repeat(64)}.mp3`, `${"A".repeat(64)}.wav`, `${"a".repeat(64)}.wav`]) {
+      const response = await fetch(`${server.url}__ff_audio/${name}`);
+      assert.equal(response.status, 404, `${name} → ${response.status}`);
+    }
+  }));
+
+test("estúdio mostra falha do mix no preview sem derrubar o vídeo", async (t) => {
+  try {
+    await resolveFfmpeg();
+  } catch (error) {
+    t.skip(`ffmpeg indisponível: ${(error as Error).message}`);
+    return;
+  }
+  await withAudioStudio(AUDIO_HTML.replace("assets/musica.wav", "assets/falta.wav"), async (server) => {
+    const response = await fetch(`${server.url}preview`);
+    assert.equal(response.status, 200, "o vídeo carrega mesmo com o áudio quebrado");
+    const html = await response.text();
+    assert.match(html, /E_PREVIEW_AUDIO: arquivo de áudio não encontrado: assets.{1,2}falta\.wav/); // o separador sai escapado no JSON
   });
 });

@@ -283,13 +283,32 @@ export interface MixOptions {
   duck?: DuckOptions | false;
   /** `false` entrega o mix cru, sem normalizar. */
   loudness?: Loudness | false;
+  /** `aac` (padrão, entrega) ou `wav` PCM 16 bits (preview: o navegador decodifica sem custo). */
+  format?: AudioFormat;
+  /** Cancela o FFmpeg em andamento. */
+  signal?: AbortSignal;
+}
+
+export type AudioFormat = "aac" | "wav";
+
+/** Argumentos de codec do mix final: o resto do grafo é idêntico entre render e preview. */
+export function codecArgs(format: AudioFormat): string[] {
+  return format === "wav" ? ["-c:a", "pcm_s16le"] : ["-c:a", "aac", "-b:a", "192k"];
 }
 
 /** Mede o mix com `loudnorm` em modo análise. `null` quando o FFmpeg não devolve o JSON. */
-export async function measureLoudness(ffmpeg: string, file: string): Promise<MeasuredLoudness | null> {
+export async function measureLoudness(
+  ffmpeg: string,
+  file: string,
+  signal?: AbortSignal,
+): Promise<MeasuredLoudness | null> {
   const result = await run(ffmpeg, [
     "-hide_banner", "-nostats", "-i", file, "-af", "loudnorm=print_format=json", "-f", "null", "-",
-  ], { maxBuffer: 16 << 20 }).catch((error: { stderr?: string }) => ({ stderr: error.stderr ?? "" }));
+  ], { maxBuffer: 16 << 20, ...(signal !== undefined ? { signal } : {}) }).catch((error: { stderr?: string; name?: string }) => {
+    // Cancelamento não é "sem medição": sobe para quem pediu.
+    if (signal?.aborted === true) throw error;
+    return { stderr: error.stderr ?? "" };
+  });
   const json = /\{[\s\S]*\}/.exec(result.stderr ?? "");
   if (!json) return null;
   try {
@@ -342,6 +361,7 @@ export async function mixAudio(options: MixOptions): Promise<{ outPath: string; 
     duck: options.duck,
   });
 
+  const signalOption = options.signal !== undefined ? { signal: options.signal } : {};
   const workspace = await mkdtemp(join(tmpdir(), "ff-audio-"));
   const scriptOption = await scriptOptionFor(options.ffmpeg);
   try {
@@ -359,9 +379,9 @@ export async function mixAudio(options: MixOptions): Promise<{ outPath: string; 
           "-map", "[out]", "-vn", "-ac", "2", "-ar", String(sampleRate),
           "-c:a", "pcm_s16le", "-y", analysis,
         ],
-        { maxBuffer: 16 << 20 },
+        { maxBuffer: 16 << 20, ...signalOption },
       );
-      measured = (await measureLoudness(options.ffmpeg, analysis)) ?? undefined;
+      measured = (await measureLoudness(options.ffmpeg, analysis, options.signal)) ?? undefined;
       if (measured === undefined) initial.warnings.push("loudness não medido; mix entregue sem normalização de dois passes");
     }
 
@@ -379,9 +399,9 @@ export async function mixAudio(options: MixOptions): Promise<{ outPath: string; 
         ...final.inputs.flatMap((input) => ["-i", input]),
         scriptOption, scriptPath,
         "-map", "[out]", "-vn", "-ac", "2", "-ar", String(sampleRate),
-        "-c:a", "aac", "-b:a", "192k", "-y", options.outPath,
+        ...codecArgs(options.format ?? "aac"), "-y", options.outPath,
       ],
-      { maxBuffer: 16 << 20 },
+      { maxBuffer: 16 << 20, ...signalOption },
     );
     return { outPath: options.outPath, warnings: [...initial.warnings, ...final.warnings] };
   } finally {

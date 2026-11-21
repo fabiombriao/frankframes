@@ -7,6 +7,12 @@ execução (Sonnet 5.5), revisa o diff, roda `node scripts/ci.ts` e faz commit/p
 Partes: **A — Studio** (EDT-39..46), **B — Motion** (EDT-47..56), **C — Geração e 1.0** (EDT-58..65).
 A ordem global entre as partes fica na seção "Ordem global" ao fim, mantida pelo planejamento.
 
+**Vídeo real para testes (decisão do titular):** todo teste manual ou de integração que precise de
+vídeo de verdade usa `C:\Users\rober\Downloads\video-teste.mp4`. Ele tem H.264 1080×1920 (vertical) a
+30 fps, 8,08 s, AAC estéreo 44,1 kHz e 10 MB. Fica fora do repositório. Teste automatizado do gate
+continua com mídia gerada por FFmpeg; o que depender desse arquivo faz `skip` explícito quando ele não
+existe. O `A001_11181126_H685.MOV` fica reservado ao roteiro de aceite do EDT-64.
+
 ---
 
 ## Plano Studio — EDT-39 a EDT-46 (épico EDT-35)
@@ -2214,6 +2220,7 @@ Sem commit, push ou Jira. GitHub Actions proibido. Nada de GPL/GSAP/código alhe
 | `puppeteer-core` (Apache-2.0) e dependências transitivas não estão em `THIRD-PARTY-NOTICES.md` nem em `PROVENANCE.md` | — | EDT-65 |
 | Codex CLI 0.170.0 em `%APPDATA%\npm\codex.cmd` (shim que chama `node_modules\@openai\codex\bin\codex.js`); `codex exec` tem `--output-schema`, `-o`, `-C`, `--ephemeral`, `-s read-only`, `--ignore-user-config`, prompt por stdin com `-`; `codex login status` → "Logged in using ChatGPT", exit 0 | — | EDT-59 |
 | Vídeo do titular: H.264 1920×1080 24 fps, 68,164583 s, AAC estéreo 48 kHz, 155 MB | `C:\Users\rober\Downloads\A001_11181126_H685.MOV` | EDT-64 |
+| Vídeo de teste do titular: H.264 1080×1920 30 fps, 8,08 s, AAC estéreo 44,1 kHz, 10 MB | `C:\Users\rober\Downloads\video-teste.mp4` | testes com vídeo real de qualquer item |
 | `preview --open` usa `exec('start "<url>"')`: no Windows o primeiro argumento entre aspas vira título da janela, não abre o navegador | `packages/cli/src/cli.ts:440` | o `generate` usa `spawn("cmd", ["/c","start","",url])`; corrigir o preview junto (1 linha) |
 | `<style>` de sub-composição externa é içado para o `<head>` sem escopo | `packages/producer/src/compile.ts:80` | composição gerada é **um arquivo só**, com CSS prefixado por cena (padrão de `examples/cena-dupla`) |
 
@@ -2879,6 +2886,9 @@ tocados por quase tudo). Cada item vira um commit depois de revisão e `node scr
 
 1. **A — Fase 0 + EDT-39** (relógio do preview).
 2. **A — EDT-40** (áudio fiel no player).
+   - **EDT-66** (achado no EDT-40): faixa toda em silêncio quebra o `loudnorm` (`measured_I=-inf`). Em
+     `mixAudio`, quando a medição dá `-inf`, pular a normalização e devolver um aviso. Teste com
+     `anullsrc`. Só toca `packages/producer/src/audio.ts`, os testes dele e o §9c, se mudar texto visível.
 3. **B — Motion, em série:** EDT-49 → 50 → 51 → 52 → 53 → 54 (contrato) → 55 → 54 (Studio) → 47 → 56.
 4. **A — Studio, em série:** EDT-41 → 42 → 43 → 45 → 44 → 46.
 5. **C — Onda 1:** EDT-62 medição (o executor para e devolve os números) → EDT-61 lote → EDT-58 skill e `frames`.

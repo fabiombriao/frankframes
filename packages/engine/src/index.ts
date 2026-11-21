@@ -1,6 +1,7 @@
 // FrankFrames — proprietário. Ver LICENSE na raiz.
 export { CLOCK_SOURCE, injectClock } from "./clock.ts";
 export { injectionScript, injectEngine } from "./inject.ts";
+export type { Injection, PreviewAudioConfig } from "./inject.ts";
 export { chromeArgs, gpuFlags } from "./args.ts";
 export type { GpuMode, ResolvedGpuMode, Viewport } from "./args.ts";
 export { resolveChrome } from "./launch.ts";
@@ -21,6 +22,7 @@ export type { CachedExtraction, FrameCacheOptions } from "./cache.ts";
 export type { ExtractOptions, MediaManifest, MediaManifestEntry } from "./media.ts";
 export { MEDIA_SHIM_SOURCE } from "./media-shim.ts";
 export { PREVIEW_UI_SOURCE } from "./preview-ui.ts";
+export { PREVIEW_AUDIO_SOURCE } from "./preview-audio.ts";
 export { captureFramesInParallel, splitIntoChunks } from "./parallel.ts";
 export type { ParallelCaptureOptions } from "./parallel.ts";
 export { classifyFailure, retryOnceIfTransient } from "./failures.ts";

@@ -1,6 +1,7 @@
 // FrankFrames — proprietário. Ver LICENSE na raiz.
 import { CLOCK_SOURCE } from "./clock.ts";
 import { MEDIA_SHIM_SOURCE } from "./media-shim.ts";
+import { PREVIEW_AUDIO_SOURCE } from "./preview-audio.ts";
 import { PREVIEW_RELOAD_SOURCE, PREVIEW_UI_SOURCE } from "./preview-ui.ts";
 import type { Fps } from "@frankframes/contract";
 import { fontFaceCss } from "./fonts.ts";
@@ -16,11 +17,19 @@ export interface Injection {
   live?: boolean;
   /** Preview com barra de controle; `frames` alimenta o scrub. */
   preview?: { fps: Fps; frames: number; id?: string; reload?: boolean };
+  /**
+   * Áudio do preview: `src` é o mix do servidor; `error` mostra a falha do mix na barra;
+   * `disabled` explica por que não há áudio (composição longa demais).
+   */
+  audio?: PreviewAudioConfig;
 }
+
+export type PreviewAudioConfig = { src: string } | { error: string } | { disabled: string };
 
 /**
  * Monta o bloco que precisa rodar ANTES de qualquer script do autor, nesta ordem:
- * 1. relógio virtual; 2. manifesto de mídia; 3. shim de `<video>`.
+ * 1. relógio virtual; 2. manifesto de mídia; 3. shim de `<video>`; 4. áudio do preview
+ * (precisa dos hooks do relógio e registrar-se antes da barra, que chama `startLive`).
  */
 export function injectionScript(injection: Injection = {}): string {
   const parts: string[] = [];
@@ -32,6 +41,11 @@ export function injectionScript(injection: Injection = {}): string {
     parts.push(`<script>window.__ffMedia=${JSON.stringify(injection.manifest)};</script>`);
     if (!injection.disableMediaShim) parts.push(`<script>${MEDIA_SHIM_SOURCE}</script>`);
   }
+  if (injection.audio) {
+    // `<` escapado: a mensagem de erro não pode fechar o <script>.
+    const config = JSON.stringify(injection.audio).replace(/</g, "\\u003c");
+    parts.push(`<script>window.__ffPreviewAudio=${config};</script>`, `<script>${PREVIEW_AUDIO_SOURCE}</script>`);
+  }
   if (injection.preview) {
     parts.push(`<script>window.__ffPreviewMeta=${JSON.stringify(injection.preview)};</script>`);
     parts.push(
@@ -41,7 +55,7 @@ export function injectionScript(injection: Injection = {}): string {
     );
   } else if (injection.live) {
     parts.push(
-      `<script>document.addEventListener("DOMContentLoaded",function(){var t=0;try{t=Number(sessionStorage.getItem("__ffTime")||0)}catch(e){}window.__ff.startLive(t||0);var es=new EventSource("/__ff_reload");es.onmessage=function(){location.reload()}});</script>`,
+      `<script>document.addEventListener("DOMContentLoaded",function(){var t=0;try{t=Number(sessionStorage.getItem("__ffTime")||0)}catch(e){window.__ff.liveErrors.push("sessionStorage: "+(e&&e.message?e.message:e))}window.__ff.startLive(t||0);var es=new EventSource("/__ff_reload");es.onmessage=function(){location.reload()}});</script>`,
     );
   }
   return parts.join("");

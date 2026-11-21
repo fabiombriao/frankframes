@@ -12,5 +12,13 @@ export { applyPatches, EditError, splitClip, explicitClipIds, locateClip, topLev
 export type { ClipLocation, ClipPatch, SplitRequest } from "./edit.ts";
 export { buildCaptionComposition } from "./captions.ts";
 export type { CaptionOptions, CaptionSegment } from "./captions.ts";
-export { mixAudio, buildAudioGraph } from "./audio.ts";
-export type { AudioClip, AudioGraph, MixOptions } from "./audio.ts";
+export { mixAudio, buildAudioGraph, codecArgs } from "./audio.ts";
+export type { AudioClip, AudioFormat, AudioGraph, MixOptions } from "./audio.ts";
+export {
+  PREVIEW_AUDIO_MAX_SECONDS,
+  PreviewAudioError,
+  audioClipsFor,
+  previewAudioKey,
+  renderPreviewAudio,
+} from "./preview-audio.ts";
+export type { PreviewAudioDisabled, PreviewAudioMix, PreviewAudioOptions } from "./preview-audio.ts";

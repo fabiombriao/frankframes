@@ -16,10 +16,20 @@ export const PREVIEW_UI_SOURCE = `(() => {
   const lastMs = Math.max(0, durationMs - frameMs(1));
   const clampMs = (value) => Math.min(Math.max(0, value), lastMs);
 
+  // sessionStorage pode estar bloqueado: o erro aparece em liveErrors (uma vez), nunca some.
+  let storageReported = false;
+  const storageFailed = (error) => {
+    if (storageReported) return;
+    storageReported = true;
+    window.__ff.liveErrors.push("sessionStorage: " + String(error && error.message ? error.message : error));
+  };
+
   let loop = false;
   try {
     loop = sessionStorage.getItem(loopKey) === "1";
-  } catch {}
+  } catch (error) {
+    storageFailed(error);
+  }
   const applyBounds = () => window.__ff.setLiveBounds({ endMs: durationMs, frameMs: frameMs(1), loop });
   applyBounds();
 
@@ -57,8 +67,15 @@ export const PREVIEW_UI_SOURCE = `(() => {
   label.setAttribute("data-ff-time", "");
   label.textContent = "0/" + (total - 1);
 
-  bar.append(play, loopButton, range, label);
+  // Estado do áudio do preview (vazio quando está tudo bem): o runtime de áudio o preenche.
+  const audioStatus = document.createElement("button");
+  audioStatus.setAttribute("data-ff-audio-status", "");
+  audioStatus.hidden = true;
+  audioStatus.style.cssText = buttonCss + "padding:0 10px;max-width:40vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;background:#ffd60a;color:#111";
+
+  bar.append(play, loopButton, range, audioStatus, label);
   document.documentElement.appendChild(bar);
+  if (window.__ffAudioPaint) window.__ffAudioPaint();
 
   const paint = () => {
     const ms = window.__ff.now();
@@ -93,7 +110,9 @@ export const PREVIEW_UI_SOURCE = `(() => {
     loop = !loop;
     try {
       sessionStorage.setItem(loopKey, loop ? "1" : "0");
-    } catch {}
+    } catch (error) {
+      storageFailed(error);
+    }
     applyBounds();
     paintLoop();
   });
@@ -113,7 +132,9 @@ export const PREVIEW_UI_SOURCE = `(() => {
     lastPersist = now;
     try {
       sessionStorage.setItem(storageKey, persistValue());
-    } catch {}
+    } catch (error) {
+      storageFailed(error);
+    }
   };
 
   window.__ff.liveHooks.push(paint);
@@ -128,7 +149,9 @@ export const PREVIEW_UI_SOURCE = `(() => {
   window.addEventListener("pagehide", () => {
     try {
       sessionStorage.setItem(storageKey, persistValue());
-    } catch {}
+    } catch (error) {
+      storageFailed(error);
+    }
   });
 
   const fromHash = /#f=(\\d+)/.exec(location.hash);

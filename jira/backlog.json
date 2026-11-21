@@ -235,6 +235,16 @@
           ],
           "acceptance": "Envelope com até 32 segmentos; erro claro quando passar do teto; valor aplicado conferido por medição.",
           "jiraKey": "EDT-25"
+        },
+        {
+          "summary": "Mix de faixa totalmente silenciosa não quebra o loudnorm",
+          "points": 2,
+          "labels": [
+            "audio",
+            "bug"
+          ],
+          "acceptance": "Uma composição cujas faixas de áudio são todas silêncio digital (o loudnorm mede `measured_I=-inf`) renderiza e passa no preview. A saída tem silêncio, sem tentar normalizar, e o relatório traz um aviso explícito. Sem esse caso tratado, `mixAudio` falha com \"Result too large\" em AAC e em WAV. Há um teste com faixa de silêncio gerada por FFmpeg que falharia sem a correção.",
+          "jiraKey": "EDT-66"
         }
       ],
       "jiraKey": "EDT-22"

@@ -154,10 +154,16 @@ export const CLOCK_SOURCE = `(() => {
   };
 
   // O instante guardado nunca passa do último frame, mesmo na folga entre ele e o fim.
+  // Falha ao gravar vai para liveErrors (uma vez só: o tick chama isto a cada 250 ms).
+  let persistFailed = false;
   const persistNow = () => {
     try {
       sessionStorage.setItem("__ffTime", String(Math.round(bounds === null ? nowMs : Math.min(nowMs, bounds.lastFrameMs))));
-    } catch {}
+    } catch (error) {
+      if (persistFailed) return;
+      persistFailed = true;
+      liveErrors.push("sessionStorage: " + String(error && error.message ? error.message : error));
+    }
   };
 
   let persistOnHide = false;

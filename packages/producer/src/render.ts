@@ -15,7 +15,7 @@ import type { MediaManifest } from "@frankframes/engine";
 import { annotateTiming, materializeClipIds, mergeSubCompositions } from "./compile.ts";
 import { resolveFfmpeg } from "./ffmpeg.ts";
 import { mixAudio } from "./audio.ts";
-import type { AudioClip } from "./audio.ts";
+import { audioClipsFor } from "./preview-audio.ts";
 
 const run = promisify(execFile);
 
@@ -302,23 +302,7 @@ export async function renderComposition(options: RenderOptions): Promise<RenderR
     }
     progress("capture", 75, `${totalFrames} frames`);
 
-    const audioInputs: AudioClip[] = [];
-    for (const { clip, start } of timedClips(composition)) {
-      if (clip.mediaSrc === undefined || clip.hasAudio !== true) continue;
-      audioInputs.push({
-        clipId: clip.id,
-        file: resolve(entryDir, clip.mediaSrc),
-        start,
-        duration: clip.authoredDuration ?? Math.max(0, seconds - start),
-        offset: clip.offset,
-        playbackRate: clip.playbackRate,
-        volume: clip.volume ?? 1,
-        ...(clip.audioRole !== undefined ? { role: clip.audioRole } : {}),
-        ...(clip.keyframes !== undefined ? { keyframes: clip.keyframes } : {}),
-        ...(clip.fadeIn !== undefined ? { fadeIn: clip.fadeIn } : {}),
-        ...(clip.fadeOut !== undefined ? { fadeOut: clip.fadeOut } : {}),
-      });
-    }
+    const audioInputs = audioClipsFor({ composition, entryDir, seconds });
 
     let audioPath: string | undefined;
     if (audioInputs.length > 0) {

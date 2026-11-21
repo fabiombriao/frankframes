@@ -5,6 +5,7 @@ import { extname, join, normalize, resolve, sep } from "node:path";
 import { assetPath } from "./home.ts";
 import type { AddressInfo } from "node:net";
 import { injectEngine } from "./inject.ts";
+import type { PreviewAudioConfig } from "./inject.ts";
 import type { MediaManifest } from "./media.ts";
 
 const DEFAULT_FONTS = assetPath("fonts");
@@ -52,10 +53,17 @@ export interface ServerOptions {
   live?: boolean;
   /** Preview com barra de controle (fps e total de frames). */
   preview?: { fps: { num: number; den: number }; frames: number; id?: string };
+  /** Áudio do preview injetado na página (veja `Injection.audio`). */
+  audio?: PreviewAudioConfig;
+  /** Diretório dos mixes de preview servido em `/__ff_audio/<sha256>.wav`. */
+  audioDir?: string;
 }
 
 const MEDIA_PREFIX = "/__ff_media/";
 const FONTS_PREFIX = "/__ff_fonts/";
+const AUDIO_PREFIX = "/__ff_audio/";
+/** O mix só é endereçado pela chave (sha256 hex): nada de caminho vindo da URL. */
+const AUDIO_NAME = /^[0-9a-f]{64}\.wav$/;
 
 /**
  * Serve a composição por HTTP: `file://` não carrega fonte/mídia com as mesmas
@@ -86,6 +94,16 @@ export async function startServer(rootDir: string, options: ServerOptions = {}):
       }
       if (pathname === "/favicon.ico") {
         response.writeHead(204).end();
+        return;
+      }
+      if (pathname.startsWith(AUDIO_PREFIX)) {
+        const name = pathname.slice(AUDIO_PREFIX.length);
+        if (options.audioDir === undefined || !AUDIO_NAME.test(name)) {
+          response.writeHead(404).end("não encontrado");
+          return;
+        }
+        const wav = await readFile(join(resolve(options.audioDir), name));
+        response.writeHead(200, { "content-type": "audio/wav", "cache-control": "no-store" }).end(wav);
         return;
       }
 
@@ -123,6 +141,7 @@ export async function startServer(rootDir: string, options: ServerOptions = {}):
               fontsBase: roots.fonts ? FONTS_PREFIX.slice(0, -1) : null,
               ...(options.live === true ? { live: true } : {}),
               ...(options.preview !== undefined ? { preview: options.preview } : {}),
+              ...(options.audio !== undefined ? { audio: options.audio } : {}),
             }),
           )
         : raw;

@@ -70,3 +70,30 @@ test("preview roda em tempo real e respeita a janela dos clips", { timeout: 120_
     await server.close();
   }
 });
+
+test("falha ao gravar o instante em sessionStorage vai para liveErrors, uma vez só", { timeout: 120_000 }, async (t) => {
+  try {
+    await resolveChrome();
+  } catch {
+    return t.skip("Chrome não encontrado");
+  }
+
+  const dir = await mkdtemp(join(tmpdir(), "ff-live-storage-"));
+  await writeFile(join(dir, "index.html"), COMPOSITION);
+
+  const server = await startServer(dir, { live: true });
+  const session = await openSession({ url: server.url, viewport: { width: 640, height: 360 }, gpu: "auto" });
+  try {
+    // Storage cheio/bloqueado: o setItem passa a lançar, e o relógio recomeça já com isso.
+    await session.evaluate(
+      `Storage.prototype.setItem = function () { throw new Error("quota cheia"); }; window.__ff.stopLive(); window.__ff.startLive(0);`,
+    );
+    await waitForClock(session, 900); // ≥ 3 ticks de persistência (a cada 250 ms)
+    const errors = await session.evaluate<string[]>("window.__ff.liveErrors");
+    assert.equal(errors.length, 1, `a falha aparece uma vez, sem inundar: ${JSON.stringify(errors)}`);
+    assert.match(errors[0] ?? "", /sessionStorage.*quota cheia/);
+  } finally {
+    await session.close();
+    await server.close();
+  }
+});

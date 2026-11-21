@@ -28,6 +28,7 @@ const FAST_TESTS = [
   "packages/producer/test/compile.test.ts",
   "packages/producer/test/plan.test.ts",
   "packages/producer/test/audio.test.ts",
+  "packages/producer/test/preview-audio.test.ts",
   "packages/cli/test/timeline-math.test.ts",
   "packages/engine/test/clock.test.ts",
 ];
