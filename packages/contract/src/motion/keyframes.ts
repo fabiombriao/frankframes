@@ -10,9 +10,10 @@ import { resolveCurve } from "./curves.ts";
 /** Máximo de pontos por atributo. */
 export const MAX_KEYFRAMES = 256;
 
-const VISUAL_KEYS = ["opacity", "x", "y", "scale", "scaleX", "scaleY", "rotate", "blur", "clip"] as const;
-/** Reservadas à câmera (§7b.6): recusadas até ela existir, para nunca virarem movimento invisível. */
+/** Câmera (§7b.9): só valem em `<img>` e `<video>`; em outro elemento seriam movimento invisível. */
 const CAMERA_KEYS = ["zoom", "focusX", "focusY"] as const;
+const VISUAL_KEYS = ["opacity", "x", "y", "scale", "scaleX", "scaleY", "rotate", "blur", "clip", ...CAMERA_KEYS] as const;
+const CAMERA_TAGS: readonly string[] = ["img", "video"];
 const OTHER_KEYS = ["time", "volume", "curve"] as const;
 
 export interface KeyframeContext {
@@ -20,6 +21,8 @@ export interface KeyframeContext {
   clipId: string;
   /** `true` no próprio clip (aceita `volume`); `false` em descendente. */
   own: boolean;
+  /** Tag do elemento (minúscula): zoom e foco só valem em `img` e `video`. */
+  tag: string;
   diagnostics: Diagnostic[];
 }
 
@@ -112,6 +115,11 @@ function checkValue(key: (typeof VISUAL_KEYS)[number], value: unknown): Checked 
       return range(value, 0, 200, "px");
     case "clip":
       return clipOf(value);
+    case "zoom":
+      return range(value, 1, 4, "fator");
+    case "focusX":
+    case "focusY":
+      return range(value, 0, 1, "fração da imagem");
   }
 }
 
@@ -124,7 +132,7 @@ const clipShape = (value: MotionValue): "inset" | "circle" => (String(value).sta
  * (`E_KEYFRAME_INVALID`) descartam só o ponto com problema, porque o render já fica bloqueado.
  */
 export function parseKeyframes(raw: string, ctx: KeyframeContext): ParsedKeyframes {
-  const { clipId, own, diagnostics } = ctx;
+  const { clipId, own, tag, diagnostics } = ctx;
   const empty: ParsedKeyframes = { volume: [], visual: [] };
   const invalid = (message: string, hint: string): void => {
     diagnostics.push(diag(CODES.KEYFRAME_INVALID, "error", `data-keyframes em "${clipId}": ${message}`, { clipId, hint }));
@@ -175,7 +183,7 @@ export function parseKeyframes(raw: string, ctx: KeyframeContext): ParsedKeyfram
   const shapes = new Map<string, "inset" | "circle">();
   for (const [index, point] of points.entries()) {
     const at = `ponto ${index} (time ${times[index]})`;
-    const known = new Set<string>([...VISUAL_KEYS, ...CAMERA_KEYS, ...OTHER_KEYS]);
+    const known = new Set<string>([...VISUAL_KEYS, ...OTHER_KEYS]);
     let ok = true;
     for (const key of Object.keys(point)) {
       if (!known.has(key)) {
@@ -184,8 +192,8 @@ export function parseKeyframes(raw: string, ctx: KeyframeContext): ParsedKeyfram
       }
     }
     const camera = CAMERA_KEYS.filter((key) => key in point);
-    if (camera.length > 0) {
-      invalid(`${at} usa ${camera.join(", ")}, reservado à câmera`, "zoom e foco ainda não têm movimento: remova a chave");
+    if (camera.length > 0 && !CAMERA_TAGS.includes(tag)) {
+      invalid(`${at} usa ${camera.join(", ")} em <${tag}>`, "zoom e foco só valem em img ou video: mova os pontos para o <img> ou <video>");
       ok = false;
     }
 
@@ -206,6 +214,7 @@ export function parseKeyframes(raw: string, ctx: KeyframeContext): ParsedKeyfram
       ok = false;
     }
     for (const key of visualKeys) {
+      if (CAMERA_KEYS.some((name) => name === key) && !CAMERA_TAGS.includes(tag)) continue; // já recusado acima
       const checked = checkValue(key, point[key]);
       if (!checked.ok) {
         invalid(`${at}: ${key} ${checked.reason}`, `${key}: ${checked.reason}`);
@@ -220,8 +229,8 @@ export function parseKeyframes(raw: string, ctx: KeyframeContext): ParsedKeyfram
       }
     }
 
-    if (visualKeys.length === 0 && volume === undefined && !camera.length) {
-      invalid(`${at} não tem nenhuma propriedade`, "acrescente volume ou uma propriedade visual (opacity, x, y, scale, rotate, blur, clip)");
+    if (visualKeys.length === 0 && volume === undefined) {
+      invalid(`${at} não tem nenhuma propriedade`, "acrescente volume ou uma propriedade visual (opacity, x, y, scale, rotate, blur, clip, zoom, focusX, focusY)");
       ok = false;
     }
 

@@ -28,7 +28,10 @@ export const MOTION_SOURCE = `(() => {
   };
   const camel = (prop) => (prop.startsWith("--") ? prop : prop.replace(/-([a-z])/g, (_, c) => c.toUpperCase()));
 
+  let registered = false;
   const registerProperties = () => {
+    if (registered) return;
+    registered = true;
     for (const item of PROPERTIES) {
       CSS.registerProperty({ name: item.name, syntax: item.syntax, inherits: false, initialValue: item.initial });
     }
@@ -56,9 +59,6 @@ export const MOTION_SOURCE = `(() => {
   };
 
   const apply = (element) => {
-    if (element.tagName === "VIDEO") {
-      throw new Error("E_MOTION_TARGET: " + label(element) + " é <video>; motion em vídeo ainda não é suportado (hint: aplique o motion num elemento que envolve o vídeo)");
-    }
     let spec;
     try {
       spec = JSON.parse(element.getAttribute("data-ff-motion"));
@@ -77,10 +77,34 @@ export const MOTION_SOURCE = `(() => {
     }
   };
 
+  // <video> nunca é animado: o Chrome não o decodifica e o shim de mídia o troca por <img>. O movimento
+  // vai para essa <img> (attach), que o shim cria no primeiro seek. Sem o shim, o movimento sumiria.
+  const assertShimmed = (element) => {
+    const shim = window.__ffMediaShim;
+    const id = element.getAttribute("data-clip-id");
+    if (!shim || id === null || !shim.has(id)) {
+      throw new Error(
+        "E_MOTION_TARGET: " + label(element) + " é <video> sem mídia fora de banda; o motion só chega ao vídeo pela <img> que o substitui" +
+          " (hint: renderize pelo FrankFrames, ou aplique o motion num <img> ou num elemento que envolve o vídeo)",
+      );
+    }
+  };
+
+  // Usado pelo shim de mídia: aplica o data-ff-motion copiado do <video> à <img> que o substituiu.
+  window.__ffMotion = {
+    attach(element) {
+      registerProperties();
+      apply(element);
+    },
+  };
+
   clock.prepare(() => {
     const targets = document.querySelectorAll("[data-ff-motion]");
     if (targets.length === 0) return;
     registerProperties();
-    for (const element of targets) apply(element);
+    for (const element of targets) {
+      if (element.tagName === "VIDEO") assertShimmed(element);
+      else apply(element);
+    }
   });
 })();`;

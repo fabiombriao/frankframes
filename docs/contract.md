@@ -83,6 +83,18 @@ O contrato puro não abre arquivos. Duração de `<video>`/`<audio>` vem de:
 Sem nenhum dos dois, o clip fica **pendente** e a composição é `unresolved` (`pending-clips`).
 O render nunca começa com duração pendente.
 
+O Chrome nunca decodifica `<video>`: o render troca cada um por uma `<img>` com os frames extraídos pelo
+FFmpeg (§9). A `<img>` substituta:
+
+- **herda `object-fit` e `object-position` computados do vídeo** (`fill`, `cover`, `contain`...): o vídeo
+  com `object-fit:cover` aparece com `cover` também no render. Antes da EDT-53 a substituta sempre usava
+  `object-fit:fill`; agora o enquadramento do vídeo é o que o autor escreveu;
+- leva o `data-ff-start`/`data-ff-end` (janela de visibilidade), o `data-ff-comp-start` e o
+  `data-ff-motion` do vídeo: `data-enter`, `data-exit`, `data-emphasis`, `data-camera` e `data-keyframes`
+  em `<video>` animam a `<img>` (§7b.12);
+- é `position:fixed` na caixa medida do vídeo. Limite: motion num **ancestral** do `<video>` não move a
+  `<img>`; ponha o motion no próprio `<video>` ou num elemento que não seja ancestral dele.
+
 ## 7. Duração da composição
 
 1. `data-duration` da raiz > 0 → `authored`.
@@ -108,9 +120,10 @@ reproduz. CSS `@keyframes` continua permitido; os atributos de motion são a for
   internos são clips do próprio escopo e levam o próprio motion.
 - Erros `E_MOTION_TARGET`:
   - motion na raiz, fora de qualquer clip, ou em `<audio>`;
-  - `data-camera` fora de `<img>`;
-  - `data-transition` fora de um clip, ou em descendente (vale só no clip que entra);
-  - motion em `<video>`: ainda não é suportado.
+  - `data-camera` fora de `<img>` e `<video>`;
+  - `data-transition` fora de um clip, ou em descendente (vale só no clip que entra).
+
+`<video>` aceita todo o motion: ele vai para a `<img>` que substitui o vídeo no render (§6, §7b.12).
 
 ### 7b.3 Atributos
 
@@ -119,7 +132,7 @@ reproduz. CSS `@keyframes` continua permitido; os atributos de motion são a for
 | `data-enter` | clip ou descendente | `<preset> [chave=valor ...]` |
 | `data-exit` | clip ou descendente | `<preset> [chave=valor ...]` |
 | `data-emphasis` | clip ou descendente | `<preset> [chave=valor ...]` |
-| `data-camera` | `<img>` (clip ou descendente) | `<preset> [chave=valor ...]`; reservado: ainda sem presets |
+| `data-camera` | `<img>` ou `<video>` (clip ou descendente) | `<preset> [chave=valor ...]`: §7b.9 |
 | `data-transition` | clip que **entra** | `<preset> [chave=valor ...]`; reservado: ainda sem presets |
 
 | `data-split` | elemento com texto | `word` ou `letter`, mais `stagger=<s>` e `order=forward\|reverse\|center`: §7b.8 |
@@ -238,8 +251,8 @@ D conhecida:
 | `rotate` | `--ff-rot` → `rotate` | 0 | graus, [-3600,3600] |
 | `blur` | `--ff-blur` → `filter: blur()` | 0 | px, [0,200] |
 | `clip` | `clip-path` | `inset(0% 0% 0% 0%)` | `inset(t% r% b% l%)` ou `circle(r% at x% y%)` |
-| `zoom` | `--ff-zoom` → `object-view-box` | 1 | [1,10], só `<img>`; reservado à câmera (sem preset ainda); em `data-keyframes` dá `E_KEYFRAME_INVALID` até a câmera existir (§7b.7) |
-| `focusX`, `focusY` | `--ff-fx`, `--ff-fy` → `object-view-box` | 0.5 | [0,1], só `<img>`; reservado à câmera (sem preset ainda); mesma regra de `zoom` |
+| `zoom` | `--ff-zoom` → `object-view-box` | 1 | [1,4], só `<img>` e `<video>`; zoom ≥ 1 (câmera, §7b.9) |
+| `focusX`, `focusY` | `--ff-fx`, `--ff-fy` → `object-view-box` | 0.5 | [0,1], fração da imagem; só `<img>` e `<video>` |
 
 - `scale` é atalho para `scaleX` e `scaleY` iguais.
 - O alvo com motion passa a ser **dono** das propriedades CSS que o movimento usa (`opacity`, `translate`,
@@ -286,6 +299,8 @@ ponto = { "time": s, "volume"?, "opacity"?, "x"?, "y"?, "scale"? | "scaleX"? | "
   | `rotate` | número em graus, [-3600,3600] |
   | `blur` | número em px, [0,200] |
   | `clip` | `inset(t r b l)` (1 a 4 valores, todos em `%`, [0,100]) ou `circle(r% at x% y%)` (r em [0,150], x e y em [0,100]) |
+  | `zoom` | só em `<img>` e `<video>`; número em [1,4] (fator; 1 = imagem inteira) |
+  | `focusX`, `focusY` | só em `<img>` e `<video>`; número em [0,1] (fração da imagem sob o centro do quadro) |
   | `volume` | só no clip; número ≥ 0, como em §4 |
   | `curve` | curva de §7b.4 |
 
@@ -299,15 +314,16 @@ ponto = { "time": s, "volume"?, "opacity"?, "x"?, "y"?, "scale"? | "scaleX"? | "
   `opacity` de 0 a 1 em `[0,1]` mais `data-enter="surgir"` no mesmo alvo dá `E_MOTION_OVERLAP`.
 - `volume` mantém o formato e o resultado de sempre: `RawClip.keyframes` traz só `{time, volume}` dos
   pontos que têm `volume`, sempre lineares. Ponto só de volume não cria alvo de motion.
-- `zoom`, `focusX` e `focusY` são reservados à câmera (§7b.6): enquanto ela não existe, dão
-  `E_KEYFRAME_INVALID` com hint explicando; nunca um movimento que não aparece.
+- `zoom`, `focusX` e `focusY` são a câmera (§7b.9) e só valem em `<img>` e `<video>`: em qualquer outro
+  elemento dão `E_KEYFRAME_INVALID` com o hint `zoom e foco só valem em img ou video`; nunca um movimento
+  que não aparece. Num `<video>` o movimento vai para a `<img>` que o substitui (§6).
 
 Diagnósticos (todos com `clipId`; os erros têm `hint`):
 
 | Código | Severidade | Quando | Hint |
 |---|---|---|---|
 | `E_NUMBER_INVALID` | error | JSON malformado, não é array, ou `time`/`volume` não finito ou negativo (como antes) | o de hoje |
-| `E_KEYFRAME_INVALID` | error | chave desconhecida; valor fora do tipo ou da faixa; `scale` junto com `scaleX`/`scaleY` no mesmo ponto; dois pontos com o mesmo `time`; ponto sem nenhuma propriedade; `clip` misturando `inset` e `circle` na mesma trilha; `zoom`/`focusX`/`focusY` (reservados à câmera); `volume` em descendente | diz o ponto (índice), a chave e a faixa válida |
+| `E_KEYFRAME_INVALID` | error | chave desconhecida; valor fora do tipo ou da faixa; `scale` junto com `scaleX`/`scaleY` no mesmo ponto; dois pontos com o mesmo `time`; ponto sem nenhuma propriedade; `clip` misturando `inset` e `circle` na mesma trilha; `zoom`/`focusX`/`focusY` fora de `<img>`/`<video>` ou fora da faixa (`zoom` em [1,4], foco em [0,1]); `volume` em descendente | diz o ponto (índice), a chave e a faixa válida |
 | `E_KEYFRAME_LIMIT` | error | mais de 256 pontos | `divida em elementos ou reduza para ≤ 256 pontos` |
 | `W_KEYFRAME_OUT_OF_RANGE` | warning | `time` maior que a duração D do clip; o ponto é mantido | `o ponto em t=<n> s nunca aparece: o clip termina em <D> s` |
 | `W_KEYFRAME_CURVE_IGNORED` | warning | `curve` num ponto só de volume (o volume é sempre linear) | `remova curve ou acrescente uma propriedade visual ao ponto` |
@@ -392,6 +408,47 @@ grafema vira uma caixa; use `word`. Ligaduras entre unidades vizinhas e o kernin
 resultado do `letter` depende da tabela Unicode do ICU: o teste de segmentação imprime a versão do Node e do
 ICU quando falha.
 
+### 7b.9 Câmera (`data-camera`)
+
+`data-camera="<preset> [dur=] [at=] [curve=] [amount=] [fx=] [fy=]"` move o **enquadramento** de uma
+imagem ou de um vídeo: zoom e deslocamento do foco, sem mexer na caixa do elemento. Só vale em `<img>` e
+`<video>` (clip ou descendente); em outro elemento é `E_MOTION_TARGET`. A gramática e os erros de
+parâmetro são os de §7b.4; o tempo é o da linha `camera` de §7b.5 (`at` padrão `0`).
+
+**Ligação.** As propriedades animadas são `zoom` (`--ff-zoom`, ≥ 1) e o foco `focusX`/`focusY`
+(`--ff-fx`/`--ff-fy`, em [0,1]). O alvo recebe, com `m = (100% − 100% / var(--ff-zoom))`:
+
+```
+object-view-box: inset(calc(var(--ff-fy) * m) calc((1 − var(--ff-fx)) * m)
+                       calc((1 − var(--ff-fy)) * m) calc(var(--ff-fx) * m))
+```
+
+O recorte visível tem `1/zoom` da imagem em cada eixo; o foco diz **onde** a janela fica dentro da folga
+`m`: `focusX = 0` encosta na borda esquerda, `1` na direita, `0.5` centra. **zoom ≥ 1**: nunca se vê
+além da imagem, então não há borda vazia. O `object-fit` do elemento continua valendo sobre o recorte.
+
+**Tempo.** Sem `dur=`, a câmera ocupa **do `at` até o fim do clip** (`D − at`, §7b.5): é movimento de
+fundo, e o fim dele é o fim da imagem. `at` no fim do clip ou depois dele não deixa duração: dá
+`E_MOTION_OUT_OF_RANGE` com o hint `sem dur, a câmera ocupa do at até o fim do clip`. Com `dur=`, vale o
+que o autor escreveu (e a regra de faixa de §7b.5).
+
+| Preset | Movimento | Curva | `amount` (padrão) | Outros |
+|---|---|---|---|---|
+| `aproximar` | zoom 1 → `amount` | `suave` | [1,4] (1.15) | `fx`, `fy` (0.5) |
+| `afastar` | zoom `amount` → 1 | `suave` | [1,4] (1.15) | `fx`, `fy` (0.5) |
+| `panoramica-esquerda` | `focusX` 0.75 → 0.25 com zoom fixo `amount` | `linear` | [1,4] (1.12) | `fy` (0.5) |
+| `panoramica-direita` | `focusX` 0.25 → 0.75 com zoom fixo `amount` | `linear` | [1,4] (1.12) | `fy` (0.5) |
+| `deriva` | zoom 1.06 → 1.10, `focusX` 0.45 → 0.55, `focusY` 0.48 → 0.52 | `linear` | n/d | n/d |
+
+- `fx` e `fy` fora de [0,1] e `amount` fora de [1,4] dão `E_MOTION_PARAM`; panorâmica não tem `fx` (o foco
+  horizontal é o próprio movimento) e `deriva` não tem parâmetros.
+- Foco em 0.5 (o neutro registrado) não gera trilha: só sai trilha de `fx`/`fy` quando o valor é outro.
+  Zoom e foco também podem ser animados à mão em `data-keyframes` (§7b.7); misturar os dois no mesmo alvo
+  e no mesmo intervalo é `E_MOTION_OVERLAP`.
+- `object-view-box` inline no alvo com câmera é `E_MOTION_CONFLICT` (§7b.6).
+- Em `<video>`, a câmera anima a `<img>` que o substitui (§6) e **não** decodifica nada no Chrome: o recorte
+  é aplicado ao frame já extraído. A mesma `<img>` também recebe entrada, saída e ênfase do vídeo.
+
 ### 7b.11 Curvas
 
 - `linear`, `ease`, `ease-in`, `ease-out`, `ease-in-out`: as do CSS.
@@ -451,8 +508,11 @@ ICU quando falha.
   falha com `E_MOTION_RUNTIME` (etapa `capture`).
 - Seek em qualquer ordem dá o mesmo frame.
 - `<video>` com motion: as animações vão para a `<img>` que substitui o vídeo (§6); o vídeo continua
-  decodificado pelo FFmpeg. Ainda não é suportado: o runtime recusa `video[data-ff-motion]` com
-  `E_MOTION_TARGET`.
+  decodificado pelo FFmpeg e nunca é animado. O shim de mídia copia `data-ff-motion` e `data-ff-comp-start`
+  para a `<img>` e chama `window.__ffMotion.attach(img)` no primeiro seek (a troca é preguiçosa); o relógio
+  então sincroniza essas animações como as demais. O runtime só aceita `video[data-ff-motion]` quando o shim
+  vai trocá-lo; sem mídia fora de banda recusa com `E_MOTION_TARGET` (hint: renderizar pelo FrankFrames ou
+  mover o motion para uma `<img>` ou um elemento que envolva o vídeo, §6).
 - Composição sem atributos de motion compila exatamente como antes (§10).
 
 ## 8. Diagnósticos

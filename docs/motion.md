@@ -1,7 +1,7 @@
 # Presets de motion
 
-Fonte de verdade da lista de presets de `data-enter`, `data-exit` e `data-emphasis`. A gramática, as faixas das
-chaves, os neutros e os diagnósticos estão em [`contract.md`](contract.md) §7b. Os 26 presets têm nome e valores
+Fonte de verdade da lista de presets de `data-enter`, `data-exit`, `data-emphasis` e `data-camera`. A gramática,
+as faixas das chaves, os neutros e os diagnósticos estão em [`contract.md`](contract.md) §7b. Os 31 presets têm nome e valores
 próprios do FrankFrames: verbos em português, `kebab-case` ASCII; o label com acento serve só à UI.
 
 ## Exemplos
@@ -43,6 +43,14 @@ letra), uma depois da outra; `stagger` é o intervalo entre unidades e `order` a
 <h1 data-clip-id="manchete" data-start="0" data-duration="4"
     data-split="word stagger=0.08 order=center" data-enter="subir dur=0.5">Coração, ação e emoção</h1>
 <h2 data-clip-id="marca" data-start="0" data-duration="3" data-split="letter" data-enter="surgir">FrankFrames</h2>
+```
+
+Câmera em foto e em vídeo. `data-camera` move o enquadramento (zoom e foco) da imagem; sem `dur`, vai do `at` até o
+fim do clip (§7b.9). Num `<video>` o movimento age sobre a `<img>` que o substitui no render:
+
+```html
+<img data-clip-id="paisagem" data-start="0" data-duration="5" src="paisagem.jpg" data-camera="panoramica-direita">
+<video data-clip-id="cena" data-start="0" data-duration="8" src="cena.mp4" data-camera="aproximar amount=1.3 fx=0.3"></video>
 ```
 
 Para o que o motion não cobre (cor, stroke, largura), `@keyframes` de CSS continua valendo. Para o que nenhum
@@ -101,10 +109,25 @@ A ênfase sai do neutro e volta a ele. Sem `at`, começa onde a entrada do mesmo
 | `piscar` | Piscar | opacidade 1 → `amount` → 1 | 0.4 | `vaivem` | `amount` (0.2), `repeat` (1) | ![piscar](../catalog/motion/thumbs/piscar.gif) |
 | `quicar` | Quicar | sobe `distance` com `freio` e volta com `arranque` | 0.5 | `freio` e `arranque` | `distance` (16px), `repeat` (1) | ![quicar](../catalog/motion/thumbs/quicar.gif) |
 
+## Câmera
+
+Só vale em `<img>` e `<video>`. Sem `dur`, o movimento ocupa do `at` (padrão 0) até o fim do clip. `amount` fica em
+[1,4]; `fx` e `fy` (foco, em [0,1], padrão 0.5) valem em `aproximar` e `afastar`; a panorâmica aceita só `fy`.
+
+| Nome | Label | O que faz | dur de referência | Curva | Chaves (padrão) | Miniatura |
+|---|---|---|---|---|---|---|
+| `aproximar` | Aproximar | zoom 1 → `amount` | até o fim do clip | `suave` | `amount` (1.15), `fx`, `fy` | ![aproximar](../catalog/motion/thumbs/aproximar.gif) |
+| `afastar` | Afastar | zoom `amount` → 1 | até o fim do clip | `suave` | `amount` (1.15), `fx`, `fy` | ![afastar](../catalog/motion/thumbs/afastar.gif) |
+| `panoramica-esquerda` | Panorâmica à esquerda | zoom fixo `amount`; o foco vai de 0.75 a 0.25 no eixo X | até o fim do clip | `linear` | `amount` (1.12), `fy` | ![panoramica-esquerda](../catalog/motion/thumbs/panoramica-esquerda.gif) |
+| `panoramica-direita` | Panorâmica à direita | zoom fixo `amount`; o foco vai de 0.25 a 0.75 no eixo X | até o fim do clip | `linear` | `amount` (1.12), `fy` | ![panoramica-direita](../catalog/motion/thumbs/panoramica-direita.gif) |
+| `deriva` | Deriva | zoom 1.06 → 1.10 e foco (0.45, 0.48) → (0.55, 0.52), quase imperceptível | até o fim do clip | `linear` | — | ![deriva](../catalog/motion/thumbs/deriva.gif) |
+
 ## Miniaturas
 
 As miniaturas são geradas pelo próprio engine: `node scripts/generate-motion-thumbs.ts` renderiza um cartão
 "Aa" de 140×70 numa cena de 320×180 a 15 fps, com 0.3 s parados antes e depois do movimento (a saída começa visível;
 a ênfase age sobre o cartão parado), e monta o GIF com o FFmpeg de `vendor/ffmpeg` (paleta de 48 cores, teto de
-200 KB por arquivo; o script falha se passar). O GIF não é teste de determinismo: regenerar pode mudar bytes, o que é
+200 KB por arquivo; o script falha se passar). A câmera usa uma foto de teste 1280×720 (`testsrc2` do FFmpeg) em
+tela cheia, 2 s de movimento. `node scripts/generate-motion-thumbs.ts camera` (ou o nome de um preset) regenera só
+esses. O GIF não é teste de determinismo: regenerar pode mudar bytes, o que é
 aceitável. Em código, `motionThumbPath(nome)` de `@frankframes/catalog` devolve o caminho de cada uma.

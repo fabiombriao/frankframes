@@ -59,7 +59,7 @@ export interface RawClip {
 export type MotionKind = "enter" | "exit" | "emphasis" | "camera" | "transition";
 
 /** Propriedades animáveis por `data-keyframes` (§7b.6, §7b.7). */
-export type MotionProp = "opacity" | "x" | "y" | "scaleX" | "scaleY" | "rotate" | "blur" | "clip";
+export type MotionProp = "opacity" | "x" | "y" | "scaleX" | "scaleY" | "rotate" | "blur" | "clip" | "zoom" | "focusX" | "focusY";
 
 /**
  * Valor normalizado de um ponto: número (px, graus, fator) ou texto (`"10%"` em x/y;

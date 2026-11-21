@@ -6,6 +6,10 @@
  * O swap é preguiçoso: acontece no primeiro seek, quando fontes e layout já
  * assentaram. Cada troca de frame espera `img.decode()`, então o screenshot
  * nunca pega um frame meio decodificado.
+ *
+ * A <img> herda `object-fit`/`object-position` computados do vídeo e leva o motion dele
+ * (`data-ff-motion`, `data-ff-comp-start`): enter/exit/emphasis e a câmera animam a <img>.
+ * Limite: a <img> é `position:fixed`, então motion num ANCESTRAL do vídeo não a move.
  */
 export const MEDIA_SHIM_SOURCE = `(() => {
   const manifest = window.__ffMedia;
@@ -14,6 +18,8 @@ export const MEDIA_SHIM_SOURCE = `(() => {
     return;
   }
   const fps = manifest.fps.num / manifest.fps.den;
+  // Quem o shim vai trocar: o runtime do motion confere antes de aceitar motion num <video>.
+  window.__ffMediaShim = new Set(manifest.clips.map((clip) => clip.clipId));
   const entries = [];
   let swapped = false;
 
@@ -24,19 +30,26 @@ export const MEDIA_SHIM_SOURCE = `(() => {
       );
       if (!video) continue;
       const box = video.getBoundingClientRect();
+      const style = getComputedStyle(video);
       const img = document.createElement("img");
       img.src = "/__ff_media/" + clip.dir + "/000000.jpg";
       img.setAttribute("data-ff-media", clip.clipId);
       // A <img> substituta precisa participar da mesma janela de visibilidade.
-      for (const attribute of ["data-ff-start", "data-ff-end"]) {
+      for (const attribute of ["data-ff-start", "data-ff-end", "data-ff-comp-start", "data-ff-motion"]) {
         const value = video.getAttribute(attribute);
         if (value !== null) img.setAttribute(attribute, value);
       }
       img.style.cssText =
         "position:fixed;left:" + box.left + "px;top:" + box.top + "px;width:" + box.width + "px;height:" +
-        box.height + "px;object-fit:contain;display:block;";
+        box.height + "px;object-fit:" + style.objectFit + ";object-position:" + style.objectPosition + ";display:block;";
       video.parentNode.insertBefore(img, video.nextSibling);
       video.style.display = "none";
+      if (img.hasAttribute("data-ff-motion")) {
+        if (!window.__ffMotion) {
+          throw new Error("E_MOTION_TARGET: o runtime do motion não está na página; o movimento do <video> " + clip.clipId + " não pode ser aplicado");
+        }
+        window.__ffMotion.attach(img);
+      }
       entries.push({ clip, img, lastFrame: -1 });
     }
   };
@@ -45,7 +58,8 @@ export const MEDIA_SHIM_SOURCE = `(() => {
     if (!swapped) {
       swapped = true;
       swap();
-      // A <img> acabou de nascer: precisa da mesma visibilidade deste frame.
+      // A <img> acabou de nascer: precisa da mesma visibilidade e do mesmo instante de animação deste frame.
+      window.__ff.syncAnimations();
       window.__ff.syncVisibility();
     }
     const seconds = ms / 1000;

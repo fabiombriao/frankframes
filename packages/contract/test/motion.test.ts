@@ -206,7 +206,6 @@ test("alvos inválidos: E_MOTION_TARGET", () => {
     ["raiz", `<html><body><div data-composition-id="main" data-root="true" data-enter="surgir"><div data-start="0" data-duration="2"></div></div></body></html>`],
     ["fora de clip", root('<section data-enter="surgir"></section><div data-start="0" data-duration="2"></div>')],
     ["áudio", root('<audio src="a.mp3" data-start="0" data-duration="2" data-enter="surgir"></audio>')],
-    ["vídeo", root('<video src="a.mp4" data-start="0" data-duration="2" data-enter="surgir"></video>')],
     ["câmera em div", root('<div data-start="0" data-duration="2" data-camera="x"></div>')],
     ["transição em descendente", root('<div data-start="0" data-duration="2"><p data-transition="x"></p></div>')],
   ];
@@ -467,8 +466,8 @@ test("keyframes: cada tipo de ponto inválido dá E_KEYFRAME_INVALID", () => {
       { time: 0, clip: "inset(0% 0% 0% 0%)" },
       { time: 1, clip: "circle(50% at 50% 50%)" },
     ],
-    "zoom reservado à câmera": [{ time: 0, zoom: 1.2 }],
-    "focusX reservado à câmera": [{ time: 0, focusX: 50 }],
+    "zoom em div": [{ time: 0, zoom: 1.2 }],
+    "focusX em div": [{ time: 0, focusX: 0.5 }],
     "x com unidade inválida": [{ time: 0, x: "3em" }],
   };
   for (const [name, points] of Object.entries(cases)) {
@@ -591,7 +590,9 @@ test("mola em preset: surgir dur=1 curve=mola emite linear() na chave", () => {
 
 // ---------- EDT-51: 26 presets próprios (docs/motion.md) ----------
 
-const ATTR_OF_KIND = { enter: "data-enter", exit: "data-exit", emphasis: "data-emphasis" } as const;
+const ATTR_OF_KIND = { enter: "data-enter", exit: "data-exit", emphasis: "data-emphasis", camera: "data-camera" } as const;
+/** Câmera só vale em img/video: os testes de preset usam <img> para ela. */
+const tagOf = (kind: string): string => (kind === "camera" ? "img" : "div");
 const NEUTRAL: Record<string, number | string> = {
   opacity: 1,
   "--ff-x": 0,
@@ -603,11 +604,12 @@ const NEUTRAL: Record<string, number | string> = {
   "clip-path": "inset(0% 0% 0% 0%)",
 };
 
-test("presets: 12 de entrada, 8 de saída, 6 de ênfase; nomes únicos e ASCII", () => {
+test("presets: 12 de entrada, 8 de saída, 6 de ênfase, 5 de câmera; nomes únicos e ASCII", () => {
   assert.equal(listPresets("enter").length, 12);
   assert.equal(listPresets("exit").length, 8);
   assert.equal(listPresets("emphasis").length, 6);
-  assert.equal(listPresets().length, 26);
+  assert.equal(listPresets("camera").length, 5);
+  assert.equal(listPresets().length, 31);
   const names = listPresets().map((p) => p.name);
   assert.equal(new Set(names).size, names.length);
   for (const name of names) assert.match(name, /^[a-z][a-z0-9-]*$/);
@@ -617,7 +619,7 @@ test("presets: 12 de entrada, 8 de saída, 6 de ênfase; nomes únicos e ASCII",
 test("presets: todos com parâmetros padrão montam trilhas sem diagnóstico", () => {
   for (const preset of listPresets()) {
     const attr = ATTR_OF_KIND[preset.kind as keyof typeof ATTR_OF_KIND];
-    const c = clip(`${attr}="${preset.name}"`);
+    const c = clip(`${attr}="${preset.name}"`, 5, tagOf(preset.kind));
     assert.equal(c.ok, true, `${preset.name}: ${JSON.stringify(c.diagnostics)}`);
     assert.deepEqual(c.diagnostics, [], preset.name);
     assert.ok((c.motion["c"]?.[0]?.tracks.length ?? 0) > 0, `${preset.name} sem trilhas`);
@@ -625,7 +627,7 @@ test("presets: todos com parâmetros padrão montam trilhas sem diagnóstico", (
 });
 
 test("presets: entrada termina no neutro, saída começa nele, ênfase começa e termina nele", () => {
-  for (const preset of listPresets()) {
+  for (const preset of listPresets().filter((p) => p.kind !== "camera")) {
     const attr = ATTR_OF_KIND[preset.kind as keyof typeof ATTR_OF_KIND];
     const c = clip(`${attr}="${preset.name}"`);
     for (const track of c.motion["c"]![0]!.tracks) {
@@ -929,4 +931,134 @@ test("split: data-keyframes no mesmo elemento fica no elemento; style inline de 
   const conflito = splitClip('data-split="word" data-enter="subir"', '<span data-unit style="translate: 3px">a</span>');
   assert.equal(conflito.ok, false);
   assert.ok(conflito.diagnostics.some((d) => d.code === "E_MOTION_CONFLICT" && /unidade 1/.test(d.message)));
+});
+
+// ---------- EDT-53: câmera em imagem e vídeo (docs/contract.md §7b.9) ----------
+
+const cameraClip = (attrs: string, duration = 4, tag = "img"): Composition => clip(attrs, duration, tag);
+const zoomKeys = (c: Composition): Array<number | string> => trackOf(c, "--ff-zoom").keys.map((k) => k.value);
+
+test("câmera: aproximar numa <img> de 4 s dá zoom 1 em 0 s e 1.15 em 4 s", () => {
+  const c = cameraClip('data-camera="aproximar"');
+  assert.equal(c.ok, true, JSON.stringify(c.diagnostics));
+  const track = trackOf(c, "--ff-zoom");
+  assert.equal(track.start, 0);
+  assert.equal(track.duration, 4);
+  assert.deepEqual(zoomKeys(c), [1, 1.15]);
+  // Foco padrão (0.5) é o valor registrado: não gera trilha, para não disputar com data-keyframes.
+  assert.deepEqual(c.motion["c"]![0]!.tracks.map((t) => t.prop), ["--ff-zoom"]);
+});
+
+test("câmera: sem dur= ocupa de at até o fim do clip; dur= explícito vale", () => {
+  const late = trackOf(cameraClip('data-camera="aproximar at=1"'), "--ff-zoom");
+  assert.equal(late.start, 1);
+  assert.equal(late.duration, 3);
+  const short = trackOf(cameraClip('data-camera="aproximar dur=2"'), "--ff-zoom");
+  assert.equal(short.duration, 2);
+  const tail = trackOf(cameraClip('data-camera="aproximar at=end-1"'), "--ff-zoom");
+  assert.equal(tail.start, 3);
+  assert.equal(tail.duration, 1);
+});
+
+test("câmera: at no fim do clip ou depois dele dá E_MOTION_OUT_OF_RANGE", () => {
+  for (const at of ["4", "5", "end"]) {
+    const c = cameraClip(`data-camera="aproximar at=${at}"`);
+    assert.equal(c.ok, false, at);
+    assert.ok(codes(c).includes("E_MOTION_OUT_OF_RANGE"), `${at}: ${JSON.stringify(codes(c))}`);
+  }
+});
+
+test("câmera: afastar inverte o zoom; fx e fy fora de 0.5 viram trilhas constantes", () => {
+  const out = cameraClip('data-camera="afastar amount=2 fx=0.2 fy=0.9"');
+  assert.equal(out.ok, true, JSON.stringify(out.diagnostics));
+  assert.deepEqual(zoomKeys(out), [2, 1]);
+  assert.deepEqual(trackOf(out, "--ff-fx").keys.map((k) => k.value), [0.2, 0.2]);
+  assert.deepEqual(trackOf(out, "--ff-fy").keys.map((k) => k.value), [0.9, 0.9]);
+});
+
+test("câmera: panorâmicas mantêm o zoom e percorrem o foco horizontal", () => {
+  const left = cameraClip('data-camera="panoramica-esquerda"');
+  assert.deepEqual(zoomKeys(left), [1.12, 1.12]);
+  assert.deepEqual(trackOf(left, "--ff-fx").keys.map((k) => k.value), [0.75, 0.25]);
+  const right = cameraClip('data-camera="panoramica-direita amount=1.3"');
+  assert.deepEqual(zoomKeys(right), [1.3, 1.3]);
+  assert.deepEqual(trackOf(right, "--ff-fx").keys.map((k) => k.value), [0.25, 0.75]);
+  assert.equal(trackOf(right, "--ff-fx").keys[0]!.easing, "linear");
+});
+
+test("câmera: deriva tem três trilhas lineares", () => {
+  const c = cameraClip('data-camera="deriva"', 6);
+  assert.equal(c.ok, true, JSON.stringify(c.diagnostics));
+  assert.deepEqual(c.motion["c"]![0]!.tracks.map((t) => t.prop), ["--ff-zoom", "--ff-fx", "--ff-fy"]);
+  assert.deepEqual(zoomKeys(c), [1.06, 1.1]);
+  assert.deepEqual(trackOf(c, "--ff-fx").keys.map((k) => k.value), [0.45, 0.55]);
+  assert.deepEqual(trackOf(c, "--ff-fy").keys.map((k) => k.value), [0.48, 0.52]);
+});
+
+test("câmera: vale em <video>; em <div> dá E_MOTION_TARGET com hint", () => {
+  const video = cameraClip('data-camera="aproximar"', 4, "video");
+  assert.equal(video.ok, true, JSON.stringify(video.diagnostics));
+  const div = cameraClip('data-camera="aproximar"', 4, "div");
+  assert.equal(div.ok, false);
+  const error = div.diagnostics.find((d) => d.code === "E_MOTION_TARGET");
+  assert.ok(error?.hint, JSON.stringify(div.diagnostics));
+});
+
+test("câmera: amount e foco fora da faixa dão E_MOTION_PARAM", () => {
+  for (const bad of ["amount=0.9", "amount=4.1", "fx=1.1", "fy=-0.1"]) {
+    const c = cameraClip(`data-camera="aproximar ${bad}"`);
+    assert.equal(c.ok, false, bad);
+    assert.ok(codes(c).includes("E_MOTION_PARAM"), `${bad}: ${JSON.stringify(codes(c))}`);
+  }
+  // panorâmica não tem fx: o foco horizontal é o próprio movimento.
+  assert.ok(codes(cameraClip('data-camera="panoramica-direita fx=0.5"')).includes("E_MOTION_PARAM"));
+});
+
+test("câmera: zoom e foco em data-keyframes valem em <img>/<video> e têm faixa própria", () => {
+  const points = [
+    { time: 0, zoom: 1, focusX: 0.2, focusY: 0.8 },
+    { time: 2, zoom: 2.5, focusX: 0.8, focusY: 0.2 },
+  ];
+  for (const tag of ["img", "video"]) {
+    const c = cameraClip(`data-keyframes='${JSON.stringify(points)}'`, 3, tag);
+    assert.equal(c.ok, true, `${tag}: ${JSON.stringify(c.diagnostics)}`);
+    assert.deepEqual(zoomKeys(c), [1, 2.5]);
+    assert.deepEqual(trackOf(c, "--ff-fx").keys.map((k) => k.value), [0.2, 0.8]);
+  }
+  const bad: Record<string, object> = { "zoom 0.5": { zoom: 0.5 }, "zoom 4.5": { zoom: 4.5 }, "focusX 1.2": { focusX: 1.2 }, "focusY -0.1": { focusY: -0.1 } };
+  for (const [name, point] of Object.entries(bad)) {
+    const c = cameraClip(`data-keyframes='${JSON.stringify([{ time: 0, ...point }])}'`, 3);
+    assert.equal(c.ok, false, name);
+    assert.ok(codes(c).includes("E_KEYFRAME_INVALID"), `${name}: ${JSON.stringify(codes(c))}`);
+  }
+});
+
+test('câmera: zoom em <div> dá E_KEYFRAME_INVALID com o hint "zoom e foco só valem em img ou video"', () => {
+  const c = kf([{ time: 0, zoom: 1.2 }]);
+  assert.equal(c.ok, false);
+  const error = c.diagnostics.find((d) => d.code === "E_KEYFRAME_INVALID");
+  assert.ok(error?.hint?.includes("zoom e foco só valem em img ou video"), JSON.stringify(c.diagnostics));
+});
+
+test("câmera: data-camera e keyframes de zoom no mesmo alvo se sobrepõem (E_MOTION_OVERLAP)", () => {
+  const c = cameraClip(`data-camera="aproximar" data-keyframes='[{"time":0,"zoom":1},{"time":1,"zoom":2}]'`);
+  assert.equal(c.ok, false);
+  assert.ok(codes(c).includes("E_MOTION_OVERLAP"), JSON.stringify(codes(c)));
+});
+
+test("câmera: object-view-box no style inline com câmera é E_MOTION_CONFLICT", () => {
+  const c = cameraClip('data-camera="aproximar" style="object-view-box:inset(10%)"');
+  assert.equal(c.ok, false);
+  assert.ok(codes(c).includes("E_MOTION_CONFLICT"), JSON.stringify(codes(c)));
+});
+
+test("câmera: uma <img> pode ter entrada e câmera ao mesmo tempo", () => {
+  const c = cameraClip('data-enter="surgir" data-camera="aproximar"');
+  assert.equal(c.ok, true, JSON.stringify(c.diagnostics));
+  assert.deepEqual(c.motion["c"]![0]!.tracks.map((t) => t.prop).sort(), ["--ff-zoom", "opacity"]);
+});
+
+test("motion em <video> deixou de ser recusado (EDT-53)", () => {
+  const c = cameraClip('data-enter="surgir"', 4, "video");
+  assert.equal(c.ok, true, JSON.stringify(c.diagnostics));
 });

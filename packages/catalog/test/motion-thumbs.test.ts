@@ -12,7 +12,7 @@ const MOTION_DOC = fileURLToPath(new URL("../../../docs/motion.md", import.meta.
 
 test("todo preset tem miniatura GIF real de até 200 KB", async () => {
   const presets = listPresets();
-  assert.ok(presets.length >= 26, `esperado ao menos 26 presets, obtido ${presets.length}`);
+  assert.ok(presets.length >= 31, `esperado ao menos 31 presets, obtido ${presets.length}`);
   for (const preset of presets) {
     const file = join(MOTION_THUMBS_DIR, `${preset.name}.gif`);
     const bytes = await readFile(file).catch(() => null);

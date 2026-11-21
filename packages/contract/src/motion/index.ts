@@ -106,9 +106,8 @@ export function resolveMotion(
       error(CODES.MOTION_TARGET, message, hint);
     };
     if (source.tag === "audio") refuse(`motion em <audio> em ${where}`, "áudio não tem imagem; use data-fade-in/data-fade-out");
-    if (source.tag === "video") refuse(`motion em <video> em ${where} ainda não é suportado`, "anime um wrapper do vídeo, ou use <img>");
-    if (source.attrs.camera !== undefined && source.tag !== "img") {
-      refuse(`data-camera só vale em <img>: ${where}`, "mova data-camera para o <img> do clip");
+    if (source.attrs.camera !== undefined && source.tag !== "img" && source.tag !== "video") {
+      refuse(`data-camera só vale em <img> e <video>: ${where}`, "mova data-camera para o <img> ou <video> do clip");
     }
     if (source.attrs.transition !== undefined && !source.own) {
       refuse(`data-transition em descendente em ${where}`, "data-transition vale só no clip que entra: mova para o clip");
@@ -326,6 +325,8 @@ function planPreset(input: PlanInput): Planned | "failed" | "waiting" {
     error(CODES.MOTION_PARAM, `${attrName} de ${where}: ${message}`, hint);
   };
 
+  // Câmera sem `dur=`: a duração vem do clip (`at` até o fim), calculada depois de achar o `at`.
+  const fillsClip = preset.fillsClip === true && params["dur"] === undefined;
   let dur = preset.dur;
   if (params["dur"] !== undefined) {
     const seconds = parseSeconds(params["dur"]);
@@ -383,9 +384,9 @@ function planPreset(input: PlanInput): Planned | "failed" | "waiting" {
   if (!ok || !resolved.curve) return "failed";
 
   // Âncora -> instante local. `end` e `p%` precisam de D.
-  const total = dur * preset.cycles(values);
+  let total = dur * preset.cycles(values);
   const defaultEnd = kind === "exit";
-  const needsD = anchor === null ? defaultEnd : anchor.kind !== "seconds";
+  const needsD = fillsClip || (anchor === null ? defaultEnd : anchor.kind !== "seconds");
   let at: number;
   if (needsD) {
     if (D === undefined) {
@@ -393,7 +394,7 @@ function planPreset(input: PlanInput): Planned | "failed" | "waiting" {
       error(CODES.MOTION_OUT_OF_RANGE, `${attrName} de ${where} depende da duração do clip, que não está definida`, "defina data-duration no clip");
       return "failed";
     }
-    if (anchor === null) at = D;
+    if (anchor === null) at = defaultEnd ? D : 0;
     else if (anchor.kind === "percent") at = (anchor.value / 100) * D;
     else if (anchor.kind === "end") at = D - anchor.before;
     else at = anchor.value;
@@ -407,6 +408,17 @@ function planPreset(input: PlanInput): Planned | "failed" | "waiting" {
     at = entering ? entering.start + entering.duration + lastShift : 0;
   }
 
+  if (fillsClip) {
+    total = D! - at; // D definido: o ramo `needsD` acima devolveu "waiting" ou "failed" sem ele
+    if (total <= EPS) {
+      error(
+        CODES.MOTION_OUT_OF_RANGE,
+        `${attrName} de ${where} começa em ${round6(at)} s e o clip só tem ${round6(D!)} s`,
+        `sem dur, a câmera ocupa do at até o fim do clip: use at menor que ${round6(D!)} s`,
+      );
+      return "failed";
+    }
+  }
   const start = kind === "exit" ? at - total : at;
   const end = start + total;
   const shifts = input.unitShifts?.(start);

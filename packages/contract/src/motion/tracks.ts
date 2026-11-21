@@ -11,6 +11,10 @@ export const MOTION_PROPERTIES: ReadonlyArray<{ name: string; syntax: string; in
   { name: "--ff-sy", syntax: "<number>", initial: "1" },
   { name: "--ff-rot", syntax: "<angle>", initial: "0deg" },
   { name: "--ff-blur", syntax: "<length>", initial: "0px" },
+  // Câmera (§7b.9): zoom ≥ 1 e foco em [0,1] dentro da imagem.
+  { name: "--ff-zoom", syntax: "<number>", initial: "1" },
+  { name: "--ff-fx", syntax: "<number>", initial: "0.5" },
+  { name: "--ff-fy", syntax: "<number>", initial: "0.5" },
 ];
 
 /** Propriedade CSS que o motion passa a possuir, por propriedade animada. */
@@ -23,7 +27,20 @@ export const OWNED_BY_PROP: Readonly<Record<string, string>> = {
   "--ff-rot": "rotate",
   "--ff-blur": "filter",
   "clip-path": "clip-path",
+  "--ff-zoom": "object-view-box",
+  "--ff-fx": "object-view-box",
+  "--ff-fy": "object-view-box",
 };
+
+/**
+ * Recorte da câmera: `m` = 100% − 100%/zoom é a parte da imagem que fica de fora; o foco reparte
+ * `m` entre os lados (fx = 0 mostra a borda esquerda, fx = 1 a direita). Escrito sem variável
+ * intermediária: o Chrome reavalia `calc()` com `var()` registrada a cada frame.
+ */
+const CAMERA_M = "(100% - 100% / var(--ff-zoom))";
+const CAMERA_VIEW_BOX =
+  `inset(calc(var(--ff-fy) * ${CAMERA_M}) calc((1 - var(--ff-fx)) * ${CAMERA_M}) ` +
+  `calc((1 - var(--ff-fy)) * ${CAMERA_M}) calc(var(--ff-fx) * ${CAMERA_M}))`;
 
 /** Ligação de cada propriedade possuída às variáveis, na ordem em que entram no `style`. */
 const BINDINGS: ReadonlyArray<{ css: string; value: string; uses: string[] }> = [
@@ -31,6 +48,7 @@ const BINDINGS: ReadonlyArray<{ css: string; value: string; uses: string[] }> = 
   { css: "scale", value: "var(--ff-sx) var(--ff-sy)", uses: ["--ff-sx", "--ff-sy"] },
   { css: "rotate", value: "var(--ff-rot)", uses: ["--ff-rot"] },
   { css: "filter", value: "blur(var(--ff-blur))", uses: ["--ff-blur"] },
+  { css: "object-view-box", value: CAMERA_VIEW_BOX, uses: ["--ff-zoom", "--ff-fx", "--ff-fy"] },
 ];
 
 /** Declarações de ligação que o alvo precisa, dadas as propriedades animadas. */
@@ -66,6 +84,9 @@ export const CSS_PROP_OF: Readonly<Record<MotionProp, string>> = {
   rotate: "--ff-rot",
   blur: "--ff-blur",
   clip: "clip-path",
+  zoom: "--ff-zoom",
+  focusX: "--ff-fx",
+  focusY: "--ff-fy",
 };
 
 /** Ordem canônica das trilhas de keyframes. */

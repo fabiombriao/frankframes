@@ -1,7 +1,9 @@
 // FrankFrames — proprietário. Ver LICENSE na raiz.
 /**
  * Gera `catalog/motion/thumbs/<nome>.gif` para cada preset de motion (docs/motion.md).
- * Cena de 320×180 a 15 fps: cartão "Aa" sobre fundo escuro, renderizado pelo próprio engine.
+ * Cena de 320×180 a 15 fps: cartão "Aa" sobre fundo escuro (câmera: uma foto de teste do FFmpeg),
+ * renderizado pelo próprio engine. Sem argumento gera todos; `node scripts/generate-motion-thumbs.ts camera`
+ * (ou o nome de um preset) regenera só esses, sem mexer nos demais GIFs.
  * O GIF não é teste de determinismo: regenerar pode mudar bytes (Chrome e fonte).
  */
 import { execFile } from "node:child_process";
@@ -29,6 +31,10 @@ const MAX_COLORS = 48;
 
 const ATTR_OF = { enter: "data-enter", exit: "data-exit", emphasis: "data-emphasis" } as const;
 
+/** Câmera: a foto ocupa o quadro todo e o movimento vai do começo ao fim do clip. */
+const CAMERA_SECONDS = 2;
+const CAMERA_PHOTO = "foto.png";
+
 /** Atributo de motion do cartão: entrada e ênfase começam depois da margem; a saída termina antes do fim. */
 function motionAttr(preset: PresetDef): string {
   const kind = preset.kind;
@@ -37,8 +43,33 @@ function motionAttr(preset: PresetDef): string {
   return `${ATTR_OF[kind]}="${preset.name} at=${at}"`;
 }
 
+/** Cena da câmera: uma foto de teste (gerada pelo FFmpeg) em tela cheia, com o preset sem parâmetros. */
+function cameraSceneHtml(preset: PresetDef): { html: string; seconds: number } {
+  const seconds = CAMERA_SECONDS;
+  const html = `<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>${preset.name}</title>
+<style>
+  html, body { margin: 0; background: #14161a; }
+  .stage { position: relative; width: 320px; height: 180px; overflow: hidden; background: #14161a; }
+  img { position: absolute; left: 0; top: 0; width: 320px; height: 180px; object-fit: cover; }
+</style>
+</head>
+<body>
+<div class="stage" data-composition-id="thumb-${preset.name}" data-root="true" data-width="320" data-height="180" data-fps="${FPS}" data-duration="${seconds}">
+  <img src="${CAMERA_PHOTO}" data-clip-id="photo" data-start="0" data-duration="${seconds}" data-camera="${preset.name}" alt="">
+</div>
+</body>
+</html>
+`;
+  return { html, seconds };
+}
+
 /** Cena do preset. Duração: dur × ciclos padrão + margem dos dois lados. */
 function sceneHtml(preset: PresetDef): { html: string; seconds: number } {
+  if (preset.kind === "camera") return cameraSceneHtml(preset);
   const defaults: Record<string, number> = {};
   for (const spec of preset.params) {
     if (spec.kind === "number" || spec.kind === "int") defaults[spec.key] = spec.default;
@@ -76,6 +107,10 @@ async function makeGif(preset: PresetDef, work: string, ffmpeg: string): Promise
   const { html } = sceneHtml(preset);
   const entry = join(dir, "index.html");
   await writeFile(entry, html);
+  if (preset.kind === "camera") {
+    // Foto de teste 1280×720 (testsrc2): tem detalhe e bordas, então o zoom e o foco aparecem na miniatura.
+    await run(ffmpeg, ["-y", "-v", "error", "-f", "lavfi", "-i", "testsrc2=size=1280x720:rate=1", "-frames:v", "1", join(dir, CAMERA_PHOTO)]);
+  }
 
   const prepared = await prepare({ entry, workDir: join(dir, "work") });
   const server = await startServer(prepared.entryDir, {
@@ -130,11 +165,15 @@ async function makeGif(preset: PresetDef, work: string, ffmpeg: string): Promise
 }
 
 const presets = listPresets();
+// Argumento opcional: um tipo (enter, exit, emphasis, camera) ou o nome de um preset; só esses são regenerados.
+const only = process.argv[2];
+const selected = only === undefined ? presets : presets.filter((p) => p.kind === only || p.name === only);
+if (selected.length === 0) throw new Error(`nenhum preset com tipo ou nome "${only}"`);
 const work = await mkdtemp(join(tmpdir(), "frankframes-motion-thumbs-"));
 try {
   await mkdir(target, { recursive: true });
   const { ffmpeg } = await resolveFfmpeg();
-  const results = await mapPool(presets, defaultConcurrency(), async (preset) => {
+  const results = await mapPool(selected, defaultConcurrency(), async (preset) => {
     const result = await makeGif(preset, work, ffmpeg);
     process.stdout.write(`${preset.name.padEnd(18)} ${String(result.frames).padStart(3)} quadros · ${(result.bytes / 1024).toFixed(0)} KB\n`);
     return result;
@@ -148,7 +187,7 @@ try {
     }
   }
   const total = results.reduce((sum, r) => sum + r.bytes, 0);
-  process.stdout.write(`${presets.length} miniaturas · ${(total / 1024).toFixed(0)} KB no total\n`);
+  process.stdout.write(`${selected.length} miniaturas · ${(total / 1024).toFixed(0)} KB no total\n`);
 } finally {
   await rm(work, { recursive: true, force: true });
 }

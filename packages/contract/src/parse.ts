@@ -169,7 +169,7 @@ function buildClip(
   const rawKeyframes = attr(node, "data-keyframes");
   const ownKeyframes =
     rawKeyframes !== undefined && rawKeyframes.trim() !== ""
-      ? parseKeyframes(rawKeyframes, { clipId: id, own: true, diagnostics })
+      ? parseKeyframes(rawKeyframes, { clipId: id, own: true, tag, diagnostics })
       : undefined;
   const keyframes = ownKeyframes !== undefined && ownKeyframes.volume.length > 0 ? ownKeyframes.volume : undefined;
 
@@ -252,7 +252,7 @@ function buildClip(
     const parsedKeyframes = own
       ? ownKeyframes
       : rawElementKeyframes !== undefined && rawElementKeyframes.trim() !== ""
-        ? parseKeyframes(rawElementKeyframes, { clipId: id, own: false, diagnostics })
+        ? parseKeyframes(rawElementKeyframes, { clipId: id, own: false, tag: element.nodeName, diagnostics })
         : undefined;
     const attrs = motionAttrsOf(element);
     const visual = parsedKeyframes?.visual ?? [];

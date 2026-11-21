@@ -69,8 +69,10 @@ export interface PresetDef {
   /** Rótulo em português com acento, para UI. */
   label: string;
   kind: MotionKind;
-  /** Duração padrão por ciclo, em segundos. */
+  /** Duração padrão por ciclo, em segundos. Com `fillsClip`, é só a referência de UI e miniaturas. */
   dur: number;
+  /** Câmera: sem `dur=`, o movimento ocupa do `at` até o fim do clip (a duração vem do clip, não do preset). */
+  fillsClip?: boolean;
   /** Nome da curva padrão. */
   curve: string;
   params: ParamSpec[];
@@ -151,6 +153,33 @@ const amountParam = (min: number, max: number, initial: number, unit: string): P
   doc: `${unit}, em [${min},${max}]`,
 });
 const repeatParam: ParamSpec = { key: "repeat", kind: "int", min: 1, max: 20, default: 1, doc: "ciclos, inteiro em [1,20]" };
+
+/** Parâmetros de foco da câmera: fração da imagem, 0 = borda esquerda/topo, 1 = direita/base. */
+const focusParam = (key: "fx" | "fy", doc: string): ParamSpec => ({ key, kind: "number", min: 0, max: 1, default: 0.5, doc: `${doc}, em [0,1]` });
+const FOCUS_X = focusParam("fx", "foco horizontal (0 = borda esquerda, 1 = direita)");
+const FOCUS_Y = focusParam("fy", "foco vertical (0 = topo, 1 = base)");
+const ZOOM_MAX = 4;
+
+/** Trilha constante da câmera: duas chaves iguais, para a trilha existir mesmo sem movimento. */
+const hold = (prop: string, value: number, easing: string): { prop: string; keys: MotionKey[] } => ({
+  prop,
+  keys: [
+    { offset: 0, value, easing },
+    { offset: 1, value, easing: null },
+  ],
+});
+/** Foco parado só vira trilha quando difere do registrado (0.5): assim `aproximar` não disputa o foco com `data-keyframes`. */
+const holdFocus = (ctx: PresetContext, key: "fx" | "fy", prop: string): Array<{ prop: string; keys: MotionKey[] }> => {
+  const value = ctx.params[key] ?? 0.5;
+  return value === 0.5 ? [] : [hold(prop, value, ctx.curve)];
+};
+const ramps = (prop: string, from: number, to: number, ctx: PresetContext): { prop: string; keys: MotionKey[] } => ({
+  prop,
+  keys: [
+    { offset: 0, value: from, easing: ctx.curve },
+    { offset: 1, value: to, easing: null },
+  ],
+});
 
 const SCALE = "escala";
 const DEGREES = "graus";
@@ -278,6 +307,33 @@ export const PRESETS: readonly PresetDef[] = [
     // Sobe com `freio` e volta com `arranque`; `curve=` do autor vale para os dois trechos.
     name: "quicar", label: "Quicar", kind: "emphasis", dur: 0.5, curve: "freio", params: [distanceParam(16), repeatParam], cycles: repeats,
     build: (ctx) => [{ prop: "--ff-y", keys: cycled(ctx, [[0, 0], [0.5, distance("distance", -1)(ctx), "arranque"]], 0) }],
+  },
+
+  // ---- câmera (§7b.9): só em <img> e <video>; ocupam o clip inteiro por padrão ----
+  {
+    name: "aproximar", label: "Aproximar", kind: "camera", dur: 4, fillsClip: true, curve: "suave",
+    params: [amountParam(1, ZOOM_MAX, 1.15, "zoom final"), FOCUS_X, FOCUS_Y], cycles: once,
+    build: (ctx) => [ramps("--ff-zoom", 1, amount(ctx), ctx), ...holdFocus(ctx, "fx", "--ff-fx"), ...holdFocus(ctx, "fy", "--ff-fy")],
+  },
+  {
+    name: "afastar", label: "Afastar", kind: "camera", dur: 4, fillsClip: true, curve: "suave",
+    params: [amountParam(1, ZOOM_MAX, 1.15, "zoom inicial"), FOCUS_X, FOCUS_Y], cycles: once,
+    build: (ctx) => [ramps("--ff-zoom", amount(ctx), 1, ctx), ...holdFocus(ctx, "fx", "--ff-fx"), ...holdFocus(ctx, "fy", "--ff-fy")],
+  },
+  {
+    name: "panoramica-esquerda", label: "Panorâmica à esquerda", kind: "camera", dur: 4, fillsClip: true, curve: "linear",
+    params: [amountParam(1, ZOOM_MAX, 1.12, "zoom fixo (a sobra da imagem é o que a câmera percorre)"), FOCUS_Y], cycles: once,
+    build: (ctx) => [hold("--ff-zoom", amount(ctx), ctx.curve), ramps("--ff-fx", 0.75, 0.25, ctx), ...holdFocus(ctx, "fy", "--ff-fy")],
+  },
+  {
+    name: "panoramica-direita", label: "Panorâmica à direita", kind: "camera", dur: 4, fillsClip: true, curve: "linear",
+    params: [amountParam(1, ZOOM_MAX, 1.12, "zoom fixo (a sobra da imagem é o que a câmera percorre)"), FOCUS_Y], cycles: once,
+    build: (ctx) => [hold("--ff-zoom", amount(ctx), ctx.curve), ramps("--ff-fx", 0.25, 0.75, ctx), ...holdFocus(ctx, "fy", "--ff-fy")],
+  },
+  {
+    // Deriva lenta, quase imperceptível: tira a imagem parada sem chamar atenção.
+    name: "deriva", label: "Deriva", kind: "camera", dur: 6, fillsClip: true, curve: "linear", params: [], cycles: once,
+    build: (ctx) => [ramps("--ff-zoom", 1.06, 1.1, ctx), ramps("--ff-fx", 0.45, 0.55, ctx), ramps("--ff-fy", 0.48, 0.52, ctx)],
   },
 ];
 

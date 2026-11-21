@@ -74,6 +74,13 @@ Presets de entrada (12): `surgir`, `subir`, `descer`, `chegar-esquerda`, `chegar
 `partir-baixo`, `partir-esquerda`, `partir-direita`, `recuar`, `desfocar`, `fechar`. De ênfase (6):
 `pulsar`, `balancar`, `tremer`, `respirar`, `piscar`, `quicar`.
 
+Câmera em foto ou vídeo (só `<img>` e `<video>`): `data-camera="<preset> [amount=] [fx=] [fy=] [at=] [dur=]"`
+com `aproximar`, `afastar`, `panoramica-esquerda`, `panoramica-direita` e `deriva`. Sem `dur`, o movimento vai do
+`at` até o fim do clip. Exemplo: `<img data-clip-id="foto" data-start="0" data-duration="5" src="foto.jpg"
+data-camera="panoramica-direita">`. `zoom` (1 a 4) e `focusX`/`focusY` (0 a 1) também valem em `data-keyframes`,
+só em `<img>`/`<video>`. Num `<video>` o movimento age na `<img>` que o substitui no render, que herda o
+`object-fit` do vídeo; motion num ancestral do `<video>` não o move.
+
 Tipografia cinética: `data-split="word"` (ou `letter`, com `stagger=<s>` e `order=forward|reverse|center`)
 no elemento com texto, mais `data-enter`/`data-exit`/`data-emphasis` no mesmo elemento, anima cada palavra
 (ou letra) em sequência. Exemplo: `<h1 data-clip-id="t" data-start="0" data-duration="4"

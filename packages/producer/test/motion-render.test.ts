@@ -172,7 +172,9 @@ test("animação CSS do autor numa propriedade possuída falha na prontidão com
   }
 });
 
-test("o runtime recusa motion em <video> com E_MOTION_TARGET e JSON inválido com E_MOTION_RUNTIME", { timeout: 300_000 }, async (t) => {
+// EDT-53: motion em <video> vale quando o shim de mídia o troca por <img>; sem o shim (aqui, sem mídia
+// fora de banda) o runtime recusa com E_MOTION_TARGET em vez de animar um elemento que o Chrome não decodifica.
+test("o runtime recusa motion em <video> sem shim com E_MOTION_TARGET e JSON inválido com E_MOTION_RUNTIME", { timeout: 300_000 }, async (t) => {
   if (!(await chromeOrSkip(t))) return;
 
   const video = page("", `<video id="v" data-ff-motion='{"v":1,"a":[],"s":[]}'></video>`);
