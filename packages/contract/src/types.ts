@@ -133,6 +133,17 @@ export interface MotionTrack {
 export interface MotionTarget {
   ordinal: number;
   tag: string;
+  /**
+   * `true` no alvo sintético do clip A de uma transição (§7b.10): o elemento é o próprio clip,
+   * mesmo sem atributo de motion, então `ordinal` não o localiza em `motionElements`.
+   */
+  own?: true;
+  /**
+   * `true` nos alvos de uma transição (A e B, §7b.10): o producer fixa `will-change` neles para o elemento
+   * ficar numa camada própria desde o primeiro frame. Sem isso o raster da emenda entre os dois clips
+   * (bordas fracionárias) depende do frame visto antes, e o seek deixa de ser independente de ordem.
+   */
+  layer?: true;
   /** Trilhas do próprio elemento. Com `data-split`, só o que não é por unidade (`data-keyframes`). */
   tracks: MotionTrack[];
   /** Com `data-split`: as trilhas de cada unidade, na ordem do documento (§7b.8). */

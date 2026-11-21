@@ -80,6 +80,8 @@ export interface PresetDef {
   cycles: (params: Record<string, number>) => number;
   /** Chaves por propriedade CSS, com offsets em 0..1 da duração total. */
   build: (ctx: PresetContext) => Array<{ prop: string; keys: MotionKey[] }>;
+  /** Transição que também move o clip A (que sai): trilhas dele, no mesmo intervalo [0,1] da sobreposição (§7b.10). */
+  buildPartner?: (ctx: PresetContext) => Array<{ prop: string; keys: MotionKey[] }>;
 }
 
 const once = (): number => 1;
@@ -180,6 +182,23 @@ const ramps = (prop: string, from: number, to: number, ctx: PresetContext): { pr
     { offset: 1, value: to, easing: null },
   ],
 });
+
+/** Empurrar: B entra de fora e A sai pelo lado oposto. `dir` é o sentido do movimento (left: B vem da direita). */
+const PUSH_AXIS: Readonly<Record<Direction, { prop: string; sign: 1 | -1 }>> = {
+  left: { prop: "--ff-x", sign: 1 },
+  right: { prop: "--ff-x", sign: -1 },
+  up: { prop: "--ff-y", sign: 1 },
+  down: { prop: "--ff-y", sign: -1 },
+};
+const pushOffset = (sign: 1 | -1): string => (sign === 1 ? "100%" : "-100%");
+
+/** Íris: o raio final cobre o quadro (75% basta do centro; de outro foco, 150%). */
+const irisCircle = (ctx: PresetContext, radius: number): string => {
+  const pct = (n: number): number => Number((n * 100).toFixed(4));
+  return `circle(${radius}% at ${pct(ctx.params["fx"] ?? 0.5)}% ${pct(ctx.params["fy"] ?? 0.5)}%)`;
+};
+const irisFinal = (ctx: PresetContext): string =>
+  irisCircle(ctx, (ctx.params["fx"] ?? 0.5) === 0.5 && (ctx.params["fy"] ?? 0.5) === 0.5 ? 75 : 150);
 
 const SCALE = "escala";
 const DEGREES = "graus";
@@ -334,6 +353,37 @@ export const PRESETS: readonly PresetDef[] = [
     // Deriva lenta, quase imperceptível: tira a imagem parada sem chamar atenção.
     name: "deriva", label: "Deriva", kind: "camera", dur: 6, fillsClip: true, curve: "linear", params: [], cycles: once,
     build: (ctx) => [ramps("--ff-zoom", 1.06, 1.1, ctx), ramps("--ff-fx", 0.45, 0.55, ctx), ramps("--ff-fy", 0.48, 0.52, ctx)],
+  },
+
+  // ---- transição (§7b.10): em B, que entra; o intervalo é a sobreposição com A, não `dur` ----
+  {
+    name: "dissolver", label: "Dissolver", kind: "transition", dur: 0.5, curve: "suave", params: [], cycles: once,
+    build: ramp(fade(0, 1)),
+  },
+  {
+    name: "cortina", label: "Cortina", kind: "transition", dur: 0.5, curve: "vaivem", params: [dirParam("right")], cycles: once,
+    build: ramp({ prop: "clip-path", from: (ctx) => CLIP_OF[ctx.dirs["dir"] ?? "right"], to: OPEN }),
+  },
+  {
+    name: "empurrar", label: "Empurrar", kind: "transition", dur: 0.5, curve: "vaivem", params: [dirParam("left")], cycles: once,
+    build: (ctx) => {
+      const axis = PUSH_AXIS[ctx.dirs["dir"] ?? "left"];
+      return ramp({ prop: axis.prop, from: pushOffset(axis.sign), to: 0 })(ctx);
+    },
+    buildPartner: (ctx) => {
+      const axis = PUSH_AXIS[ctx.dirs["dir"] ?? "left"];
+      return ramp({ prop: axis.prop, from: 0, to: pushOffset(axis.sign === 1 ? -1 : 1) })(ctx);
+    },
+  },
+  {
+    name: "zoom", label: "Zoom", kind: "transition", dur: 0.5, curve: "freio", params: [], cycles: once,
+    build: ramp(fade(0, 1), ...scale(1.2, 1)),
+  },
+  {
+    name: "iris", label: "Íris", kind: "transition", dur: 0.5, curve: "arranque",
+    params: [focusParam("fx", "centro horizontal da íris (0 = borda esquerda, 1 = direita)"), focusParam("fy", "centro vertical da íris (0 = topo, 1 = base)")],
+    cycles: once,
+    build: ramp({ prop: "clip-path", from: (ctx) => irisCircle(ctx, 0), to: irisFinal }),
   },
 ];
 

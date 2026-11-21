@@ -604,12 +604,13 @@ const NEUTRAL: Record<string, number | string> = {
   "clip-path": "inset(0% 0% 0% 0%)",
 };
 
-test("presets: 12 de entrada, 8 de saída, 6 de ênfase, 5 de câmera; nomes únicos e ASCII", () => {
+test("presets: 12 de entrada, 8 de saída, 6 de ênfase, 5 de câmera, 5 de transição; nomes únicos e ASCII", () => {
   assert.equal(listPresets("enter").length, 12);
   assert.equal(listPresets("exit").length, 8);
   assert.equal(listPresets("emphasis").length, 6);
   assert.equal(listPresets("camera").length, 5);
-  assert.equal(listPresets().length, 31);
+  assert.equal(listPresets("transition").length, 5);
+  assert.equal(listPresets().length, 36);
   const names = listPresets().map((p) => p.name);
   assert.equal(new Set(names).size, names.length);
   for (const name of names) assert.match(name, /^[a-z][a-z0-9-]*$/);
@@ -617,7 +618,8 @@ test("presets: 12 de entrada, 8 de saída, 6 de ênfase, 5 de câmera; nomes ún
 });
 
 test("presets: todos com parâmetros padrão montam trilhas sem diagnóstico", () => {
-  for (const preset of listPresets()) {
+  // Transição precisa de parceiro: tem teste próprio (abaixo).
+  for (const preset of listPresets().filter((p) => p.kind !== "transition")) {
     const attr = ATTR_OF_KIND[preset.kind as keyof typeof ATTR_OF_KIND];
     const c = clip(`${attr}="${preset.name}"`, 5, tagOf(preset.kind));
     assert.equal(c.ok, true, `${preset.name}: ${JSON.stringify(c.diagnostics)}`);
@@ -627,7 +629,7 @@ test("presets: todos com parâmetros padrão montam trilhas sem diagnóstico", (
 });
 
 test("presets: entrada termina no neutro, saída começa nele, ênfase começa e termina nele", () => {
-  for (const preset of listPresets().filter((p) => p.kind !== "camera")) {
+  for (const preset of listPresets().filter((p) => p.kind !== "camera" && p.kind !== "transition")) {
     const attr = ATTR_OF_KIND[preset.kind as keyof typeof ATTR_OF_KIND];
     const c = clip(`${attr}="${preset.name}"`);
     for (const track of c.motion["c"]![0]!.tracks) {
@@ -1061,4 +1063,158 @@ test("câmera: uma <img> pode ter entrada e câmera ao mesmo tempo", () => {
 test("motion em <video> deixou de ser recusado (EDT-53)", () => {
   const c = cameraClip('data-enter="surgir"', 4, "video");
   assert.equal(c.ok, true, JSON.stringify(c.diagnostics));
+});
+
+// ---------------------------------------------------------------------------------------------
+// Transições entre clips adjacentes (EDT-54, §7b.10)
+// ---------------------------------------------------------------------------------------------
+
+/** A (0–3 s) e B com `data-start` e atributos dados. */
+const pair = (bAttrs: string, start = "a - 0.5", aAttrs = "", bDuration = 3): Composition =>
+  loadComposition(
+    root(
+      `<div data-clip-id="a" data-start="0" data-duration="3" ${aAttrs}></div>` +
+        `<div data-clip-id="b" data-start="${start}" data-duration="${bDuration}" ${bAttrs}></div>`,
+    ),
+  );
+
+function plainTrack(c: Composition, clipId: string, prop: string) {
+  const track = c.motion[clipId]?.flatMap((t) => t.tracks).find((t) => t.prop === prop);
+  assert.ok(track, `faltou ${clipId}/${prop}: ${JSON.stringify(c.motion)} ${JSON.stringify(c.diagnostics)}`);
+  return track;
+}
+
+test("transição dissolver: B ganha opacidade 0→1 nos primeiros 0,5 s e A não muda", () => {
+  const c = pair('data-transition="dissolver"');
+  assert.equal(c.ok, true, JSON.stringify(c.diagnostics));
+  const track = plainTrack(c, "b", "opacity");
+  assert.equal(track.start, 0);
+  assert.equal(track.duration, 0.5);
+  assert.equal(track.keys[0]!.value, 0);
+  assert.equal(track.keys[track.keys.length - 1]!.value, 1);
+  assert.equal(c.motion["a"], undefined);
+});
+
+test("transição empurrar: A sai para a esquerda em [D_A−d, D_A] e B chega da direita em [0, d]", () => {
+  const c = pair('data-transition="empurrar"');
+  assert.equal(c.ok, true, JSON.stringify(c.diagnostics));
+  const a = plainTrack(c, "a", "--ff-x");
+  assert.equal(a.start, 2.5);
+  assert.equal(a.duration, 0.5);
+  assert.equal(a.keys[0]!.value, 0);
+  assert.equal(a.keys[a.keys.length - 1]!.value, "-100%");
+  const b = plainTrack(c, "b", "--ff-x");
+  assert.equal(b.start, 0);
+  assert.equal(b.duration, 0.5);
+  assert.equal(b.keys[0]!.value, "100%");
+  assert.equal(b.keys[b.keys.length - 1]!.value, 0);
+  // A não tinha atributo de motion: o alvo é sintético e aponta o próprio elemento.
+  assert.equal(c.motion["a"]![0]!.own, true);
+});
+
+test("transição empurrar dir=up: eixo y, B chega de baixo", () => {
+  const c = pair('data-transition="empurrar dir=up"');
+  assert.equal(c.ok, true, JSON.stringify(c.diagnostics));
+  assert.equal(plainTrack(c, "b", "--ff-y").keys[0]!.value, "100%");
+  const a = plainTrack(c, "a", "--ff-y");
+  assert.equal(a.keys[a.keys.length - 1]!.value, "-100%");
+});
+
+test("transição cortina e iris usam clip-path; zoom combina opacidade e escala", () => {
+  const cortina = pair('data-transition="cortina"');
+  assert.equal(cortina.ok, true, JSON.stringify(cortina.diagnostics));
+  assert.equal(plainTrack(cortina, "b", "clip-path").keys[0]!.value, "inset(0% 100% 0% 0%)");
+  const iris = pair('data-transition="iris"');
+  assert.equal(iris.ok, true, JSON.stringify(iris.diagnostics));
+  const keys = plainTrack(iris, "b", "clip-path").keys;
+  assert.equal(keys[0]!.value, "circle(0% at 50% 50%)");
+  assert.equal(keys[keys.length - 1]!.value, "circle(75% at 50% 50%)");
+  const zoom = pair('data-transition="zoom"');
+  assert.equal(zoom.ok, true, JSON.stringify(zoom.diagnostics));
+  assert.deepEqual(zoom.motion["b"]![0]!.tracks.map((t) => t.prop).sort(), ["--ff-sx", "--ff-sy", "opacity"]);
+});
+
+test("transição iris com foco deslocado usa raio 150%", () => {
+  const c = pair('data-transition="iris fx=0 fy=0"');
+  assert.equal(c.ok, true, JSON.stringify(c.diagnostics));
+  const keys = plainTrack(c, "b", "clip-path").keys;
+  assert.equal(keys[0]!.value, "circle(0% at 0% 0%)");
+  assert.equal(keys[keys.length - 1]!.value, "circle(150% at 0% 0%)");
+});
+
+test("transição: B começando em 2.5 (absoluto) é E_TRANSITION_PARTNER", () => {
+  const c = pair('data-transition="dissolver"', "2.5");
+  assert.equal(c.ok, false);
+  const d = c.diagnostics.find((x) => x.code === "E_TRANSITION_PARTNER");
+  assert.ok(d?.hint, JSON.stringify(c.diagnostics));
+});
+
+test("transição: B depois do fim de A (deslocamento positivo) é E_TRANSITION_PARTNER", () => {
+  const c = pair('data-transition="dissolver"', "a + 0.5");
+  assert.equal(c.ok, false);
+  assert.ok(codes(c).includes("E_TRANSITION_PARTNER"), JSON.stringify(c.diagnostics));
+});
+
+test("transição: A fora do escopo de B ou depois dele é E_TRANSITION_PARTNER", () => {
+  const nested = loadComposition(
+    root(
+      `<div data-clip-id="outer" data-start="0" data-duration="4"><div data-clip-id="a" data-start="0" data-duration="3"></div></div>` +
+        `<div data-clip-id="b" data-start="a - 0.5" data-duration="3" data-transition="dissolver"></div>`,
+    ),
+  );
+  assert.ok(codes(nested).includes("E_TRANSITION_PARTNER"), JSON.stringify(nested.diagnostics));
+  const after = loadComposition(
+    root(
+      `<div data-clip-id="b" data-start="a - 0.5" data-duration="3" data-transition="dissolver"></div>` +
+        `<div data-clip-id="a" data-start="0" data-duration="3"></div>`,
+    ),
+  );
+  assert.equal(after.ok, false);
+});
+
+test("transição: d maior que a duração de um dos clips é E_MOTION_OUT_OF_RANGE", () => {
+  const c = pair('data-transition="dissolver"', "a - 4");
+  assert.equal(c.ok, false);
+  assert.ok(codes(c).includes("E_MOTION_OUT_OF_RANGE"), JSON.stringify(c.diagnostics));
+});
+
+test("transição: dur e at não valem (a duração é a sobreposição)", () => {
+  const dur = pair('data-transition="dissolver dur=1"');
+  assert.equal(dur.ok, false);
+  const d = dur.diagnostics.find((x) => x.code === "E_MOTION_PARAM");
+  assert.ok(d?.hint?.includes("sobreposição"), JSON.stringify(dur.diagnostics));
+  const at = pair('data-transition="dissolver at=0.2"');
+  assert.equal(at.ok, false);
+  assert.ok(codes(at).includes("E_MOTION_PARAM"), JSON.stringify(at.diagnostics));
+});
+
+test("transição: curve vale e vira o easing dos dois lados", () => {
+  const c = pair('data-transition="empurrar curve=linear"');
+  assert.equal(c.ok, true, JSON.stringify(c.diagnostics));
+  assert.equal(plainTrack(c, "a", "--ff-x").keys[0]!.easing, "linear");
+  assert.equal(plainTrack(c, "b", "--ff-x").keys[0]!.easing, "linear");
+});
+
+test("transição empurrar: data-exit em A sobreposto a [D_A−d, D_A] é E_MOTION_OVERLAP", () => {
+  const c = pair('data-transition="empurrar"', "a - 0.5", 'data-exit="partir-esquerda"');
+  assert.equal(c.ok, false);
+  assert.ok(codes(c).includes("E_MOTION_OVERLAP"), JSON.stringify(c.diagnostics));
+});
+
+test("transição empurrar: A com data-enter próprio convive (trilhas em intervalos diferentes)", () => {
+  const c = pair('data-transition="empurrar"', "a - 0.5", 'data-enter="surgir"');
+  assert.equal(c.ok, true, JSON.stringify(c.diagnostics));
+  const target = c.motion["a"]![0]!;
+  assert.equal(target.own, undefined);
+  assert.deepEqual(target.tracks.map((t) => t.prop).sort(), ["--ff-x", "opacity"]);
+});
+
+test("transição: preset desconhecido e sintaxe inválida mantêm os códigos de motion", () => {
+  assert.ok(codes(pair('data-transition="surgir"')).includes("E_MOTION_PRESET_UNKNOWN"));
+  assert.ok(codes(pair('data-transition=""')).includes("E_MOTION_SYNTAX"));
+});
+
+test("transição: a duração total encurta d (B e quem depende dele andam d antes)", () => {
+  const c = pair('data-transition="dissolver"');
+  assert.deepEqual(c.duration, { kind: "derived", seconds: 5.5 });
 });

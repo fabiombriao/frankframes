@@ -50,3 +50,4 @@ abertura do nosso código.
 | 2026-11-21 | contrato de motion (`data-enter/exit/emphasis/camera/transition`, §7b): gramática, curvas e presets em português escritos do zero a partir de CSS/WAAPI; sem nomes, sintaxe ou texto de outro framework |
 | 2026-11-21 | 26 presets de motion e miniaturas geradas pelo próprio engine (EDT-51) |
 | 2026-11-21 | câmera (`data-camera`: aproximar, afastar, panorâmicas, deriva) sobre `object-view-box`, em imagem e vídeo; miniaturas com foto de teste do FFmpeg (EDT-53) |
+| 2026-11-21 | transições próprias por data-transition; curva de terceiros removida de docs/transitions.md (EDT-54) |

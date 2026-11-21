@@ -1,8 +1,9 @@
 // FrankFrames — proprietário. Ver LICENSE na raiz.
 /**
  * Gera `catalog/motion/thumbs/<nome>.gif` para cada preset de motion (docs/motion.md).
- * Cena de 320×180 a 15 fps: cartão "Aa" sobre fundo escuro (câmera: uma foto de teste do FFmpeg),
- * renderizado pelo próprio engine. Sem argumento gera todos; `node scripts/generate-motion-thumbs.ts camera`
+ * Cena de 320×180 a 15 fps: cartão "Aa" sobre fundo escuro (câmera: uma foto de teste do FFmpeg;
+ * transição: dois cartões de cores diferentes, A e B), renderizado pelo próprio engine.
+ * Sem argumento gera todos; `node scripts/generate-motion-thumbs.ts camera`
  * (ou o nome de um preset) regenera só esses, sem mexer nos demais GIFs.
  * O GIF não é teste de determinismo: regenerar pode mudar bytes (Chrome e fonte).
  */
@@ -67,9 +68,46 @@ function cameraSceneHtml(preset: PresetDef): { html: string; seconds: number } {
   return { html, seconds };
 }
 
+/**
+ * Cena da transição (§7b.10): dois cartões de cores diferentes em tela cheia. B entra em `a - dur`, então
+ * o quadro tem a margem só com A, a transição inteira e a margem só com B.
+ */
+function transitionSceneHtml(preset: PresetDef): { html: string; seconds: number } {
+  const seconds = Number((preset.dur + 2 * MARGIN).toFixed(3));
+  const length = Number((preset.dur + MARGIN).toFixed(3));
+  const html = `<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>${preset.name}</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: #14161a; }
+  .stage { position: relative; width: 320px; height: 180px; overflow: hidden; background: #14161a; font-family: "Inter", sans-serif; }
+  .card {
+    position: absolute; left: 0; top: 0; width: 320px; height: 180px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 64px; font-weight: 700;
+  }
+  .a { background: #e8e4da; color: #14161a; }
+  .b { background: #3b6bd6; color: #f4f1ea; }
+</style>
+</head>
+<body>
+<div class="stage" data-composition-id="thumb-${preset.name}" data-root="true" data-width="320" data-height="180" data-fps="${FPS}" data-duration="${seconds}">
+  <div class="card a" data-clip-id="a" data-start="0" data-duration="${length}">A</div>
+  <div class="card b" data-clip-id="b" data-start="a - ${preset.dur}" data-duration="${length}" data-transition="${preset.name}">B</div>
+</div>
+</body>
+</html>
+`;
+  return { html, seconds };
+}
+
 /** Cena do preset. Duração: dur × ciclos padrão + margem dos dois lados. */
 function sceneHtml(preset: PresetDef): { html: string; seconds: number } {
   if (preset.kind === "camera") return cameraSceneHtml(preset);
+  if (preset.kind === "transition") return transitionSceneHtml(preset);
   const defaults: Record<string, number> = {};
   for (const spec of preset.params) {
     if (spec.kind === "number" || spec.kind === "int") defaults[spec.key] = spec.default;
@@ -152,7 +190,11 @@ async function makeGif(preset: PresetDef, work: string, ffmpeg: string): Promise
     "-i",
     join(dir, "%04d.png"),
     "-vf",
-    `split[a][b];[a]palettegen=max_colors=${MAX_COLORS}[p];[b][p]paletteuse=dither=none`,
+    // Transição: cartões de cor chapada, e a paleta global faz o encoder fundir quadros vizinhos (o GIF sai com 5
+    // quadros). Paleta por quadro (stats_mode=single + new=1) mantém todos os quadros.
+    preset.kind === "transition"
+      ? `split[a][b];[a]palettegen=max_colors=${MAX_COLORS}:stats_mode=single[p];[b][p]paletteuse=dither=none:new=1`
+      : `split[a][b];[a]palettegen=max_colors=${MAX_COLORS}[p];[b][p]paletteuse=dither=none`,
     "-loop",
     "0",
     out,
@@ -165,7 +207,7 @@ async function makeGif(preset: PresetDef, work: string, ffmpeg: string): Promise
 }
 
 const presets = listPresets();
-// Argumento opcional: um tipo (enter, exit, emphasis, camera) ou o nome de um preset; só esses são regenerados.
+// Argumento opcional: um tipo (enter, exit, emphasis, camera, transition) ou o nome de um preset; só esses são regenerados.
 const only = process.argv[2];
 const selected = only === undefined ? presets : presets.filter((p) => p.kind === only || p.name === only);
 if (selected.length === 0) throw new Error(`nenhum preset com tipo ou nome "${only}"`);

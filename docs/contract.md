@@ -133,8 +133,7 @@ reproduz. CSS `@keyframes` continua permitido; os atributos de motion são a for
 | `data-exit` | clip ou descendente | `<preset> [chave=valor ...]` |
 | `data-emphasis` | clip ou descendente | `<preset> [chave=valor ...]` |
 | `data-camera` | `<img>` ou `<video>` (clip ou descendente) | `<preset> [chave=valor ...]`: §7b.9 |
-| `data-transition` | clip que **entra** | `<preset> [chave=valor ...]`; reservado: ainda sem presets |
-
+| `data-transition` | clip que **entra** (B) | `<preset> [chave=valor ...]`, com `data-start="<id de A> - <d>"`: §7b.10 |
 | `data-split` | elemento com texto | `word` ou `letter`, mais `stagger=<s>` e `order=forward\|reverse\|center`: §7b.8 |
 | `data-unit` | descendente de um `data-split` | vazio ou âncora em segundos; marca a unidade à mão: §7b.8 |
 
@@ -449,6 +448,62 @@ que o autor escreveu (e a regra de faixa de §7b.5).
 - Em `<video>`, a câmera anima a `<img>` que o substitui (§6) e **não** decodifica nada no Chrome: o recorte
   é aplicado ao frame já extraído. A mesma `<img>` também recebe entrada, saída e ênfase do vídeo.
 
+### 7b.10 Transições (`data-transition`)
+
+Uma transição liga **dois clips adjacentes** do mesmo escopo: A sai, B entra, e os dois se sobrepõem por `d`
+segundos. É o único movimento que escreve trilhas em dois elementos.
+
+```html
+<div data-clip-id="a" data-start="0" data-duration="4">…</div>
+<div data-clip-id="b" data-start="a - 0.5" data-duration="4" data-transition="empurrar dir=left">…</div>
+```
+
+**Representação.** O clip que entra (B) carrega `data-transition="<preset> [chave=valor ...]"` e o
+`data-start="<id de A> - <d>"` de §3. Não existe `dur`: a duração da transição **é** a sobreposição `d`, e é
+`data-start` quem a decide (o 0.5 s da tabela abaixo é só a sobreposição sugerida nos exemplos). `dur`
+dá `E_MOTION_PARAM` com o hint `a duração da transição é a sobreposição em data-start`; `at` e qualquer outra
+chave que o preset não tem dão `E_MOTION_PARAM` listando o que ele aceita (`curve` e as chaves da tabela). A
+gramática e `curve` são as de §7b.4; as curvas, as de §7b.11.
+
+**Validação** (`E_TRANSITION_PARTNER`, com `clipId` de B e hint `use data-start="<id-anterior> - 0.5"`):
+
+- o `data-start` de B não é uma referência com deslocamento negativo (`"a - 0.5"`);
+- A não é um clip **irmão** de B (mesmo escopo, §5) ou não vem **antes** de B no documento.
+
+Dois outros erros valem como em §7b.5: `E_MOTION_OUT_OF_RANGE` quando `d` passa da duração do menor dos dois clips
+(a transição precisa caber nos dois), e quando B não tem duração. Sem tempo resolvido (referência ou duração
+pendente), a validação espera, como em §7b.5. `data-transition` em descendente, fora de um clip, ou junto de
+`data-split` segue §7b.2 e §7b.8 (`E_MOTION_TARGET`).
+
+**Intervalos.** `D_A` e `D_B` são as durações dos clips. A transição ocupa `[0, d]` em B e `[D_A − d, D_A]` em
+A, que é o mesmo trecho da linha do tempo. A duração total da composição passa a contar a partir do início
+de B: `d` segundos a menos do que dois clips em fila.
+
+| Preset | B (entra) | A (sai) | Curva | Chaves (padrão) |
+|---|---|---|---|---|
+| `dissolver` | `opacity` 0 → 1 | nenhuma | `suave` | — |
+| `cortina` | `clip-path` de `inset(...)` fechado do lado de `dir` até aberto | nenhuma | `vaivem` | `dir` (`right`) |
+| `empurrar` | `x` (ou `y`) de ±100 % até 0, vindo do lado de `dir` | `x` (ou `y`) de 0 até ∓100 % | `vaivem` | `dir` (`left`) |
+| `zoom` | `opacity` 0 → 1 e escala 1.2 → 1 | nenhuma | `freio` | — |
+| `iris` | `clip-path` `circle(0% at fx% fy%)` até o círculo que cobre o quadro (75 % com `fx`=`fy`=0.5, senão 150 %) | nenhuma | `arranque` | `fx`, `fy` ([0,1], 0.5) |
+
+- `dir` é `left`, `right`, `up` ou `down`; em `empurrar`, `up` e `down` usam `y`. `empurrar` com `dir=left`
+  traz B da direita para a esquerda e A sai pela esquerda.
+- **Empilhamento.** B está acima de A pela ordem do documento (§7b.1): `dissolver`, `cortina`, `zoom` e `iris`
+  só animam B e A fica parado por baixo, visível até o último frame da sobreposição.
+- **Posse.** A recebe trilhas só em `empurrar`. As propriedades de A são possuídas como em §7b.6:
+  `translate` inline em A dá `E_MOTION_CONFLICT`, e uma trilha de `x`/`y` de A (por exemplo a `data-exit`
+  `partir-esquerda`) que se sobreponha a `[D_A − d, D_A]` dá `E_MOTION_OVERLAP`; terminar a saída antes de
+  `D_A − d` não conflita. A parte de A é um
+  **alvo sintético** (`MotionTarget.own`): é o próprio clip, mesmo sem nenhum atributo de motion, e não entra na
+  lista de elementos com motion.
+- **Mola.** A curva `curve=mola` assenta por trecho como em §7b.11; vale também para a trilha de A, e o
+  mínimo vale para `d` (hint: `aumente a sobreposição em data-start`).
+- **Camada.** Os alvos de uma transição (A e B) recebem `will-change: transform, opacity` pelo `s` de §7b.12
+  (`MotionTarget.layer`). A emenda entre os dois clips tem bordas fracionárias, e sem camada própria desde o
+  primeiro frame o raster dela dependeria do frame visto antes, quebrando "seek em qualquer ordem dá o mesmo
+  frame". Efeito colateral: o elemento cria um *stacking context* (`z-index` de descendentes fica confinado a ele).
+
 ### 7b.11 Curvas
 
 - `linear`, `ease`, `ease-in`, `ease-out`, `ease-in-out`: as do CSS.
@@ -491,7 +546,8 @@ que o autor escreveu (e a regra de faixa de §7b.5).
   - `n` ≥ 1;
   - uma entrada em `a` por propriedade CSS; `easing` é o do trecho que **começa** naquele ponto e `null`
     vale `linear`;
-  - `s` traz as declarações de ligação, por exemplo `["translate","var(--ff-x) var(--ff-y)"]`;
+  - `s` traz as declarações de ligação, por exemplo `["translate","var(--ff-x) var(--ff-y)"]`; nos alvos de
+  uma transição (§7b.10) vem também `["will-change","transform, opacity"]`;
   - valores dos pontos: `x`/`y` viram `"<n>px"` (ou ficam em `%`), `rotate` vira `"<n>deg"`, `blur` vira
     `"<n>px"`, `scale*` são números, e `clip` vai direto em `clip-path`, normalizado (`inset(0% 10% 0% 0%)`:
     sempre `%`, 4 valores; `circle(50% at 50% 50%)`);

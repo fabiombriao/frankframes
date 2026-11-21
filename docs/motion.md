@@ -1,7 +1,7 @@
 # Presets de motion
 
-Fonte de verdade da lista de presets de `data-enter`, `data-exit`, `data-emphasis` e `data-camera`. A gramática,
-as faixas das chaves, os neutros e os diagnósticos estão em [`contract.md`](contract.md) §7b. Os 31 presets têm nome e valores
+Fonte de verdade da lista de presets de `data-enter`, `data-exit`, `data-emphasis`, `data-camera` e `data-transition`. A gramática,
+as faixas das chaves, os neutros e os diagnósticos estão em [`contract.md`](contract.md) §7b. Os 36 presets têm nome e valores
 próprios do FrankFrames: verbos em português, `kebab-case` ASCII; o label com acento serve só à UI.
 
 ## Exemplos
@@ -51,6 +51,14 @@ fim do clip (§7b.9). Num `<video>` o movimento age sobre a `<img>` que o substi
 ```html
 <img data-clip-id="paisagem" data-start="0" data-duration="5" src="paisagem.jpg" data-camera="panoramica-direita">
 <video data-clip-id="cena" data-start="0" data-duration="8" src="cena.mp4" data-camera="aproximar amount=1.3 fx=0.3"></video>
+```
+
+Transição entre dois clips. B entra com `data-transition` e começa antes de A terminar; a sobreposição é a duração
+(§7b.10, [`transitions.md`](transitions.md)):
+
+```html
+<div data-clip-id="a" data-start="0" data-duration="4">…</div>
+<div data-clip-id="b" data-start="a - 0.5" data-duration="4" data-transition="empurrar dir=left">…</div>
 ```
 
 Para o que o motion não cobre (cor, stroke, largura), `@keyframes` de CSS continua valendo. Para o que nenhum
@@ -122,12 +130,28 @@ Só vale em `<img>` e `<video>`. Sem `dur`, o movimento ocupa do `at` (padrão 0
 | `panoramica-direita` | Panorâmica à direita | zoom fixo `amount`; o foco vai de 0.25 a 0.75 no eixo X | até o fim do clip | `linear` | `amount` (1.12), `fy` | ![panoramica-direita](../catalog/motion/thumbs/panoramica-direita.gif) |
 | `deriva` | Deriva | zoom 1.06 → 1.10 e foco (0.45, 0.48) → (0.55, 0.52), quase imperceptível | até o fim do clip | `linear` | — | ![deriva](../catalog/motion/thumbs/deriva.gif) |
 
+## Transição
+
+Vale em `data-transition`, no clip que **entra** (B), com `data-start="<id de A> - <d>"`; A é um irmão anterior
+no documento. A duração é a sobreposição `d`: o preset não tem `dur` (`dur` e `at` dão `E_MOTION_PARAM`), só
+`curve` e as chaves da tabela. A coluna "dur de referência" é a sobreposição sugerida (0.5 s). B está acima de A
+pela ordem do documento; só `empurrar` anima também A (§7b.10).
+
+| Nome | Label | O que faz | dur de referência | Curva | Chaves (padrão) | Miniatura |
+|---|---|---|---|---|---|---|
+| `dissolver` | Dissolver | B aparece em fade sobre A | 0.5 | `suave` | — | ![dissolver](../catalog/motion/thumbs/dissolver.gif) |
+| `cortina` | Cortina | B é revelado por recorte, avançando do lado de `dir` | 0.5 | `vaivem` | `dir` (right) | ![cortina](../catalog/motion/thumbs/cortina.gif) |
+| `empurrar` | Empurrar | B entra do lado de `dir` e A sai empurrado para o lado oposto | 0.5 | `vaivem` | `dir` (left) | ![empurrar](../catalog/motion/thumbs/empurrar.gif) |
+| `zoom` | Zoom | B aparece em fade e assenta de 1.2 até 1 | 0.5 | `freio` | — | ![zoom](../catalog/motion/thumbs/zoom.gif) |
+| `iris` | Íris | B é revelado por um círculo que cresce a partir de (`fx`, `fy`) | 0.5 | `arranque` | `fx`, `fy` (0.5) | ![iris](../catalog/motion/thumbs/iris.gif) |
+
 ## Miniaturas
 
 As miniaturas são geradas pelo próprio engine: `node scripts/generate-motion-thumbs.ts` renderiza um cartão
 "Aa" de 140×70 numa cena de 320×180 a 15 fps, com 0.3 s parados antes e depois do movimento (a saída começa visível;
 a ênfase age sobre o cartão parado), e monta o GIF com o FFmpeg de `vendor/ffmpeg` (paleta de 48 cores, teto de
 200 KB por arquivo; o script falha se passar). A câmera usa uma foto de teste 1280×720 (`testsrc2` do FFmpeg) em
-tela cheia, 2 s de movimento. `node scripts/generate-motion-thumbs.ts camera` (ou o nome de um preset) regenera só
+tela cheia, 2 s de movimento. A transição usa dois cartões de tela cheia de cores diferentes (A claro, B azul), com a
+sobreposição inteira entre 0.3 s de A e 0.3 s de B. `node scripts/generate-motion-thumbs.ts camera` (ou o nome de um preset) regenera só
 esses. O GIF não é teste de determinismo: regenerar pode mudar bytes, o que é
 aceitável. Em código, `motionThumbPath(nome)` de `@frankframes/catalog` devolve o caminho de cada uma.

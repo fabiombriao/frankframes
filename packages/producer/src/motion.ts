@@ -35,6 +35,9 @@ function setAttr(node: DomNode, name: string, value: string): void {
  * @param scopeMs `data-ff-comp-start` do escopo do alvo, em ms (o que o relógio subtrai)
  */
 export function toRuntimeSpec(target: MotionTarget | { tracks: MotionTrack[] }, clipStart: number, scopeMs: number): MotionRuntimeSpec {
+  const bindings = bindingsFor(target.tracks.map((track) => track.prop));
+  // Transição (§7b.10): camada própria desde o primeiro frame, senão a emenda entre A e B varia com a ordem do seek.
+  if ("layer" in target && target.layer === true) bindings.push(["will-change", "transform, opacity"]);
   return {
     v: 1,
     a: target.tracks.map((track) => {
@@ -48,7 +51,7 @@ export function toRuntimeSpec(target: MotionTarget | { tracks: MotionTrack[] }, 
         k: keys,
       };
     }),
-    s: bindingsFor(target.tracks.map((track) => track.prop)),
+    s: bindings,
   };
 }
 
@@ -205,7 +208,8 @@ export function annotateMotion(document: { childNodes?: DomNode[] }, composition
     }
     const elements = motionElements(node);
     for (const target of composition.motion[owner]!) {
-      const element = elements[target.ordinal];
+      // Alvo sintético (A de uma transição, §7b.10): é o próprio clip, mesmo sem atributo de motion.
+      const element = target.own === true ? node : elements[target.ordinal];
       if (element === undefined || element.nodeName !== target.tag) {
         throw new Error(`motion: alvo ${target.ordinal} de "${owner}" não bate com o documento (esperado <${target.tag}>)`);
       }

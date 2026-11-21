@@ -246,6 +246,11 @@ function buildClip(
   if (src) clip.src = src;
   const mediaSrc = attr(node, "src");
   if (mediaSrc) clip.mediaSrc = mediaSrc;
+  const ownStyle = attr(node, "style");
+  if (ownStyle !== undefined && !motionElements(node).includes(node)) {
+    // Sem motion próprio, mas pode virar parceiro A de uma transição (§7b.10): o `style` serve à checagem de posse.
+    counter.motion.push({ clipId: id, ordinal: 0, tag, own: true, attrs: {}, style: ownStyle });
+  }
   for (const [position, element] of motionElements(node).entries()) {
     const own = element === node;
     const rawElementKeyframes = own ? undefined : attr(element, "data-keyframes");

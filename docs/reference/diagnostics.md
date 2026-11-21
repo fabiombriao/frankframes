@@ -41,6 +41,7 @@ Gerado por `node scripts/generate-reference.ts` a partir do código. Não edite 
 | `E_SIZE_INVALID` | erro | contrato |
 | `E_START_INVALID` | erro | contrato |
 | `E_TRANSCRIBE_UNAVAILABLE` | erro | transcrição |
+| `E_TRANSITION_PARTNER` | erro | contrato |
 | `E_VOLUME_INVALID` | erro | contrato |
 | `E_WHISPER_MISSING` | erro | transcrição |
 | `W_KEYFRAME_CURVE_IGNORED` | aviso | contrato |

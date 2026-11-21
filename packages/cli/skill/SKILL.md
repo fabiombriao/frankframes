@@ -81,6 +81,12 @@ data-camera="panoramica-direita">`. `zoom` (1 a 4) e `focusX`/`focusY` (0 a 1) t
 só em `<img>`/`<video>`. Num `<video>` o movimento age na `<img>` que o substitui no render, que herda o
 `object-fit` do vídeo; motion num ancestral do `<video>` não o move.
 
+Transição entre dois clips do mesmo escopo: `data-transition="<preset> [dir=] [fx=] [fy=] [curve=]"` no clip que
+entra (B), com `data-start="<id do clip anterior> - <d>"`; a sobreposição `d` é a duração (não existe `dur`) e o
+vídeo encurta `d`. Presets: `dissolver`, `cortina`, `empurrar`, `zoom`, `iris`. Exemplo: `<div data-clip-id="b"
+data-start="a - 0.5" data-duration="4" data-transition="empurrar dir=left">`. Parceiro inexistente ou
+posterior dá `E_TRANSITION_PARTNER`.
+
 Tipografia cinética: `data-split="word"` (ou `letter`, com `stagger=<s>` e `order=forward|reverse|center`)
 no elemento com texto, mais `data-enter`/`data-exit`/`data-emphasis` no mesmo elemento, anima cada palavra
 (ou letra) em sequência. Exemplo: `<h1 data-clip-id="t" data-start="0" data-duration="4"
