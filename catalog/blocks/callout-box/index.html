@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>callout-box</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: #ece6d8; }
+  .stage {
+    position: relative;
+    width: 1920px;
+    height: 1080px;
+    overflow: hidden;
+    background: #ece6d8;
+    color: #151513;
+    font-family: "Inter", sans-serif;
+  }
+  .stage::before {
+    content: "";
+    position: absolute;
+    inset: 40px;
+    border: 1px solid rgba(21, 21, 19, 0.18);
+  }
+  .box {
+    position: absolute;
+    left: 300px;
+    top: 292px;
+    width: 1320px;
+    height: 500px;
+    background: #fffdf6;
+    border: 8px solid #151513;
+    display: grid;
+    grid-template-columns: 260px 1fr;
+    align-items: center;
+    animation: box-in 0.65s cubic-bezier(0.22, 0.8, 0.2, 1) both;
+    animation-delay: 0.15s;
+  }
+  .box::after {
+    content: "";
+    position: absolute;
+    left: -8px;
+    bottom: -8px;
+    width: 140px;
+    height: 16px;
+    background: #d8452e;
+  }
+  .icon-cell {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    border-right: 2px solid rgba(21, 21, 19, 0.16);
+  }
+  .tri {
+    position: relative;
+    width: 132px;
+    height: 118px;
+    background: #d8452e;
+    clip-path: polygon(50% 0, 100% 100%, 0 100%);
+    opacity: 0;
+    animation: icon-in 0.5s cubic-bezier(0.22, 0.8, 0.2, 1) both;
+    animation-delay: 0.5s;
+  }
+  .tri::before {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: 44px;
+    width: 11px;
+    height: 34px;
+    margin-left: -5.5px;
+    background: #fffdf6;
+    border-radius: 2px;
+  }
+  .tri::after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    bottom: 20px;
+    width: 11px;
+    height: 11px;
+    margin-left: -5.5px;
+    background: #fffdf6;
+    border-radius: 50%;
+  }
+  .content { padding: 0 64px 0 60px; }
+  .kicker {
+    font: 400 18px/1 "JetBrains Mono", monospace;
+    letter-spacing: 0.24em;
+    text-transform: uppercase;
+    color: #b02f1c;
+    opacity: 0;
+    animation: fade-in 0.5s ease-out both;
+    animation-delay: 0.55s;
+  }
+  .headline {
+    margin-top: 18px;
+    font-size: 78px;
+    font-weight: 700;
+    line-height: 1.06;
+    letter-spacing: -0.04em;
+  }
+  .headline span { display: block; opacity: 0; animation: rise 0.6s ease-out both; }
+  .headline span:nth-child(1) { animation-delay: 0.44s; }
+  .headline span:nth-child(2) { animation-delay: 0.56s; }
+  .body {
+    margin-top: 26px;
+    width: 760px;
+    font-size: 24px;
+    line-height: 1.5;
+    color: #2f2c24;
+    opacity: 0;
+    animation: fade-in 0.6s ease-out both;
+    animation-delay: 0.8s;
+  }
+  .body b { color: #151513; }
+  .note {
+    position: absolute;
+    right: 104px;
+    top: 108px;
+    font: 400 17px/1.4 "JetBrains Mono", monospace;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    text-align: right;
+    color: rgba(21, 21, 19, 0.68);
+  }
+  .stamp {
+    position: absolute;
+    left: 300px;
+    top: 210px;
+    font-family: "Anton", sans-serif;
+    font-size: 40px;
+    letter-spacing: 0.06em;
+    color: #151513;
+  }
+  @keyframes box-in {
+    from { transform: translateY(36px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+  }
+  @keyframes icon-in {
+    from { transform: scale(0.55); opacity: 0; }
+    to { transform: scale(1); opacity: 1; }
+  }
+  @keyframes rise {
+    from { transform: translateY(22px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+  }
+  @keyframes fade-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+</style>
+</head>
+<body>
+<div class="stage" data-composition-id="callout-box" data-root="true" data-width="1920" data-height="1080" data-fps="30" data-duration="3.4">
+  <div class="stamp" style="animation: rise 0.6s ease-out both; animation-delay: 0.1s">NOTA 07</div>
+  <div class="note" style="animation: fade-in 0.6s ease-out both; animation-delay: 0.25s">Regra de corte<br>vale para toda a série</div>
+
+  <div class="box" data-clip-id="callout" data-start="0.15" data-duration="3.25">
+    <div class="icon-cell"><div class="tri"></div></div>
+    <div class="content">
+      <div class="kicker">atenção</div>
+      <div class="headline"><span>Não é o corte.</span><span>É a ordem.</span></div>
+      <div class="body">Reordenar as cenas resolveu o que <b>três reedições</b> não resolveram: o problema estava na sequência, não no material.</div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

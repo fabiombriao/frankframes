@@ -118,6 +118,11 @@ async function startSession(
   });
 
   const cdp: CDPSession = await page.createCDPSession();
+  // Estado inicial totalmente pintado (fontes, layout) antes de qualquer medição.
+  await page.evaluate(async () => {
+    const clock = (globalThis as unknown as VirtualClockWindow).__ff;
+    await (clock as unknown as { settle?: () => Promise<boolean> })?.settle?.();
+  });
   // Primeira captura descartada: força um frame completo antes de qualquer medição.
   await cdp.send("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
 

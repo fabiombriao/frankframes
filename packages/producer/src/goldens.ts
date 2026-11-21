@@ -7,6 +7,8 @@ import { prepare } from "./render.ts";
 export interface GoldenFrame {
   frame: number;
   sha256: string;
+  /** PNG do frame, para comparação tolerante quando o hash diverge. */
+  png?: Buffer;
 }
 
 export interface GoldenBlock {
@@ -27,7 +29,7 @@ export function sampleFrames(totalFrames: number): number[] {
 
 export async function captureGolden(
   entry: string,
-  options: { gpu?: GpuMode; ratios?: number[] } = {},
+  options: { gpu?: GpuMode; ratios?: number[]; includePng?: boolean } = {},
 ): Promise<GoldenBlock> {
   const prepared = await prepare({ entry });
   const server = await startServer(prepared.entryDir, {
@@ -45,10 +47,17 @@ export async function captureGolden(
 
   try {
     const frames: GoldenFrame[] = [];
-    for (const frame of sampleFrames(prepared.totalFrames)) {
+    const samples = sampleFrames(prepared.totalFrames);
+
+    // Aquecimento: a primeira captura de uma sessão nova ainda carrega estado de
+    // composição. Uma rodada no primeiro frame amostrado é descartada.
+    await session.seekFrame(samples[0]!, prepared.fps);
+    await session.capture();
+
+    for (const frame of samples) {
       await session.seekFrame(frame, prepared.fps);
-      const { sha256 } = await session.capture();
-      frames.push({ frame, sha256 });
+      const { png, sha256 } = await session.capture();
+      frames.push({ frame, sha256, ...(options.includePng === true ? { png } : {}) });
     }
     const errors = session.pageErrors();
     if (errors.length > 0) throw new Error(`erros na página em ${entry}: ${errors[0]}`);

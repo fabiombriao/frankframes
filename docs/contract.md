@@ -118,7 +118,9 @@ O contrato promete isto ao autor, e o engine tem que cumprir:
    - **composição com vídeo roda sempre em software.** O compositor de GPU atrasa a textura da `<img>`
      fora de banda de forma não determinística (medido: 54 de 90 frames divergentes em D3D11, 0 em
      SwiftShader). `--gpu hardware` explícito é honrado, com o risco assumido.
-7. **Prova**: SHA-256 por frame amostrado, versionado no repositório. Divergência falha o CI.
+7. **Prova**: SHA-256 por frame amostrado, versionado no repositório. Divergência de hash cai para
+   comparação de PSNR contra o PNG de referência (`catalog/goldens/<bloco>/<frame>.png`): jitter de
+   rasterização de 1–2 pixels passa (≥50 dB); mudança visual real falha.
 
 **GPU:** o padrão é `auto` — hardware quando existe, SwiftShader como fallback. Igualdade byte-a-byte
 entre *máquinas diferentes* só é prometida em `software`; em `hardware` a promessa é "igual nesta

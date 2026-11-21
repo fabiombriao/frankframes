@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>credits-roll</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: #101113; }
+  .stage {
+    position: relative;
+    width: 1920px;
+    height: 1080px;
+    overflow: hidden;
+    background: #101113;
+    color: #f2efe6;
+    font-family: "Inter", sans-serif;
+  }
+  .kicker {
+    position: absolute;
+    left: 104px;
+    top: 88px;
+    font: 400 19px/1 "JetBrains Mono", monospace;
+    letter-spacing: 0.24em;
+    text-transform: uppercase;
+    color: rgba(242, 239, 230, 0.62);
+  }
+  .title {
+    position: absolute;
+    left: 100px;
+    top: 126px;
+    font-family: "Playfair Display", serif;
+    font-weight: 700;
+    font-size: 84px;
+    line-height: 1;
+    letter-spacing: -0.02em;
+  }
+  .side {
+    position: absolute;
+    right: 104px;
+    top: 92px;
+    font: 400 17px/1.6 "JetBrains Mono", monospace;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    text-align: right;
+    color: rgba(242, 239, 230, 0.6);
+  }
+  .side b { display: block; font-family: "Anton", sans-serif; font-size: 40px; font-weight: 400; letter-spacing: 0.04em; color: #f2efe6; }
+  .window {
+    position: absolute;
+    left: 104px;
+    top: 316px;
+    width: 1180px;
+    height: 552px;
+    overflow: hidden;
+  }
+  .rows {
+    animation: roll 4s linear both;
+    animation-delay: 0.3s;
+  }
+  .row {
+    display: grid;
+    grid-template-columns: 300px 1fr;
+    align-items: baseline;
+    gap: 40px;
+    height: 136px;
+    border-bottom: 1px solid rgba(242, 239, 230, 0.14);
+  }
+  .role {
+    font: 400 16px/1.4 "JetBrains Mono", monospace;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: rgba(242, 239, 230, 0.62);
+  }
+  .name {
+    font-size: 46px;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+  }
+  .fade.top, .fade.bottom {
+    position: absolute;
+    left: 0;
+    right: 0;
+    height: 150px;
+    pointer-events: none;
+    z-index: 3;
+  }
+  .fade.top { top: 0; background: linear-gradient(to bottom, #101113 22%, rgba(16, 17, 19, 0)); }
+  .fade.bottom { bottom: 0; background: linear-gradient(to top, #101113 22%, rgba(16, 17, 19, 0)); }
+  .rule {
+    position: absolute;
+    left: 104px;
+    bottom: 74px;
+    width: 1180px;
+    height: 2px;
+    background: rgba(242, 239, 230, 0.35);
+  }
+  .footnote {
+    position: absolute;
+    left: 104px;
+    bottom: 36px;
+    font: 400 16px/1 "JetBrains Mono", monospace;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: rgba(242, 239, 230, 0.6);
+  }
+  .dot {
+    position: absolute;
+    right: 104px;
+    bottom: 38px;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: #f2e34c;
+  }
+  @keyframes roll {
+    from { transform: translateY(0); }
+    to { transform: translateY(-680px); }
+  }
+  @keyframes fade-in {
+    from { opacity: 0; transform: translateY(16px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+</style>
+</head>
+<body>
+<div class="stage" data-composition-id="credits-roll" data-root="true" data-width="1920" data-height="1080" data-fps="30" data-duration="4.5">
+  <div class="kicker" style="animation: fade-in 0.6s ease-out both; animation-delay: 0.08s">Encerramento</div>
+  <div class="title" style="animation: fade-in 0.7s ease-out both; animation-delay: 0.15s">Ficha técnica</div>
+  <div class="side" style="animation: fade-in 0.6s ease-out both; animation-delay: 0.25s"><b>02</b>créditos</div>
+
+  <div class="window" data-clip-id="credits-window" data-start="0.3" data-duration="4.2">
+    <div class="rows">
+      <div class="row"><div class="role">Direção</div><div class="name">Ana Vasconcelos</div></div>
+      <div class="row"><div class="role">Fotografia</div><div class="name">Miguel Braga</div></div>
+      <div class="row"><div class="role">Montagem</div><div class="name">Clara Nogueira</div></div>
+      <div class="row"><div class="role">Som direto</div><div class="name">Rui Amaral</div></div>
+      <div class="row"><div class="role">Produção</div><div class="name">Estúdio Meia-Noite</div></div>
+    </div>
+    <div class="fade top"></div>
+    <div class="fade bottom"></div>
+  </div>
+
+  <div class="rule"></div>
+  <div class="footnote">5 pessoas · 14 dias de gravação · 2026</div>
+  <div class="dot"></div>
+</div>
+</body>
+</html>

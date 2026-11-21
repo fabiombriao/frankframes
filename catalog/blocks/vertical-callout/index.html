@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>vertical-callout</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: #12211c; }
+  .stage {
+    position: relative;
+    width: 1080px;
+    height: 1920px;
+    overflow: hidden;
+    background: #12211c;
+    color: #f2efe6;
+    font-family: "Inter", sans-serif;
+  }
+  .kicker {
+    position: absolute;
+    left: 96px;
+    top: 130px;
+    font: 400 20px/1 "JetBrains Mono", monospace;
+    letter-spacing: 0.24em;
+    text-transform: uppercase;
+    color: rgba(242, 239, 230, 0.66);
+  }
+  .rule {
+    position: absolute;
+    left: 96px;
+    right: 96px;
+    top: 190px;
+    height: 2px;
+    background: rgba(242, 239, 230, 0.3);
+  }
+  .box {
+    position: absolute;
+    left: 96px;
+    right: 96px;
+    top: 620px;
+    height: 720px;
+    border: 6px solid #f2efe6;
+    background: rgba(242, 239, 230, 0.04);
+    animation: box-in 0.65s cubic-bezier(0.22, 0.8, 0.2, 1) both;
+    animation-delay: 0.15s;
+  }
+  .box::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 180px;
+    height: 14px;
+    background: #e8a13a;
+  }
+  .label {
+    position: absolute;
+    left: 56px;
+    top: 54px;
+    font: 400 18px/1 "JetBrains Mono", monospace;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: #e8a13a;
+  }
+  .number {
+    position: absolute;
+    left: 48px;
+    top: 128px;
+    font-family: "Anton", sans-serif;
+    font-size: 300px;
+    line-height: 0.92;
+    letter-spacing: 0.005em;
+    color: #e8a13a;
+    opacity: 0;
+    animation: number-in 0.7s cubic-bezier(0.22, 0.8, 0.2, 1) both;
+    animation-delay: 0.42s;
+  }
+  .number small {
+    font-family: "Inter", sans-serif;
+    font-size: 84px;
+    font-weight: 300;
+    letter-spacing: -0.01em;
+    color: #f2efe6;
+    margin-left: 4px;
+  }
+  .support {
+    position: absolute;
+    left: 56px;
+    right: 56px;
+    top: 470px;
+    font-size: 40px;
+    font-weight: 500;
+    line-height: 1.34;
+    letter-spacing: -0.01em;
+    color: #f2efe6;
+  }
+  .support span { color: rgba(242, 239, 230, 0.82); }
+  .source {
+    position: absolute;
+    left: 56px;
+    bottom: 42px;
+    font: 400 17px/1.4 "JetBrains Mono", monospace;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: rgba(242, 239, 230, 0.66);
+  }
+  .lede {
+    position: absolute;
+    left: 96px;
+    top: 260px;
+    width: 800px;
+    font-size: 64px;
+    font-weight: 700;
+    line-height: 1.1;
+    letter-spacing: -0.035em;
+  }
+  .lede span { color: rgba(242, 239, 230, 0.5); }
+  .mark {
+    position: absolute;
+    right: 96px;
+    top: 130px;
+    width: 56px;
+    height: 56px;
+    border-top: 4px solid #e8a13a;
+    border-right: 4px solid #e8a13a;
+  }
+  @keyframes box-in {
+    from { transform: translateY(40px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+  }
+  @keyframes number-in {
+    from { transform: translateY(34px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+  }
+  @keyframes rise {
+    from { transform: translateY(26px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+  }
+  @keyframes fade-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+</style>
+</head>
+<body>
+<div class="stage" data-composition-id="vertical-callout" data-root="true" data-width="1080" data-height="1920" data-fps="30" data-duration="3.6">
+  <div class="kicker" style="animation: fade-in 0.6s ease-out both; animation-delay: 0.08s">Diagnóstico / 2026</div>
+  <div class="rule" style="animation: fade-in 0.5s ease-out both; animation-delay: 0.12s"></div>
+  <div class="lede" style="animation: rise 0.7s ease-out both; animation-delay: 0.18s">O gargalo não está <span>na gravação.</span></div>
+  <div class="mark" style="animation: fade-in 0.5s ease-out both; animation-delay: 0.3s"></div>
+
+  <div class="box" data-clip-id="callout" data-start="0.15" data-duration="3.45">
+    <div class="label">Amostra / 128 projetos</div>
+    <div class="number">38<small>%</small></div>
+    <div class="support">começam a edição <span>sem decupagem escrita.</span></div>
+    <div class="source">Fonte: auditoria interna de fluxo</div>
+  </div>
+</div>
+</body>
+</html>

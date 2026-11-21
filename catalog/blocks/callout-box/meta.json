@@ -1,0 +1,12 @@
+{
+  "name": "Caixa de destaque",
+  "summary": "Aviso emoldurado por borda espessa, ícone de alerta desenhado em CSS e texto curto de duas linhas.",
+  "durationSeconds": 3.4,
+  "tags": [
+    "destaque",
+    "aviso",
+    "callout",
+    "tipografia"
+  ],
+  "sha256": "528a5eae4782e3cbeb7408f18eaedbac6a28e96d1648073b9ea2e8c9645c7b73"
+}

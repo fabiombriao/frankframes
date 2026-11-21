@@ -1,0 +1,12 @@
+{
+  "name": "Transição por faixa",
+  "summary": "Faixa colorida cruza o quadro em meio segundo e revela a cena seguinte por recorte.",
+  "durationSeconds": 4,
+  "tags": [
+    "transição",
+    "wipe",
+    "cena",
+    "corte"
+  ],
+  "sha256": "e15313033497098f24433e4ddb79c5d3160c21e10f20c96e6efbb98de5e3845e"
+}

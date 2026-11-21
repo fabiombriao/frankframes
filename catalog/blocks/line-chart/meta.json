@@ -1,0 +1,13 @@
+{
+  "name": "Gráfico de linhas",
+  "summary": "Duas séries desenhadas por traço progressivo em SVG, com eixos rotulados e legenda editorial.",
+  "durationSeconds": 4,
+  "tags": [
+    "gráfico",
+    "linhas",
+    "svg",
+    "dados",
+    "tendência"
+  ],
+  "sha256": "6ba749b7de212acf7759d565d2a8d729c36329ac5526b37c4d5b7055b92b6c6b"
+}

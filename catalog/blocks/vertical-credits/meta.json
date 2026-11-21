@@ -1,0 +1,12 @@
+{
+  "name": "Créditos verticais",
+  "summary": "Seis linhas de crédito sobem em 9:16 com margem de 96 px e fade nas bordas da janela.",
+  "durationSeconds": 4.5,
+  "tags": [
+    "créditos",
+    "vertical",
+    "encerramento",
+    "roll"
+  ],
+  "sha256": "d8d3e42a70f041d13d505c35fd1dcd80b96f4c5a03d14a73623f63ad517c5ab0"
+}

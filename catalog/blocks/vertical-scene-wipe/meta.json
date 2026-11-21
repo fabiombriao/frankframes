@@ -1,0 +1,12 @@
+{
+  "name": "Transição por faixa vertical",
+  "summary": "Versão 9:16 do wipe: faixa desce pelo quadro em meio segundo e revela a cena seguinte.",
+  "durationSeconds": 3.6,
+  "tags": [
+    "transição",
+    "wipe",
+    "vertical",
+    "cena"
+  ],
+  "sha256": "bcde20010cbfa6d3689e948e29b33d9c14793f530902c0a86986db98adbbc069"
+}

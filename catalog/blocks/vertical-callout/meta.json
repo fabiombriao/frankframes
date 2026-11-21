@@ -1,0 +1,13 @@
+{
+  "name": "Destaque vertical com número",
+  "summary": "Caixa emoldurada com número grande, linha de apoio e fonte, para um dado único em 9:16.",
+  "durationSeconds": 3.6,
+  "tags": [
+    "destaque",
+    "número",
+    "vertical",
+    "estatística",
+    "callout"
+  ],
+  "sha256": "306d8cd1183cfc87b750c51f12e1b7979fc1f3622ab046c489d0d8ac6049eed9"
+}

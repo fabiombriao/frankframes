@@ -1,0 +1,13 @@
+{
+  "name": "Mapa com pino",
+  "summary": "Pino desenhado em CSS cai sobre um mapa abstrato de círculos e linhas, com rótulo de cidade e coordenadas.",
+  "durationSeconds": 3.8,
+  "tags": [
+    "mapa",
+    "pino",
+    "localização",
+    "vertical",
+    "cidade"
+  ],
+  "sha256": "39c9758be15a1820fb4619b584cd5838d0c24d91b37f987683bf0d5db4f282a6"
+}

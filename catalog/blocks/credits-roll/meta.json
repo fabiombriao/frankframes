@@ -1,0 +1,12 @@
+{
+  "name": "Créditos rolando",
+  "summary": "Cinco linhas de ficha técnica sobem em movimento linear contínuo, com fade no topo e na base.",
+  "durationSeconds": 4.5,
+  "tags": [
+    "créditos",
+    "encerramento",
+    "roll",
+    "ficha técnica"
+  ],
+  "sha256": "af1cade7d3ca368b4a3034cfbb81a99b3b0a5a3be2f8c70f141636ab53848acc"
+}

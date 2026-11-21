@@ -1,0 +1,13 @@
+{
+  "name": "Gráfico de pizza",
+  "summary": "Três fatias em conic-gradient com legenda e a maior fatia destacada e deslocada do centro.",
+  "durationSeconds": 3.8,
+  "tags": [
+    "gráfico",
+    "pizza",
+    "dados",
+    "proporção",
+    "legenda"
+  ],
+  "sha256": "5019ce077d46f8b3e926d25676fb7534433e28f7b613b3345436bc6759c1ac25"
+}

@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>line-chart</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: #f5f3ec; }
+  .stage {
+    position: relative;
+    width: 1920px;
+    height: 1080px;
+    overflow: hidden;
+    background: #f5f3ec;
+    color: #151513;
+    font-family: "Inter", sans-serif;
+  }
+  .kicker {
+    position: absolute;
+    left: 104px;
+    top: 88px;
+    font: 400 19px/1 "JetBrains Mono", monospace;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: rgba(21, 21, 19, 0.7);
+  }
+  .title {
+    position: absolute;
+    left: 100px;
+    top: 124px;
+    font-size: 92px;
+    font-weight: 700;
+    line-height: 1;
+    letter-spacing: -0.045em;
+  }
+  .title em { font-style: normal; color: #d8452e; }
+  .legend {
+    position: absolute;
+    right: 104px;
+    top: 148px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    font: 400 18px/1 "JetBrains Mono", monospace;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+  .legend b {
+    display: inline-block;
+    width: 34px;
+    height: 5px;
+    margin-right: 14px;
+    vertical-align: middle;
+  }
+  .legend .a b { background: #d8452e; }
+  .legend .b b { background: #2f6b5e; }
+  .legend span { color: rgba(21, 21, 19, 0.78); }
+  .plot {
+    position: absolute;
+    left: 200px;
+    top: 300px;
+    width: 1560px;
+    height: 682px;
+  }
+  .plot svg { display: block; width: 100%; height: 100%; overflow: visible; }
+  .axis { stroke: rgba(21, 21, 19, 0.22); stroke-width: 1.5; }
+  .axis.base { stroke: rgba(21, 21, 19, 0.7); stroke-width: 2.5; }
+  .tick {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 19px;
+    fill: rgba(21, 21, 19, 0.72);
+    letter-spacing: 0.06em;
+  }
+  .series {
+    fill: none;
+    stroke-width: 6;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    stroke-dasharray: 1;
+    stroke-dashoffset: 1;
+    animation: draw 1.7s cubic-bezier(0.4, 0, 0.2, 1) both;
+  }
+  .series.a { stroke: #d8452e; }
+  .series.b { stroke: #2f6b5e; }
+  .endpoint {
+    opacity: 0;
+    animation: pop 0.5s ease-out both;
+  }
+  .endpoint.a { fill: #d8452e; animation-delay: 2s; }
+  .endpoint.b { fill: #2f6b5e; animation-delay: 2.15s; }
+  .endlabel {
+    font-family: "Inter", sans-serif;
+    font-size: 26px;
+    font-weight: 700;
+    fill: #151513;
+    opacity: 0;
+    animation: pop 0.5s ease-out both;
+    animation-delay: 2.1s;
+    text-anchor: end;
+  }
+  .footnote {
+    position: absolute;
+    left: 104px;
+    bottom: 56px;
+    font: 400 17px/1.5 "JetBrains Mono", monospace;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: rgba(21, 21, 19, 0.66);
+  }
+  .stamp {
+    position: absolute;
+    right: 104px;
+    bottom: 48px;
+    font-family: "Anton", sans-serif;
+    font-size: 46px;
+    color: #151513;
+  }
+  @keyframes draw {
+    from { stroke-dashoffset: 1; }
+    to { stroke-dashoffset: 0; }
+  }
+  @keyframes pop {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+  @keyframes fade-up {
+    from { transform: translateY(20px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+  }
+</style>
+</head>
+<body>
+<div class="stage" data-composition-id="line-chart" data-root="true" data-width="1920" data-height="1080" data-fps="30" data-duration="4">
+  <div class="kicker" style="animation: fade-up 0.6s ease-out both; animation-delay: 0.1s">Relatório trimestral / custo por entrega</div>
+  <div class="title" style="animation: fade-up 0.7s ease-out both; animation-delay: 0.18s">Duas curvas, <em>uma virada</em>.</div>
+
+  <div class="legend" style="animation: fade-up 0.6s ease-out both; animation-delay: 0.35s">
+    <div class="a"><b></b><span>Manual</span></div>
+    <div class="b"><b></b><span>Assistido</span></div>
+  </div>
+
+  <div class="plot" data-clip-id="plot" data-start="0.4" data-duration="3.6" style="animation: fade-up 0.6s ease-out both; animation-delay: 0.4s">
+    <svg viewBox="0 0 1280 560" role="img" aria-label="Duas séries de custo caindo ao longo de seis meses">
+      <line class="axis" x1="110" y1="60" x2="1180" y2="60"></line>
+      <line class="axis" x1="110" y1="162.5" x2="1180" y2="162.5"></line>
+      <line class="axis" x1="110" y1="265" x2="1180" y2="265"></line>
+      <line class="axis" x1="110" y1="367.5" x2="1180" y2="367.5"></line>
+      <line class="axis base" x1="110" y1="470" x2="1180" y2="470"></line>
+
+      <text class="tick" x="88" y="66" text-anchor="end">100</text>
+      <text class="tick" x="88" y="168" text-anchor="end">75</text>
+      <text class="tick" x="88" y="271" text-anchor="end">50</text>
+      <text class="tick" x="88" y="373" text-anchor="end">25</text>
+      <text class="tick" x="88" y="476" text-anchor="end">0</text>
+
+      <text class="tick" x="110" y="512" text-anchor="middle">JAN</text>
+      <text class="tick" x="324" y="512" text-anchor="middle">FEV</text>
+      <text class="tick" x="538" y="512" text-anchor="middle">MAR</text>
+      <text class="tick" x="752" y="512" text-anchor="middle">ABR</text>
+      <text class="tick" x="966" y="512" text-anchor="middle">MAI</text>
+      <text class="tick" x="1180" y="512" text-anchor="middle">JUN</text>
+
+      <path class="series a" pathLength="1" style="animation-delay: 0.5s" d="M110 388 L324 331 L538 245 L752 191 L966 117 L1180 85"></path>
+      <path class="series b" pathLength="1" style="animation-delay: 0.72s" d="M110 421 L324 404 L538 372 L752 351 L966 322 L1180 306"></path>
+
+      <circle class="endpoint a" cx="1180" cy="85" r="9"></circle>
+      <circle class="endpoint b" cx="1180" cy="306" r="9"></circle>
+      <text class="endlabel" x="1150" y="62">-31%</text>
+    </svg>
+  </div>
+
+  <div class="footnote" style="animation: fade-up 0.6s ease-out both; animation-delay: 1.4s">Índice de custo por minuto entregue · base 100 em janeiro</div>
+  <div class="stamp" style="animation: fade-up 0.6s ease-out both; animation-delay: 1.55s">FIG. 12</div>
+</div>
+</body>
+</html>

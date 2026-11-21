@@ -1,0 +1,12 @@
+{
+  "name": "Abertura por íris",
+  "summary": "Máscara circular cresce do centro revelando a cena nova, com anel de contorno e título curto.",
+  "durationSeconds": 3.6,
+  "tags": [
+    "transição",
+    "íris",
+    "máscara",
+    "cena"
+  ],
+  "sha256": "0e2e8cd33aa9748bbdfbd11f7825688178ba9734e785e17050e7d75ae4cae388"
+}
