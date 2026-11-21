@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, readdir, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -54,9 +54,10 @@ test("chave muda com janela e com conteúdo", () => {
 
 test("evicção remove o mais antigo até caber no teto", async () => {
   const root = await mkdtemp(join(tmpdir(), "ff-evict-"));
-  for (const name of ["velho", "novo"]) {
+  for (const [name, seconds] of [["velho", 1_000_000], ["novo", 1_100_000]] as const) {
     await mkdir(join(root, name), { recursive: true });
     await writeFile(join(root, name, "frame.jpg"), Buffer.alloc(4096));
+    await utimes(join(root, name), new Date(seconds * 1000), new Date(seconds * 1000));
   }
   const removed = await evictCache(root, 4096);
   assert.equal(removed, 1);

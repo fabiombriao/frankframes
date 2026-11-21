@@ -56,7 +56,7 @@ export async function evictCache(root: string, maxBytes: number): Promise<number
   }
   if (total <= maxBytes) return 0;
 
-  sized.sort((a, b) => a.mtime - b.mtime);
+  sized.sort((a, b) => a.mtime - b.mtime || a.path.localeCompare(b.path));
   let removed = 0;
   for (const item of sized) {
     if (total <= maxBytes) break;

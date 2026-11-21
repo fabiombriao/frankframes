@@ -10,6 +10,7 @@
  */
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
+import { createWriteStream } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -44,13 +45,29 @@ function commandLine(command: string, args: string[]): { file: string; args: str
   return { file: command, args, shell: false };
 }
 
-async function stage(name: string, command: string, args: string[]): Promise<StageResult> {
+async function stage(name: string, command: string, args: string[], logFile?: string): Promise<StageResult> {
   const started = Date.now();
   const { file, args: spawnArgs } = commandLine(command, args);
   process.stdout.write(`\n▶ ${name}\n`);
 
   const finished = Promise.withResolvers<number>();
-  const child = spawn(file, spawnArgs, { cwd: ROOT, stdio: "inherit", env: { ...process.env, FORCE_COLOR: "1" } });
+  const sink = logFile === undefined ? undefined : createWriteStream(join(ROOT, logFile));
+  const child = spawn(file, spawnArgs, {
+    cwd: ROOT,
+    stdio: sink === undefined ? "inherit" : ["inherit", "pipe", "pipe"],
+    env: { ...process.env, FORCE_COLOR: "1" },
+  });
+  if (sink !== undefined) {
+    child.stdout?.on("data", (chunk: Buffer) => {
+      process.stdout.write(chunk);
+      sink.write(chunk);
+    });
+    child.stderr?.on("data", (chunk: Buffer) => {
+      process.stderr.write(chunk);
+      sink.write(chunk);
+    });
+    child.on("exit", () => sink.end());
+  }
   child.on("error", () => finished.resolve(127));
   child.on("exit", (value) => finished.resolve(value ?? 1));
   const code = await finished.promise;
@@ -98,7 +115,7 @@ if (!stages.at(-1)?.ok) {
 stages.push(await stage("testes rápidos", process.execPath, ["--test", ...FAST_TESTS]));
 
 if (!fast) {
-  const full = await stage("suíte completa", process.execPath, ["--test", "--test-concurrency=1", "packages/*/test/*.test.ts"]);
+  const full = await stage("suíte completa", process.execPath, ["--test", "--test-concurrency=1", "packages/*/test/*.test.ts"], "out/ci-suite.log");
   stages.push(full);
   if (full.ok) {
     stages.push(await stage("doctor", process.execPath, ["packages/cli/src/cli.ts", "doctor"]));
