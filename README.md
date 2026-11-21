@@ -14,9 +14,9 @@ node packages/cli/src/cli.ts render examples/hello.html -o out/hello.mp4
 | `packages/encode` | ✅ presets AV1/VP9/openh264, guarda de licença (bloqueia GPL/x264) |
 | `packages/engine` | ✅ relógio virtual, seek, captura atômica, vídeo fora de banda, paralelismo, shell pinado, fontes, taxonomia de falha, limpeza de órfão |
 | `packages/producer` | ✅ pipeline completo: compile → probe → extract → capture → audio → encode → assemble |
-| `packages/cli` | ✅ `lint`, `render`, `preview`, `transcribe`, `blocks`, `models`, `browser` |
+| `packages/cli` | ✅ `lint`, `render`, `preview`, `transcribe`, `captions`, `blocks`, `models`, `init`, `doctor`, `setup`, `upgrade`, `browser`, `skill` |
 | `packages/transcribe` | ✅ local (opt-in), Groq e OpenAI-compatible — nada baixa sem comando explícito |
-| `catalog/blocks` | ✅ 8 blocos prontos + `frankframes blocks add` |
+| `catalog/blocks` | ✅ 36 blocos prontos (22 paisagem 16:9 + 14 vertical 9:16) + `frankframes blocks add` |
 | `skills/frankframes` | ✅ skill de agente derivada de `docs/contract.md` |
 
 Determinismo é teste, não promessa:
@@ -24,6 +24,14 @@ Determinismo é teste, não promessa:
 - `packages/engine/test/determinism.test.ts` — 60 frames × 2 execuções + 1 em ordem invertida, no caminho padrão (`auto`) e em software.
 - `packages/engine/test/media.test.ts` — MP4 de teste extraído por FFmpeg; `<video>` vira `<img>` e a captura continua estável.
 - `packages/producer/test/render.test.ts` — HTML → MP4 com áudio, 45 frames, dois renders com exatamente os mesmos hashes.
+
+Captura e mídia seguem a mesma política:
+
+- Uma leitura por frame, depois do paint. O primeiro frame de cada sessão é o único que exige três
+  leituras idênticas; `FRANKFRAMES_CAPTURE_SHOTS=3` força o modo conservador em todos os frames.
+- Composição com vídeo roda sempre em software, independentemente da GPU disponível.
+- Frames extraídos ficam em `<assetHome>/cache/frames` com teto de 2 GiB; o mais antigo sai primeiro.
+  Fora do repo, `<assetHome>` é `~/.frankframes`, então o cache fica em `~/.frankframes/cache/frames`.
 
 GPU é o padrão; sem GPU utilizável cai para SwiftShader. Igualdade byte a byte entre máquinas é
 prometida em `software`; em `hardware` a garantia é "igual nesta máquina".
@@ -40,12 +48,14 @@ npm test
 node packages/cli/src/cli.ts lint examples/hello.html
 node packages/cli/src/cli.ts preview examples/hello.html --open
 node packages/cli/src/cli.ts render examples/hello.html -o out/hello.mp4 --preset draft --workers 4
+node packages/cli/src/cli.ts render entrada.html --gpu software --no-loudness
 node packages/cli/src/cli.ts render entrada.html --json
 node packages/cli/src/cli.ts blocks list
 node packages/cli/src/cli.ts blocks add title-card ./meu-video
 node packages/cli/src/cli.ts transcribe audio.wav --language pt
 node packages/cli/src/cli.ts models install whisper-large-v3-turbo   # ~1,5 GB, só por este comando
 
+node scripts/generate-catalog.ts          # regenera catalog/README.md a partir dos blocos
 node scripts/check-ffmpeg.ts <caminho-do-ffmpeg>
 node scripts/check-gpu.ts
 ```
@@ -63,7 +73,8 @@ packages/producer   pipeline HTML -> MP4 e mixagem de áudio
 packages/transcribe transcrição: local opt-in, Groq, OpenAI-compatible
 packages/catalog    leitura dos blocos do catálogo
 packages/cli        interface de linha de comando
-catalog/blocks      24 composições prontas (8 paisagem 16:9 + 8 vertical 9:16, + variantes)
+catalog/README.md    índice dos 36 blocos (gerado por scripts/generate-catalog.ts)
+catalog/blocks      36 composições prontas (22 paisagem 16:9 + 14 vertical 9:16)
 skills/frankframes  skill para agente de código
 docs/getting-started.md  do zero ao MP4 em 5 minutos
 docs/contract.md    a especificação (fonte de verdade)
@@ -77,8 +88,8 @@ PROVENANCE.md       método e limites de reuso
 
 ## CI
 
-O gate roda local, sem serviço externo: `node scripts/ci.ts` (47 s, 6 etapas). Detalhes em
-`docs/ci.md`. Para rodar antes de cada push: `node scripts/install-hooks.ts`.
+O gate roda local, sem serviço externo: `node scripts/ci.ts` (7 etapas; tempos por etapa em
+`docs/ci.md`). Para rodar antes de cada push: `node scripts/install-hooks.ts`.
 
 ## Regras do projeto
 

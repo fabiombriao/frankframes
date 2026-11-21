@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>vertical-cta</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: #f7f3e8; }
+  .stage {
+    position: relative;
+    width: 1080px;
+    height: 1920px;
+    overflow: hidden;
+    background: #f7f3e8;
+    color: #14130f;
+    font-family: "Inter", sans-serif;
+  }
+  .edge {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 14px;
+    background: #c8412a;
+  }
+  .kicker {
+    position: absolute;
+    left: 96px;
+    top: 128px;
+    font: 400 21px/1 "JetBrains Mono", monospace;
+    letter-spacing: 0.26em;
+    text-transform: uppercase;
+    color: rgba(20, 19, 15, 0.55);
+    animation: fade-in 0.7s ease-out both;
+  }
+  .kicker b { color: #c8412a; font-weight: 400; margin-right: 12px; }
+  .headline {
+    position: absolute;
+    left: 90px;
+    top: 330px;
+    width: 900px;
+    font-size: 132px;
+    font-weight: 700;
+    line-height: 0.96;
+    letter-spacing: -0.05em;
+  }
+  .headline span { display: block; animation: rise 0.9s cubic-bezier(0.22, 0.85, 0.24, 1) both; }
+  .headline span:nth-child(2) { animation-delay: 0.12s; }
+  .headline em {
+    font-family: "Playfair Display", serif;
+    font-style: italic;
+    font-weight: 700;
+    color: #c8412a;
+  }
+  .sub {
+    position: absolute;
+    left: 96px;
+    top: 830px;
+    width: 720px;
+    font-size: 30px;
+    line-height: 1.45;
+    color: rgba(20, 19, 15, 0.62);
+    animation: fade-in 0.8s ease-out 0.45s both;
+  }
+  .btn {
+    position: absolute;
+    left: 96px;
+    top: 1120px;
+    width: 888px;
+    height: 196px;
+    border: 3px solid #14130f;
+    overflow: hidden;
+    animation: rise 0.8s cubic-bezier(0.22, 0.85, 0.24, 1) 0.5s both;
+  }
+  .btn::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: #14130f;
+    transform-origin: bottom center;
+    animation: fill-up 0.8s cubic-bezier(0.4, 0.05, 0.2, 1) 1s both;
+  }
+  .btn .label {
+    position: absolute;
+    left: 44px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 46px;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    animation: flip 0.5s ease-out 1.4s both;
+  }
+  .btn .ring {
+    position: absolute;
+    right: 42px;
+    top: 50%;
+    width: 96px;
+    height: 96px;
+    margin-top: -48px;
+    border: 2px solid currentColor;
+    border-radius: 50%;
+    animation: flip 0.5s ease-out 1.4s both, push 0.6s cubic-bezier(0.22, 0.85, 0.24, 1) 1.6s both;
+  }
+  .btn .ring::before {
+    content: "";
+    position: absolute;
+    left: 32px;
+    top: 47px;
+    width: 30px;
+    height: 2px;
+    background: currentColor;
+  }
+  .btn .ring::after {
+    content: "";
+    position: absolute;
+    left: 46px;
+    top: 36px;
+    width: 20px;
+    height: 20px;
+    border-top: 2px solid currentColor;
+    border-right: 2px solid currentColor;
+    transform: rotate(45deg);
+  }
+  .hint {
+    position: absolute;
+    left: 96px;
+    top: 1384px;
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    font: 400 19px/1 "JetBrains Mono", monospace;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: rgba(20, 19, 15, 0.45);
+    animation: fade-in 0.7s ease-out 1.7s both;
+  }
+  .hint .bars { display: flex; flex-direction: column; gap: 4px; }
+  .hint .bars i { display: block; width: 18px; height: 2px; background: #c8412a; }
+  .hint .bars i:nth-child(2) { width: 12px; }
+  .hint .bars i:nth-child(3) { width: 6px; }
+  .foot {
+    position: absolute;
+    left: 96px;
+    right: 96px;
+    bottom: 128px;
+    border-top: 1px solid rgba(20, 19, 15, 0.3);
+    padding-top: 26px;
+    display: flex;
+    justify-content: space-between;
+    font: 400 19px/1 "JetBrains Mono", monospace;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: rgba(20, 19, 15, 0.55);
+    animation: fade-in 0.8s ease-out 1.9s both;
+  }
+  @keyframes rise {
+    from { opacity: 0; transform: translateY(40px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes fill-up {
+    from { transform: scaleY(0); }
+    to { transform: scaleY(1); }
+  }
+  @keyframes flip {
+    from { color: #14130f; }
+    to { color: #f7f3e8; }
+  }
+  @keyframes push {
+    from { margin-right: 22px; }
+    to { margin-right: 0; }
+  }
+  @keyframes fade-in {
+    from { opacity: 0; transform: translateY(12px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+</style>
+</head>
+<body>
+<div class="stage" data-composition-id="vertical-cta" data-root="true" data-width="1080" data-height="1920" data-fps="30" data-duration="3.4">
+  <div class="edge" data-clip-id="vcta-edge" data-start="0" data-duration="3.4"></div>
+  <div class="kicker" data-clip-id="vcta-kicker" data-start="0" data-duration="3.4"><b>05</b>Último aviso</div>
+
+  <div class="headline" data-clip-id="vcta-headline" data-start="0.1" data-duration="3.3">
+    <span>A série</span>
+    <span>começa <em>hoje.</em></span>
+  </div>
+
+  <div class="sub" data-clip-id="vcta-sub" data-start="0.4" data-duration="3">
+    Doze episódios, uma cidade e nenhum roteiro pronto.
+  </div>
+
+  <div class="btn" data-clip-id="vcta-button" data-start="0.5" data-duration="2.9">
+    <div class="label">Assistir agora</div>
+    <div class="ring"></div>
+  </div>
+
+  <div class="hint" data-clip-id="vcta-hint" data-start="1.6" data-duration="1.8">
+    <span class="bars"><i></i><i></i><i></i></span>
+    Arraste para cima
+  </div>
+
+  <div class="foot" data-clip-id="vcta-foot" data-start="1.8" data-duration="1.6">
+    <span>Grátis por 7 dias</span>
+    <span>Temporada 02</span>
+  </div>
+</div>
+</body>
+</html>

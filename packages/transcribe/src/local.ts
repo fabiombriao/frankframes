@@ -38,23 +38,53 @@ function isMissingBinary(error: unknown): boolean {
   return (error as NodeJS.ErrnoException | undefined)?.code === "ENOENT";
 }
 
-function milliseconds(value: unknown): number {
-  const n = Number(value);
-  return Number.isFinite(n) ? n / 1000 : 0;
+function offsetMilliseconds(value: unknown): number | undefined {
+  if (typeof value === "number") return Number.isFinite(value) ? value : undefined;
+  if (typeof value === "string" && value.trim() !== "") {
+    const n = Number(value);
+    return Number.isFinite(n) ? n : undefined;
+  }
+  return undefined;
 }
 
-function convert(entries: WhisperEntry[]): { segments: Segment[]; words: Word[] } {
+/**
+ * Converte o JSON do `whisper.cpp` (`-oj`) em texto, segmentos e palavras.
+ * `offsets` vêm em milissegundos; o resultado usa segundos.
+ */
+export function parseWhisperJson(raw: string): { text: string; segments: Segment[]; words?: Word[] } {
+  let parsed: WhisperJson;
+  try {
+    parsed = JSON.parse(raw) as WhisperJson;
+  } catch (error) {
+    throw new TranscribeError("E_WHISPER_OUTPUT", "whisper.cpp gerou JSON inválido.", { cause: error });
+  }
+  if (parsed === null || typeof parsed !== "object" || !Array.isArray(parsed.transcription)) {
+    throw new TranscribeError("E_WHISPER_OUTPUT", 'JSON do whisper.cpp sem a lista "transcription".');
+  }
+
+  const entries = parsed.transcription as (WhisperEntry | null)[];
   const segments: Segment[] = [];
   const words: Word[] = [];
+  let complete = true;
   for (const entry of entries) {
-    const text = String(entry.text ?? "").trim();
+    const text = String(entry?.text ?? "").trim();
     if (!text) continue;
-    const start = milliseconds(entry.offsets?.from);
-    const end = milliseconds(entry.offsets?.to);
+    const from = offsetMilliseconds(entry?.offsets?.from);
+    const to = offsetMilliseconds(entry?.offsets?.to);
+    const start = from === undefined ? 0 : from / 1000;
+    const end = to === undefined ? 0 : to / 1000;
     segments.push({ start, end, text });
-    words.push({ start, end, word: text });
+    if (from === undefined || to === undefined) complete = false;
+    else words.push({ start, end, word: text });
   }
-  return { segments, words };
+
+  const fallback = typeof parsed.result?.text === "string" ? parsed.result.text.trim() : "";
+  const result: { text: string; segments: Segment[]; words?: Word[] } = {
+    text: segments.map((segment) => segment.text).join(" ").trim() || fallback,
+    segments,
+  };
+  if (complete && words.length > 0) result.words = words;
+  return result;
 }
 
 /** Roda `whisper.cpp` como processo, sem rede e sem modelo embutido. */
@@ -94,23 +124,20 @@ export function createLocal(config: LocalConfig): Transcriber {
           throw new TranscribeError("E_WHISPER_FAILED", `whisper.cpp falhou ao transcrever ${file}.`, { cause: error });
         }
 
-        let raw: WhisperJson;
+        let raw: string;
         try {
-          raw = JSON.parse(await readFile(`${outputBase}.json`, "utf8")) as WhisperJson;
+          raw = await readFile(`${outputBase}.json`, "utf8");
         } catch (error) {
           throw new TranscribeError("E_WHISPER_FAILED", "whisper.cpp não gerou JSON de transcrição.", { cause: error });
         }
 
-        const entries = Array.isArray(raw.transcription) ? (raw.transcription as WhisperEntry[]) : [];
-        const { segments, words } = convert(entries);
-        const fallback = typeof raw.result?.text === "string" ? raw.result.text.trim() : "";
-
+        const parsed = parseWhisperJson(raw);
         const result: TranscriptionResult = {
-          text: segments.map((segment) => segment.text).join(" ").trim() || fallback,
-          segments,
+          text: parsed.text,
+          segments: parsed.segments,
           provider: "local",
         };
-        if (words.length > 0) result.words = words;
+        if (parsed.words) result.words = parsed.words;
         return result;
       } finally {
         await rm(dir, { recursive: true, force: true });

@@ -10,7 +10,7 @@ O gate roda **na máquina de desenvolvimento**. Sem GitHub Actions, sem serviço
 
 | Opção | Custo real | Veredito |
 |---|---|---|
-| Local (`node scripts/ci.ts`) | 47 s, zero download | **escolhido** |
+| Local (`node scripts/ci.ts`) | ~3 min 24 s, zero download | **escolhido** |
 | Docker | build inicial de 8–12 min + ~600 MB de imagem; WSL2 encarece I/O de `node_modules`; assets são win64, então exigiria embarcar FFmpeg Linux e as libs do Chrome | só quando existir artefato de release para reproduzir |
 | Nuvem (Actions/Cirrus/AppVeyor) | exige provedor e, no nosso caso, build Linux do FFmpeg + dependências do shell; Actions está proibido | quando houver servidor próprio |
 
@@ -21,20 +21,22 @@ O motivo decisivo: o produto depende de assets **pinados e já presentes** (shel
 | Etapa | Tempo medido | O que reprova |
 |---|---:|---|
 | política | 0,2 s | workflow de Actions, dependência GPL/GSAP, CDN no render, `.env` versionado, licença/spec ausente |
-| typecheck | 3,0 s | erro de tipo |
-| testes rápidos | 1,0 s | contrato, encode, transcrição, catálogo, compilador |
-| suíte completa | 36,0 s | qualquer teste, incluindo determinismo e render ponta a ponta |
-| doctor | 1,4 s | browser/FFmpeg/fontes ausentes ou impossíveis de verificar |
-| render de fumaça | 5,5 s | pipeline quebrado |
-| verificar MP4 | 0,7 s | codec/frames diferente de `av1`/90 |
+| typecheck | 3,8 s | erro de tipo |
+| testes rápidos | 4,2 s | contrato, encode, transcrição, catálogo, compilador |
+| suíte completa | 183,5 s | qualquer teste, incluindo determinismo, goldens e render ponta a ponta |
+| doctor | 1,1 s | browser/FFmpeg/fontes ausentes ou impossíveis de verificar |
+| render de fumaça | 9,9 s | pipeline quebrado |
+| verificar MP4 | 0,8 s | codec/frames diferente de `av1`/90 |
 
-Relatório em `out/ci-report.json`.
+Soma das etapas: ~3 min 24 s. Os quatro primeiros tempos vêm da última execução registrada em
+`out/ci-report.json`; doctor, render e verificação foram medidos com os comandos do gate. Nessa
+execução a suíte completa falhou e o gate parou ali — o log completo fica em `out/ci-suite.log`.
 
 ## Comandos
 
 ```bash
-node scripts/ci.ts            # gate completo (47 s)
-node scripts/ci.ts --fast     # typecheck + testes rápidos (5 s)
+node scripts/ci.ts            # gate completo (7 etapas, ~3 min 24 s)
+node scripts/ci.ts --fast     # política + typecheck + testes rápidos (8 s)
 node scripts/ci.ts --release  # inclui npm pack --dry-run dos 7 pacotes
 node scripts/install-hooks.ts # hook de pré-push rodando --fast
 ```

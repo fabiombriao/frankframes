@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>news-ticker</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: #0b0c0e; }
+  .stage {
+    position: relative;
+    width: 1920px;
+    height: 1080px;
+    overflow: hidden;
+    background: #0b0c0e;
+    color: #f4f1e8;
+    font-family: "Space Grotesk", sans-serif;
+  }
+  .top {
+    position: absolute;
+    left: 96px;
+    right: 96px;
+    top: 84px;
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    animation: fade-in 0.6s ease-out both;
+  }
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    font: 400 20px/1 "JetBrains Mono", monospace;
+    letter-spacing: 0.26em;
+    text-transform: uppercase;
+    color: rgba(244, 241, 232, 0.6);
+  }
+  .brand .dot {
+    width: 12px;
+    height: 12px;
+    background: #c8412a;
+    animation: blink 1s steps(2, end) infinite;
+  }
+  .clock { text-align: right; }
+  .clock .time {
+    display: block;
+    font: 500 58px/1 "JetBrains Mono", monospace;
+    letter-spacing: 0.02em;
+  }
+  .clock .date {
+    display: block;
+    margin-top: 10px;
+    font: 400 17px/1 "JetBrains Mono", monospace;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: rgba(244, 241, 232, 0.45);
+  }
+  .band {
+    position: absolute;
+    left: 0;
+    top: 448px;
+    width: 1920px;
+    height: 190px;
+    border-top: 2px solid rgba(244, 241, 232, 0.9);
+    border-bottom: 2px solid rgba(244, 241, 232, 0.9);
+    overflow: hidden;
+    padding: 0;
+  }
+  .track {
+    display: flex;
+    width: 5760px;
+    height: 100%;
+    animation: slide 4.2s cubic-bezier(0.5, 0, 0.2, 1) both;
+  }
+  .item {
+    position: relative;
+    flex: 0 0 1920px;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    gap: 34px;
+    padding: 0 96px;
+  }
+  .item .idx {
+    font: 400 22px/1 "JetBrains Mono", monospace;
+    letter-spacing: 0.2em;
+    color: #f2e34c;
+    align-self: flex-start;
+    margin-top: 34px;
+  }
+  .item .headline {
+    font-size: 86px;
+    font-weight: 500;
+    line-height: 1;
+    letter-spacing: -0.035em;
+    white-space: nowrap;
+  }
+  .item .headline b { font-weight: 700; color: #f2e34c; }
+  .item .sep {
+    position: absolute;
+    right: 0;
+    top: 34px;
+    bottom: 34px;
+    width: 1px;
+    background: rgba(244, 241, 232, 0.3);
+  }
+  .bottom {
+    position: absolute;
+    left: 96px;
+    right: 96px;
+    top: 690px;
+    display: flex;
+    justify-content: space-between;
+    font: 400 19px/1 "JetBrains Mono", monospace;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: rgba(244, 241, 232, 0.45);
+    animation: fade-in 0.8s ease-out 0.5s both;
+  }
+  .bottom .live { color: #f4f1e8; }
+  .guide {
+    position: absolute;
+    left: 96px;
+    right: 96px;
+    top: 860px;
+    display: flex;
+    gap: 18px;
+  }
+  .guide span {
+    flex: 1;
+    height: 3px;
+    background: rgba(244, 241, 232, 0.14);
+  }
+  .guide span:first-child { background: #c8412a; }
+  @keyframes slide {
+    0% { transform: translateX(0); }
+    18% { transform: translateX(0); }
+    38% { transform: translateX(-1920px); }
+    56% { transform: translateX(-1920px); }
+    78% { transform: translateX(-3840px); }
+    100% { transform: translateX(-3840px); }
+  }
+  @keyframes blink {
+    from { opacity: 1; }
+    to { opacity: 0.25; }
+  }
+  @keyframes fade-in {
+    from { opacity: 0; transform: translateY(-10px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+</style>
+</head>
+<body>
+<div class="stage" data-composition-id="news-ticker" data-root="true" data-width="1920" data-height="1080" data-fps="30" data-duration="4.2">
+  <div class="top" data-clip-id="ticker-top" data-start="0" data-duration="4.2">
+    <div class="brand"><span class="dot"></span>Boletim da redação</div>
+    <div class="clock">
+      <span class="time">21:40</span>
+      <span class="date">Quinta · 20 nov</span>
+    </div>
+  </div>
+
+  <div class="band" data-clip-id="ticker-band" data-start="0" data-duration="4.2">
+    <div class="track">
+      <div class="item">
+        <span class="idx">01</span>
+        <span class="headline">Chuva <b>adiada</b> a estreia do festival</span>
+        <span class="sep"></span>
+      </div>
+      <div class="item">
+        <span class="idx">02</span>
+        <span class="headline">Novo terminal abre na <b>zona sul</b></span>
+        <span class="sep"></span>
+      </div>
+      <div class="item">
+        <span class="idx">03</span>
+        <span class="headline">Time da casa vence nos <b>acréscimos</b></span>
+      </div>
+    </div>
+  </div>
+
+  <div class="bottom" data-clip-id="ticker-bottom" data-start="0.4" data-duration="3.8">
+    <span class="live">● Ao vivo · três manchetes</span>
+    <span>Atualizado há 2 min</span>
+  </div>
+
+  <div class="guide" data-clip-id="ticker-guide" data-start="0.6" data-duration="3.6">
+    <span></span><span></span><span></span><span></span>
+  </div>
+</div>
+</body>
+</html>

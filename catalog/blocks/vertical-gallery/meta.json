@@ -1,0 +1,13 @@
+{
+  "name": "Galeria vertical",
+  "summary": "Três blocos de foto em CSS empilhados em retrato, entrando em stagger com recorte e numeração.",
+  "durationSeconds": 3.8,
+  "tags": [
+    "vertical",
+    "galeria",
+    "stagger",
+    "fotos",
+    "papel"
+  ],
+  "sha256": "6749b95cf48e04bca3ea5602bdffe6cc78c4f94febe86aee2eb2d727e9b1f3cc"
+}

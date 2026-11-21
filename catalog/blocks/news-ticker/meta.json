@@ -1,0 +1,13 @@
+{
+  "name": "Faixa de manchetes",
+  "summary": "Faixa horizontal escura que desliza por três manchetes com separadores, relógio estático e indicadores.",
+  "durationSeconds": 4.2,
+  "tags": [
+    "notícias",
+    "ticker",
+    "manchetes",
+    "faixa",
+    "escuro"
+  ],
+  "sha256": "00c45c1e312485fa087a61f29b7c3531824ed0e982e66c7c70dee09aab28522d"
+}

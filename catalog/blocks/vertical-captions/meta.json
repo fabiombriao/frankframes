@@ -1,0 +1,13 @@
+{
+  "name": "Legendas empilhadas",
+  "summary": "Três legendas verticais entram em sequência com falante, tempo e margem segura de 96 px.",
+  "durationSeconds": 3.6,
+  "tags": [
+    "vertical",
+    "legendas",
+    "entrevista",
+    "sequência",
+    "escuro"
+  ],
+  "sha256": "bb926834246a30627786863fc3e34a2f35182332b85b742a99c77d15d5174c9a"
+}

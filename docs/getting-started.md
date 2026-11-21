@@ -35,10 +35,16 @@ salva. A barra no rodapé tem play/pause e scrub por frame; o instante fica na U
 ## 4. Renderizar
 
 ```bash
-node packages/cli/src/cli.ts render meu-video/index.html -o out/video.mp4 --preset draft
+node packages/cli/src/cli.ts render meu-video/index.html -o out/video.mp4 --preset draft --gpu software --no-loudness
 ```
 
 Saída AV1 em MP4. `--preset draft|standard|high`, `--workers N`, `--json` para máquina.
+`--gpu auto|software|hardware` escolhe o caminho de captura (o padrão é `auto`; composição com vídeo
+roda sempre em software); `--no-loudness` desliga a normalização de loudness em dois passes.
+
+Frames extraídos de vídeo ficam em cache: `<assetHome>/cache/frames`, com teto de 2 GiB e remoção do
+mais antigo primeiro. Dentro do repo, `<assetHome>` é `vendor/`; fora do repo, o cache fica em
+`~/.frankframes/cache/frames`.
 
 ## 5. Editar a composição
 
@@ -63,6 +69,9 @@ O contrato completo está em [`docs/contract.md`](contract.md). O mínimo:
 node packages/cli/src/cli.ts blocks list
 node packages/cli/src/cli.ts blocks add title-card meu-video/abertura
 ```
+
+`catalog/README.md` é o índice dos 36 blocos (22 paisagem 16:9 + 14 vertical 9:16), gerado por
+`node scripts/generate-catalog.ts`; não edite à mão.
 
 ## Problemas comuns
 

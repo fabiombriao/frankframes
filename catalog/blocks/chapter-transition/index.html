@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>chapter-transition</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: #bd3b25; }
+  .stage {
+    position: relative;
+    width: 1920px;
+    height: 1080px;
+    overflow: hidden;
+    background: #bd3b25;
+    color: #f5efe0;
+    font-family: "Inter", sans-serif;
+  }
+  .number {
+    position: absolute;
+    left: 104px;
+    top: 96px;
+    font-family: "Anton", sans-serif;
+    font-size: 820px;
+    line-height: 0.86;
+    letter-spacing: -0.03em;
+    color: #f5efe0;
+    animation: number-in-out 3.2s cubic-bezier(0.2, 0.86, 0.24, 1) both;
+  }
+  .rule {
+    position: absolute;
+    left: 126px;
+    top: 884px;
+    width: 980px;
+    height: 6px;
+    background: #f2e34c;
+    transform-origin: left center;
+    animation: rule-in 1s cubic-bezier(0.2, 0.86, 0.24, 1) 0.15s both;
+  }
+  .label {
+    position: absolute;
+    left: 126px;
+    top: 922px;
+    display: flex;
+    align-items: baseline;
+    gap: 24px;
+    font: 400 22px/1 "JetBrains Mono", monospace;
+    letter-spacing: 0.24em;
+    text-transform: uppercase;
+    animation: label-in-out 2.9s ease-out 0.3s both;
+  }
+  .label em {
+    font-family: "Inter", sans-serif;
+    font-style: normal;
+    font-weight: 600;
+    font-size: 34px;
+    letter-spacing: 0.02em;
+    text-transform: none;
+  }
+  .side {
+    position: absolute;
+    right: 118px;
+    top: 128px;
+    writing-mode: vertical-rl;
+    font: 400 20px/1 "JetBrains Mono", monospace;
+    letter-spacing: 0.3em;
+    text-transform: uppercase;
+    color: rgba(245, 239, 224, 0.6);
+    animation: side-in 0.9s ease-out 0.5s both;
+  }
+  .tick {
+    position: absolute;
+    right: 118px;
+    bottom: 96px;
+    width: 220px;
+    height: 2px;
+    background: rgba(245, 239, 224, 0.45);
+  }
+  @keyframes number-in-out {
+    0% { opacity: 0; transform: translateX(-520px); }
+    20% { opacity: 1; transform: translateX(0); }
+    70% { opacity: 1; transform: translateX(0); }
+    100% { opacity: 0; transform: translateX(-120px); }
+  }
+  @keyframes rule-in {
+    from { transform: scaleX(0); }
+    to { transform: scaleX(1); }
+  }
+  @keyframes label-in-out {
+    0% { opacity: 0; transform: translateY(22px); }
+    20% { opacity: 1; transform: translateY(0); }
+    78% { opacity: 1; }
+    100% { opacity: 0; }
+  }
+  @keyframes side-in {
+    from { opacity: 0; transform: translateY(-18px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+</style>
+</head>
+<body>
+<div class="stage" data-composition-id="chapter-transition" data-root="true" data-width="1920" data-height="1080" data-fps="30" data-duration="3.2">
+  <div class="number" data-clip-id="chapter-number" data-start="0" data-duration="3.2">04</div>
+  <div class="rule" data-clip-id="chapter-rule" data-start="0.15" data-duration="3.05"></div>
+  <div class="label" data-clip-id="chapter-label" data-start="0.3" data-duration="2.9">
+    Capítulo quatro <em>A cidade que acorda</em>
+  </div>
+  <div class="side" data-clip-id="chapter-side" data-start="0.5" data-duration="2.7">Temporada 02</div>
+  <div class="tick" data-clip-id="chapter-tick" data-start="0.6" data-duration="2.6"></div>
+</div>
+</body>
+</html>

@@ -1,0 +1,13 @@
+{
+  "name": "Mosaico de fotos",
+  "summary": "Quatro retângulos chapados em mosaico, revelados por máscara de corte com legendas curtas.",
+  "durationSeconds": 4.2,
+  "tags": [
+    "mosaico",
+    "grade",
+    "recorte",
+    "galeria",
+    "editorial"
+  ],
+  "sha256": "583727cf5e0ce1cd7fb778fb71b9cfcf5657cd77210c62134c185d23890b8914"
+}

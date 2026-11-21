@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>testimonial</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: #10110f; }
+  .stage {
+    position: relative;
+    width: 1920px;
+    height: 1080px;
+    overflow: hidden;
+    background: #10110f;
+    color: #f0ece2;
+    font-family: "Lora", serif;
+  }
+  .mark {
+    position: absolute;
+    left: 108px;
+    top: 92px;
+    font-family: "Playfair Display", serif;
+    font-size: 300px;
+    line-height: 0.7;
+    color: #c8412a;
+    animation: mark-in 0.8s cubic-bezier(0.22, 0.85, 0.24, 1) both;
+  }
+  .kicker {
+    position: absolute;
+    right: 118px;
+    top: 104px;
+    font: 400 19px/1 "JetBrains Mono", monospace;
+    letter-spacing: 0.26em;
+    text-transform: uppercase;
+    color: rgba(240, 236, 226, 0.45);
+    animation: fade-in 0.7s ease-out both;
+  }
+  .quote {
+    position: absolute;
+    left: 116px;
+    top: 330px;
+    width: 1520px;
+    font-size: 92px;
+    line-height: 1.16;
+    letter-spacing: -0.012em;
+    animation: quote-in 1s cubic-bezier(0.22, 0.85, 0.24, 1) 0.15s both;
+  }
+  .quote em {
+    font-style: italic;
+    color: #f2e34c;
+  }
+  .attrib {
+    position: absolute;
+    left: 116px;
+    right: 118px;
+    bottom: 108px;
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    border-top: 2px solid rgba(240, 236, 226, 0.85);
+    padding-top: 24px;
+    animation: fade-in 0.8s ease-out 0.8s both;
+  }
+  .who { font-family: "Inter", sans-serif; }
+  .who strong {
+    display: block;
+    font-size: 30px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    margin-bottom: 6px;
+  }
+  .who span {
+    font: 400 19px/1 "JetBrains Mono", monospace;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: rgba(240, 236, 226, 0.55);
+  }
+  .org {
+    text-align: right;
+    font: 600 26px/1.2 "Inter", sans-serif;
+    letter-spacing: 0.02em;
+  }
+  .org span {
+    display: block;
+    margin-top: 8px;
+    font: 400 17px/1 "JetBrains Mono", monospace;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: rgba(240, 236, 226, 0.45);
+  }
+  @keyframes quote-in {
+    from { opacity: 0; transform: translateY(38px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes mark-in {
+    from { opacity: 0; transform: translateY(-24px) scale(0.9); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+  }
+  @keyframes fade-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+</style>
+</head>
+<body>
+<div class="stage" data-composition-id="testimonial" data-root="true" data-width="1920" data-height="1080" data-fps="30" data-duration="4.2">
+  <div class="mark" data-clip-id="testimonial-mark" data-start="0" data-duration="4.2">&ldquo;</div>
+  <div class="kicker" data-clip-id="testimonial-kicker" data-start="0.1" data-duration="4.1">Depoimento · Cliente</div>
+
+  <div class="quote" data-clip-id="testimonial-quote" data-start="0.15" data-duration="4.05">
+    A câmera deles não filma o produto.<br>Filma o <em>dia em que ele faz falta.</em>
+  </div>
+
+  <div class="attrib" data-clip-id="testimonial-attrib" data-start="0.8" data-duration="3.4">
+    <div class="who">
+      <strong>Marina Toledo</strong>
+      <span>Diretora de marca</span>
+    </div>
+    <div class="org">Casa Norte<span>Campanha 2026</span></div>
+  </div>
+</div>
+</body>
+</html>

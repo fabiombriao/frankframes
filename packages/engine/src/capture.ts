@@ -38,6 +38,8 @@ export interface SessionOptions {
   viewport: Viewport;
   gpu: GpuMode;
   executablePath?: string;
+  /** Leituras consecutivas idênticas exigidas por frame (padrão 1; verificação usa 3). */
+  captureShots?: number;
 }
 
 export interface Session {
@@ -142,19 +144,20 @@ async function startSession(
         });
       };
 
-      // A primeira captura de uma sessão pode pegar o frame composto antes do seek.
-      if (!primed) {
+      // O primeiro frame da sessão é o único que ainda pega estado de aquecimento:
+      // exige três leituras iguais. Os demais saem com uma leitura só.
+      const first = !primed;
+      if (first) {
         primed = true;
         await shot();
         await settlePaint();
       }
 
-      // Quantas capturas consecutivas iguais antes de aceitar o frame.
-      // Padrão 1: com software + settle pós-paint + descarte da primeira captura,
-      // uma leitura já é estável (medido: 3 comparações de 24 blocos e 2 renders de
-      // vídeo real sem divergência). `FRANKFRAMES_CAPTURE_SHOTS=3` religa o modo
-      // conservador para investigar hardware ou máquina sob carga.
-      const required = Math.min(5, Math.max(1, Number(process.env.FRANKFRAMES_CAPTURE_SHOTS ?? 1) || 1));
+      const conservative = Math.min(
+        5,
+        Math.max(1, options.captureShots ?? (Number(process.env.FRANKFRAMES_CAPTURE_SHOTS) || 1)),
+      );
+      const required = first ? 3 : conservative;
       if (required === 1) {
         await settlePaint();
         const single = await shot();

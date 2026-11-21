@@ -39,6 +39,8 @@ export async function captureGolden(
     url: `${server.url}${basename(prepared.entry)}`,
     viewport: prepared.viewport,
     gpu: options.gpu ?? "software",
+    // Goldens são verificação, não caminho de velocidade: exigem frames estáveis.
+    captureShots: 3,
   });
 
   try {
@@ -69,6 +71,7 @@ export async function captureFrameAt(entry: string, ratio = 0.5): Promise<{ png:
     url: `${server.url}${basename(prepared.entry)}`,
     viewport: prepared.viewport,
     gpu: "software",
+    captureShots: 3,
   });
   try {
     const frame = Math.min(prepared.totalFrames - 1, Math.round(ratio * (prepared.totalFrames - 1)));

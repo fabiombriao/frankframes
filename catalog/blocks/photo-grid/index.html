@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>photo-grid</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: #efece3; }
+  .stage {
+    position: relative;
+    width: 1920px;
+    height: 1080px;
+    overflow: hidden;
+    background: #efece3;
+    color: #14130f;
+    font-family: "Inter", sans-serif;
+  }
+  .head {
+    position: absolute;
+    left: 132px;
+    top: 74px;
+    display: flex;
+    justify-content: space-between;
+    width: 1656px;
+    font: 400 19px/1 "JetBrains Mono", monospace;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: rgba(20, 19, 15, 0.55);
+    animation: fade-in 0.6s ease-out both;
+  }
+  .head b { color: #c8412a; font-weight: 400; }
+  .shot {
+    position: absolute;
+    overflow: hidden;
+    animation: cut 0.9s cubic-bezier(0.3, 0.9, 0.24, 1) both;
+  }
+  .shot .fill {
+    position: absolute;
+    inset: 0;
+  }
+  .shot .cap {
+    position: absolute;
+    left: 22px;
+    bottom: 18px;
+    font: 400 18px/1.4 "JetBrains Mono", monospace;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+  .shot .cap span { display: block; opacity: 0.65; font-size: 15px; }
+  .a { left: 132px; top: 118px; width: 1000px; height: 500px; }
+  .b { left: 1156px; top: 118px; width: 632px; height: 500px; }
+  .c { left: 132px; top: 642px; width: 480px; height: 330px; }
+  .d { left: 636px; top: 642px; width: 1152px; height: 330px; }
+  .a .fill { background: #cbc5b4; }
+  .b .fill { background: #c8412a; }
+  .c .fill { background: #2b2a25; }
+  .d .fill {
+    background:
+      repeating-linear-gradient(90deg, rgba(20, 19, 15, 0.08) 0 2px, transparent 2px 74px),
+      #9d9783;
+  }
+  .a .cap { color: #14130f; }
+  .b .cap { color: #f5efe0; }
+  .c .cap { color: #f5efe0; }
+  .d .cap { color: #14130f; }
+  .a .fill::before,
+  .b .fill::before,
+  .c .fill::before {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 260px;
+    height: 260px;
+    margin: -130px 0 0 -130px;
+    border: 1px solid rgba(20, 19, 15, 0.16);
+    border-radius: 50%;
+  }
+  .b .fill::before, .c .fill::before { border-color: rgba(245, 239, 224, 0.28); }
+  .foot {
+    position: absolute;
+    left: 132px;
+    bottom: 52px;
+    width: 1656px;
+    border-top: 1px solid rgba(20, 19, 15, 0.25);
+    padding-top: 16px;
+    display: flex;
+    justify-content: space-between;
+    font: 400 19px/1 "JetBrains Mono", monospace;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: rgba(20, 19, 15, 0.6);
+  }
+  @keyframes cut {
+    from { clip-path: inset(0 0 100% 0); transform: translateY(26px); }
+    to { clip-path: inset(0 0 0 0); transform: translateY(0); }
+  }
+  @keyframes fade-in {
+    from { opacity: 0; transform: translateY(-10px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+</style>
+</head>
+<body>
+<div class="stage" data-composition-id="photo-grid" data-root="true" data-width="1920" data-height="1080" data-fps="30" data-duration="4.2">
+  <div class="head" data-clip-id="grid-head" data-start="0" data-duration="4.2">
+    <span><b>04</b> Mosaico de campo</span>
+    <span>Recorte editorial</span>
+  </div>
+
+  <div class="shot a" data-clip-id="shot-a" data-start="0" data-duration="4.2">
+    <div class="fill"></div>
+    <div class="cap">01 · Litoral norte<span>06h12 · ISO 200</span></div>
+  </div>
+
+  <div class="shot b" data-clip-id="shot-b" data-start="0.12" data-duration="4.08">
+    <div class="fill"></div>
+    <div class="cap">02 · Feira<span>Seco · 35 mm</span></div>
+  </div>
+
+  <div class="shot c" data-clip-id="shot-c" data-start="0.24" data-duration="3.96">
+    <div class="fill"></div>
+    <div class="cap">03 · Janela<span>Contraluz</span></div>
+  </div>
+
+  <div class="shot d" data-clip-id="shot-d" data-start="0.36" data-duration="3.84">
+    <div class="fill"></div>
+    <div class="cap">04 · Serra<span>Longa exposição</span></div>
+  </div>
+
+  <div class="foot" data-clip-id="grid-foot" data-start="0.6" data-duration="3.6">
+    <span>Quatro recortes, um mesmo rolo</span>
+    <span>Arquivo 04 / 12</span>
+  </div>
+</div>
+</body>
+</html>

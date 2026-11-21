@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>vertical-testimonial</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: #0d0e0d; }
+  .stage {
+    position: relative;
+    width: 1080px;
+    height: 1920px;
+    overflow: hidden;
+    background: #0d0e0d;
+    color: #f4f0e6;
+    font-family: "Lora", serif;
+  }
+  .kicker {
+    position: absolute;
+    left: 96px;
+    top: 112px;
+    font: 400 21px/1 "JetBrains Mono", monospace;
+    letter-spacing: 0.26em;
+    text-transform: uppercase;
+    color: rgba(244, 240, 230, 0.5);
+    animation: fade-in 0.6s ease-out both;
+  }
+  .kicker b { color: #f2e34c; font-weight: 400; margin-right: 12px; }
+  .mark {
+    position: absolute;
+    left: 80px;
+    top: 168px;
+    font-family: "Playfair Display", serif;
+    font-size: 400px;
+    line-height: 0.62;
+    color: #c8412a;
+    animation: mark-in 0.8s cubic-bezier(0.22, 0.85, 0.24, 1) both;
+  }
+  .quote {
+    position: absolute;
+    left: 96px;
+    top: 660px;
+    width: 880px;
+    font-size: 100px;
+    line-height: 1.12;
+    letter-spacing: -0.02em;
+    animation: quote-in 1s cubic-bezier(0.22, 0.85, 0.24, 1) 0.2s both;
+  }
+  .quote em {
+    font-style: italic;
+    color: #f2e34c;
+  }
+  .stamp-line {
+    position: absolute;
+    left: 96px;
+    top: 1148px;
+    padding-top: 22px;
+    width: 880px;
+    border-top: 1px solid rgba(244, 240, 230, 0.25);
+    font: 400 20px/1 "JetBrains Mono", monospace;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: rgba(244, 240, 230, 0.45);
+    animation: fade-in 0.8s ease-out 0.55s both;
+  }
+  .attrib {
+    position: absolute;
+    left: 96px;
+    right: 96px;
+    bottom: 180px;
+    animation: fade-in 0.9s ease-out 0.8s both;
+  }
+  .rule {
+    width: 100%;
+    height: 4px;
+    background: #f4f0e6;
+    margin-bottom: 34px;
+  }
+  .row { display: flex; align-items: center; gap: 28px; }
+  .avatar {
+    width: 108px;
+    height: 108px;
+    flex: 0 0 108px;
+    border-radius: 50%;
+    border: 2px solid #f2e34c;
+    display: grid;
+    place-items: center;
+    font-family: "Inter", sans-serif;
+    font-size: 36px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    color: #f2e34c;
+  }
+  .who { font-family: "Inter", sans-serif; }
+  .who strong {
+    display: block;
+    font-size: 38px;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    margin-bottom: 8px;
+  }
+  .who span {
+    font: 400 20px/1 "JetBrains Mono", monospace;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: rgba(244, 240, 230, 0.5);
+  }
+  .stamp {
+    margin-left: auto;
+    text-align: right;
+    font: 400 19px/1.6 "JetBrains Mono", monospace;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: rgba(244, 240, 230, 0.42);
+  }
+  .stamp b { display: block; color: #f4f0e6; font-weight: 400; }
+  @keyframes quote-in {
+    from { opacity: 0; transform: translateY(44px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes mark-in {
+    from { opacity: 0; transform: translateY(-28px) scale(0.9); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+  }
+  @keyframes fade-in {
+    from { opacity: 0; transform: translateY(14px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+</style>
+</head>
+<body>
+<div class="stage" data-composition-id="vertical-testimonial" data-root="true" data-width="1080" data-height="1920" data-fps="30" data-duration="4">
+  <div class="kicker" data-clip-id="vtest-kicker" data-start="0" data-duration="4"><b>03</b>Depoimento</div>
+  <div class="mark" data-clip-id="vtest-mark" data-start="0.05" data-duration="3.95">&ldquo;</div>
+
+  <div class="quote" data-clip-id="vtest-quote" data-start="0.2" data-duration="3.8">
+    Eles filmaram a cidade como quem <em>pede licença</em>.
+  </div>
+
+  <div class="stamp-line" data-clip-id="vtest-stamp" data-start="0.55" data-duration="3.45">
+    Campanha Casa Norte · Temporada 2026
+  </div>
+
+  <div class="attrib" data-clip-id="vtest-attrib" data-start="0.8" data-duration="3.2">
+    <div class="rule"></div>
+    <div class="row">
+      <div class="avatar">MT</div>
+      <div class="who">
+        <strong>Marina Toledo</strong>
+        <span>Diretora de marca · Casa Norte</span>
+      </div>
+      <div class="stamp"><b>Campanha</b>2026</div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

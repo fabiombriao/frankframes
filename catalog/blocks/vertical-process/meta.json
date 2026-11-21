@@ -1,0 +1,13 @@
+{
+  "name": "Processo vertical",
+  "summary": "Três passos em retrato com conector vertical que se desenha, números grandes e etiquetas de etapa.",
+  "durationSeconds": 4.2,
+  "tags": [
+    "vertical",
+    "processo",
+    "passos",
+    "conector",
+    "escuro"
+  ],
+  "sha256": "234d8d91e586edfa0ec5e7caca5279d735f21ef62e1238f6ff235aba05a40cce"
+}

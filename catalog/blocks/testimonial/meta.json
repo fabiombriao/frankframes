@@ -1,0 +1,13 @@
+{
+  "name": "Depoimento serifado",
+  "summary": "Citação em Lora sobre fundo escuro, aspas em vermelho e atribuição com nome e empresa.",
+  "durationSeconds": 4.2,
+  "tags": [
+    "depoimento",
+    "citação",
+    "serifa",
+    "escuro",
+    "cliente"
+  ],
+  "sha256": "6b656ae2f3f3768d497f001f8d8260244e7cd92bd9b9851946fc001c71ab533a"
+}

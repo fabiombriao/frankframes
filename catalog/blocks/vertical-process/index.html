@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>vertical-process</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: #101110; }
+  .stage {
+    position: relative;
+    width: 1080px;
+    height: 1920px;
+    overflow: hidden;
+    background: #101110;
+    color: #f1eee4;
+    font-family: "Inter", sans-serif;
+  }
+  .kicker {
+    position: absolute;
+    left: 96px;
+    top: 112px;
+    font: 400 21px/1 "JetBrains Mono", monospace;
+    letter-spacing: 0.26em;
+    text-transform: uppercase;
+    color: rgba(241, 238, 228, 0.5);
+    animation: fade-in 0.6s ease-out both;
+  }
+  .kicker b { color: #f2e34c; font-weight: 400; margin-right: 12px; }
+  .title {
+    position: absolute;
+    left: 92px;
+    top: 196px;
+    width: 860px;
+    font-size: 88px;
+    font-weight: 700;
+    line-height: 1.02;
+    letter-spacing: -0.045em;
+    animation: rise 0.9s cubic-bezier(0.22, 0.85, 0.24, 1) 0.1s both;
+  }
+  .title em {
+    font-family: "Playfair Display", serif;
+    font-style: italic;
+    font-weight: 700;
+    color: #f2e34c;
+  }
+  .rail {
+    position: absolute;
+    left: 208px;
+    top: 790px;
+    width: 2px;
+    height: 800px;
+    background: rgba(241, 238, 228, 0.16);
+    transform-origin: top center;
+    animation: draw 1.5s cubic-bezier(0.4, 0.05, 0.2, 1) 0.2s both;
+  }
+  .rail i {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 2px;
+    height: 100%;
+    background: #f2e34c;
+    transform-origin: top center;
+    animation: draw 1.5s cubic-bezier(0.4, 0.05, 0.2, 1) 0.2s both;
+  }
+  .step {
+    position: absolute;
+    left: 0;
+    width: 1080px;
+    animation: rise 0.8s cubic-bezier(0.22, 0.85, 0.24, 1) both;
+  }
+  .s1 { top: 750px; animation-delay: 0.35s; }
+  .s2 { top: 1060px; animation-delay: 0.75s; }
+  .s3 { top: 1370px; animation-delay: 1.15s; }
+  .num {
+    position: absolute;
+    left: 96px;
+    top: -8px;
+    font: 500 86px/1 "JetBrains Mono", monospace;
+    letter-spacing: -0.04em;
+    color: #f2e34c;
+  }
+  .dot {
+    position: absolute;
+    left: 194px;
+    top: 26px;
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    background: #101110;
+    border: 2px solid #f2e34c;
+  }
+  .body { position: absolute; left: 300px; top: 0; width: 690px; }
+  .body h2 {
+    margin: 0 0 12px;
+    font-size: 50px;
+    font-weight: 600;
+    letter-spacing: -0.03em;
+  }
+  .body p {
+    margin: 0;
+    font-size: 26px;
+    line-height: 1.45;
+    color: rgba(241, 238, 228, 0.6);
+  }
+  .body .tag {
+    display: inline-block;
+    margin-top: 18px;
+    font: 400 17px/1 "JetBrains Mono", monospace;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: rgba(241, 238, 228, 0.4);
+    border: 1px solid rgba(241, 238, 228, 0.2);
+    padding: 9px 14px;
+  }
+  .foot {
+    position: absolute;
+    left: 96px;
+    right: 96px;
+    bottom: 112px;
+    display: flex;
+    justify-content: space-between;
+    border-top: 1px solid rgba(241, 238, 228, 0.2);
+    padding-top: 24px;
+    font: 400 19px/1 "JetBrains Mono", monospace;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: rgba(241, 238, 228, 0.45);
+    animation: fade-in 0.8s ease-out 1.5s both;
+  }
+  @keyframes draw {
+    from { transform: scaleY(0); }
+    to { transform: scaleY(1); }
+  }
+  @keyframes rise {
+    from { opacity: 0; transform: translateY(36px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes fade-in {
+    from { opacity: 0; transform: translateY(-10px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+</style>
+</head>
+<body>
+<div class="stage" data-composition-id="vertical-process" data-root="true" data-width="1080" data-height="1920" data-fps="30" data-duration="4.2">
+  <div class="kicker" data-clip-id="process-kicker" data-start="0" data-duration="4.2"><b>03</b>Como a série é feita</div>
+  <div class="title" data-clip-id="process-title" data-start="0.1" data-duration="4.1">Do briefing ao <em>corte final</em></div>
+
+  <div class="rail" data-clip-id="process-rail" data-start="0.2" data-duration="4"><i></i></div>
+
+  <div class="step s1" data-clip-id="process-step-1" data-start="0.35" data-duration="3.85">
+    <div class="num">01</div>
+    <div class="dot"></div>
+    <div class="body">
+      <h2>Escuta</h2>
+      <p>Duas semanas morando com a história antes de qualquer enquadramento.</p>
+      <span class="tag">Pesquisa</span>
+    </div>
+  </div>
+
+  <div class="step s2" data-clip-id="process-step-2" data-start="0.75" data-duration="3.45">
+    <div class="num">02</div>
+    <div class="dot"></div>
+    <div class="body">
+      <h2>Roda</h2>
+      <p>Doze dias de set, uma câmera na mão e nenhum plano que sobreviva ao primeiro take.</p>
+      <span class="tag">Captação</span>
+    </div>
+  </div>
+
+  <div class="step s3" data-clip-id="process-step-3" data-start="1.15" data-duration="3.05">
+    <div class="num">03</div>
+    <div class="dot"></div>
+    <div class="body">
+      <h2>Corta</h2>
+      <p>A ilha decide o que fica. O resto vira arquivo, e o arquivo também aparece.</p>
+      <span class="tag">Montagem</span>
+    </div>
+  </div>
+
+  <div class="foot" data-clip-id="process-foot" data-start="1.5" data-duration="2.7">
+    <span>Três etapas</span>
+    <span>Nenhum atalho</span>
+  </div>
+</div>
+</body>
+</html>
