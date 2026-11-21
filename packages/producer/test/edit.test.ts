@@ -1,7 +1,7 @@
 // FrankFrames — proprietário. Ver LICENSE na raiz.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { applyPatches, applyTransition, deleteClip, EditError, splitClip } from "../src/edit.ts";
+import { applyPatches, applyTransition, deleteClip, EditError, splitClip, trimClipStart } from "../src/edit.ts";
 import { loadComposition } from "@frankframes/contract";
 
 const SOURCE = `<!doctype html>
@@ -332,4 +332,144 @@ test("transição: excluir A tira a transição de B e B não se move; excluir B
   assert.ok(!outB.includes('data-clip-id="c"'));
   assert.equal(loadComposition(outB).ok, true);
   assert.equal(startsOf(outB).d, before.d, "d referenciava c e ganhou início absoluto igual ao de antes");
+});
+
+// ---- EDT-42: aparar pela borda esquerda ----
+
+const TRIM = `<!doctype html>
+<html><body>
+  <div data-composition-id="main" data-root="true" data-duration="10">
+    <video data-clip-id="v" src="assets/v.mp4" data-start="1" data-duration="4" data-offset="0.5" data-playback-rate="2" data-fade-in="0.5"></video>
+    <div data-clip-id="after" data-start="v" data-duration="1">fim</div>
+    <div data-clip-id="a" data-start="6" data-duration="2">a</div>
+    <div data-clip-id="r" data-start="a + 0.5" data-duration="1.5">r</div>
+  </div>
+</body></html>
+`;
+
+function clipsOf(source: string) {
+  const composition = loadComposition(source);
+  assert.equal(composition.ok, true, JSON.stringify(composition.diagnostics));
+  return new Map(composition.clips.map((clip) => [clip.id, clip]));
+}
+
+function trimError(source: string, clipId: string, start: number): EditError {
+  try {
+    trimClipStart(source, { clipId, start });
+  } catch (error) {
+    assert.ok(error instanceof EditError, String(error));
+    return error;
+  }
+  assert.fail("esperava EditError");
+}
+
+test("aparar vídeo: início, duração e offset (× taxa) mudam e o fim fica parado", () => {
+  const before = clipsOf(TRIM);
+  const out = trimClipStart(TRIM, { clipId: "v", start: 2 });
+  const after = clipsOf(out);
+  const v = after.get("v")!;
+  assert.equal(v.start, 2);
+  assert.equal(v.end, before.get("v")!.end, "o fim não se move");
+  assert.equal(v.end, 5);
+  assert.equal(v.authoredDuration, 3);
+  // 1 s de timeline a 2× = 2 s de fonte a mais: 0,5 + 2.
+  assert.equal(v.offset, 2.5);
+  assert.equal(v.fadeIn, 0.5, "fade de entrada continua");
+  // Só os três atributos mudam, no mesmo lugar.
+  assert.equal(out, TRIM.replace(`data-start="1" data-duration="4" data-offset="0.5"`, `data-start="2" data-duration="3" data-offset="2.5"`));
+});
+
+test("aparar não move ninguém: quem começa no fim do clip e quem referencia outro clip ficam onde estavam", () => {
+  const before = clipsOf(TRIM);
+  const after = clipsOf(trimClipStart(TRIM, { clipId: "v", start: 3 }));
+  for (const id of ["after", "a", "r"]) {
+    assert.equal(after.get(id)!.start, before.get(id)!.start, id);
+    assert.equal(after.get(id)!.end, before.get(id)!.end, id);
+  }
+  // Cadeia por referência: b termina em 3, c = b + 0,5 e d = c continuam iguais.
+  const chainBefore = startsOf(CHAIN);
+  const chainAfter = startsOf(trimClipStart(CHAIN, { clipId: "b", start: 2.5 }));
+  assert.deepEqual(chainAfter, { ...chainBefore, b: 2.5 });
+});
+
+test("aparar clip com início por referência soma o deslocamento ao offset da referência", () => {
+  const out = trimClipStart(TRIM, { clipId: "r", start: 9.5 });
+  assert.match(out, /data-clip-id="r" data-start="a \+ 1\.5" data-duration="0\.5"/);
+  const r = clipsOf(out).get("r")!;
+  assert.equal(r.start, 9.5);
+  assert.equal(r.end, 10);
+  // Voltando o início para antes, o deslocamento diminui e some quando zera.
+  const back = trimClipStart(TRIM, { clipId: "r", start: 8 });
+  assert.match(back, /data-clip-id="r" data-start="a" data-duration="2"/);
+});
+
+test("aparar para a esquerda devolve material à mídia (offset diminui) até a borda da fonte", () => {
+  const source = TRIM.replace(`data-offset="0.5"`, `data-offset="1"`);
+  const out = trimClipStart(source, { clipId: "v", start: 0.75 });
+  const v = clipsOf(out).get("v")!;
+  assert.equal(v.start, 0.75);
+  assert.equal(v.end, 5);
+  assert.equal(v.offset, 0.5);
+  // Limite exato: 1 s de offset a 2× libera 0,5 s de timeline.
+  const edge = clipsOf(trimClipStart(source, { clipId: "v", start: 0.5 })).get("v")!;
+  assert.equal(edge.offset, 0);
+  assert.equal(edge.end, 5);
+});
+
+test("aparar além do começo da fonte, abaixo de zero ou sem duração mínima é E_TRIM_OUT_OF_RANGE", () => {
+  // offset 0,5 a 2× só libera 0,25 s antes do início atual.
+  const early = trimError(TRIM, "v", 0.5);
+  assert.equal(early.code, "E_TRIM_OUT_OF_RANGE");
+  assert.match(early.message, /0\.75/, "diz o início mais cedo possível");
+  assert.equal(trimError(TRIM, "a", -1).code, "E_TRIM_OUT_OF_RANGE");
+  assert.equal(trimError(TRIM, "v", 5).code, "E_TRIM_OUT_OF_RANGE");
+  assert.equal(trimError(TRIM, "v", 4.999).code, "E_TRIM_OUT_OF_RANGE");
+  assert.equal(trimError(TRIM, "v", Number.NaN).code, "E_TRIM_OUT_OF_RANGE");
+  // O mínimo (1/60 s) ainda passa.
+  assert.equal(clipsOf(trimClipStart(TRIM, { clipId: "v", start: 5 - 1 / 60 })).get("v")!.end, 5);
+});
+
+test("aparar clip com data-keyframes é E_TRIM_UNSUPPORTED", () => {
+  const source = TRIM.replace(`data-fade-in="0.5"`, `data-keyframes='[{"time":0,"volume":1}]'`);
+  assert.equal(trimError(source, "v", 2).code, "E_TRIM_UNSUPPORTED");
+});
+
+test("aparar clip com data-transition é E_TRIM_UNSUPPORTED com dica", () => {
+  const withTransition = CHAIN.replace(
+    `<div data-clip-id="c" data-start="b + 0.5"`,
+    `<div data-clip-id="c" data-start="b - 0.5" data-transition="dissolver"`,
+  );
+  const error = trimError(withTransition, "c", 3.5);
+  assert.equal(error.code, "E_TRIM_UNSUPPORTED");
+  assert.match(error.message, /remova a transição antes de aparar/);
+});
+
+test("aparar clip aninhado, clip com filhos ou clip sem fim resolvido é E_TRIM_UNSUPPORTED", () => {
+  const nested = `<div data-composition-id="main" data-root="true" data-duration="8">
+  <div data-clip-id="host" data-composition-id="card" data-start="0" data-duration="4">
+    <div data-clip-id="inner" data-start="0" data-duration="2">x</div>
+  </div>
+</div>
+`;
+  assert.equal(trimError(nested, "inner", 1).code, "E_TRIM_UNSUPPORTED");
+  assert.equal(trimError(nested, "host", 1).code, "E_TRIM_UNSUPPORTED");
+  const open = `<div data-composition-id="main" data-root="true" data-duration="8">
+  <video data-clip-id="m" src="assets/m.mp4" data-start="1"></video>
+</div>
+`;
+  const unresolved = trimError(open, "m", 2);
+  assert.equal(unresolved.code, "E_TRIM_UNSUPPORTED");
+  assert.match(unresolved.message, /data-duration/);
+  assert.equal(trimError(TRIM, "nope", 2).code, "E_CLIP_NOT_FOUND");
+});
+
+test("aparar clip com movimento próprio é permitido e não mexe nos atributos de movimento", () => {
+  const source = TRIM.replace(`<div data-clip-id="a" data-start="6"`, `<div data-clip-id="a" data-enter="surgir" data-start="6"`);
+  const out = trimClipStart(source, { clipId: "a", start: 7 });
+  assert.match(out, /data-clip-id="a" data-enter="surgir" data-start="7" data-duration="1"/);
+  assert.equal(clipsOf(out).get("a")!.end, 8);
+});
+
+test("aparar sem mudar nada devolve o arquivo idêntico", () => {
+  assert.equal(trimClipStart(TRIM, { clipId: "v", start: 1 }), TRIM);
 });

@@ -722,6 +722,22 @@ textarea {
   cursor: ew-resize;
 }
 
+.clip-bar .resize-handle-start {
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 9px;
+  border-right: 1px solid rgba(255, 255, 255, 0.35);
+  background: rgba(0, 0, 0, 0.16);
+  cursor: ew-resize;
+}
+
+.clip-bar.is-selected .resize-handle-start {
+  border-right-color: rgba(23, 10, 13, 0.4);
+  background: rgba(0, 0, 0, 0.12);
+}
+
 .clip-bar.is-selected .resize-handle {
   border-left-color: rgba(23, 10, 13, 0.4);
   background: rgba(0, 0, 0, 0.12);

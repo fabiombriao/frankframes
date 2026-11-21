@@ -808,6 +808,14 @@ import { keyframeMarks, keyframePropsFor, renderKeyframeSection, renderMotionSec
         }
       });
 
+      if (trimmable(clip)) {
+        const startHandle = document.createElement("span");
+        startHandle.className = "resize-handle-start";
+        startHandle.dataset.handle = "trim-start";
+        startHandle.setAttribute("aria-hidden", "true");
+        bar.append(startHandle);
+      }
+
       if (clip.start !== null) {
         const handle = document.createElement("span");
         handle.className = "resize-handle";
@@ -930,6 +938,19 @@ import { keyframeMarks, keyframePropsFor, renderKeyframeSection, renderMotionSec
 
   /* Arrasto */
 
+  /** Borda esquerda só onde o servidor aceita aparar (EDT-42): sem filhos, keyframes nem transição. */
+  function trimmable(clip) {
+    return (
+      clip.editable === true &&
+      clip.start !== null &&
+      clip.duration !== null &&
+      !clip.hasChildren &&
+      !clip.hasKeyframes &&
+      clip.keyframes.length === 0 &&
+      clip.motion.transition === undefined
+    );
+  }
+
   function onBarPointerDown(event) {
     if (event.button !== 0) return;
     const bar = event.currentTarget;
@@ -943,10 +964,13 @@ import { keyframeMarks, keyframePropsFor, renderKeyframeSection, renderMotionSec
     if (laneWidth <= 0) return;
 
     const handle = event.target instanceof Element ? event.target.closest(".resize-handle") : null;
+    const startHandle = event.target instanceof Element ? event.target.closest(".resize-handle-start") : null;
     drag = {
       bar,
       clip,
-      mode: handle ? "resize" : "move",
+      mode: startHandle ? "trim-start" : handle ? "resize" : "move",
+      originOffset: clip.offset,
+      originEnd: clip.end ?? clip.start + (clip.duration ?? 0),
       pointerId: event.pointerId,
       originX: event.clientX,
       originStart: clip.start,
@@ -974,6 +998,17 @@ import { keyframeMarks, keyframePropsFor, renderKeyframeSection, renderMotionSec
     if (drag.mode === "move") {
       drag.clip.start = snap(Math.max(0, drag.originStart + deltaSeconds));
       if (drag.clip.duration !== null) drag.clip.end = drag.clip.start + drag.clip.duration;
+    } else if (drag.mode === "trim-start") {
+      // O fim fica parado; o início para na borda da fonte (mídia), em 0 e a MIN_DURATION do fim.
+      const media = drag.clip.kind === "video" || drag.clip.kind === "audio";
+      const rate = drag.clip.playbackRate > 0 ? drag.clip.playbackRate : 1;
+      const lowest = media ? Math.max(0, drag.originStart - drag.originOffset / rate) : 0;
+      const highest = Math.max(lowest, drag.originEnd - MIN_DURATION);
+      const start = clamp(roundToFrame(drag.originStart + deltaSeconds, state.fps), lowest, highest);
+      drag.clip.start = start;
+      drag.clip.duration = drag.originEnd - start;
+      drag.clip.end = drag.originEnd;
+      if (media) drag.clip.offset = drag.originOffset + (start - drag.originStart) * rate;
     } else {
       drag.clip.duration = snap(Math.max(MIN_DURATION, drag.originDuration + deltaSeconds));
       drag.clip.end = drag.clip.start === null ? null : drag.clip.start + drag.clip.duration;
@@ -995,7 +1030,9 @@ import { keyframeMarks, keyframePropsFor, renderKeyframeSection, renderMotionSec
     }
     if (!finished.moved) return;
 
-    if (finished.mode === "move" && finished.clip.start !== finished.originStart) {
+    if (finished.mode === "trim-start") {
+      if (finished.clip.start !== finished.originStart) trimClip(finished.clip.id, finished.clip.start);
+    } else if (finished.mode === "move" && finished.clip.start !== finished.originStart) {
       queuePatch(finished.clip.id, { "data-start": formatNumber(finished.clip.start) });
     } else if (finished.mode === "resize" && finished.clip.duration !== finished.originDuration) {
       queuePatch(finished.clip.id, { "data-duration": formatNumber(finished.clip.duration) });
@@ -1093,6 +1130,22 @@ import { keyframeMarks, keyframePropsFor, renderKeyframeSection, renderMotionSec
         renderDiagnostics(inspectorDiagnostics, [
           { severity: "error", message: "Falha ao salvar a edição: " + error.message },
         ]);
+      });
+    return mutationQueue;
+  }
+
+  /** `POST /api/clips/<id>/trim`; o offset de mídia é calculado no servidor, então recarrega a composição. */
+  function trimClip(id, start) {
+    mutationQueue = mutationQueue
+      .then(async () => {
+        const result = await mutate("POST", "/api/clips/" + encodeURIComponent(id) + "/trim", { start });
+        if (result.payload && result.payload.history) applyHistory(result.payload.history);
+        state.inspectorDirty = false;
+        await refreshComposition();
+        if (!result.ok) renderDiagnostics(inspectorDiagnostics, result.diagnostics);
+      })
+      .catch((error) => {
+        renderDiagnostics(inspectorDiagnostics, [{ severity: "error", message: "Falha ao aparar: " + error.message }]);
       });
     return mutationQueue;
   }

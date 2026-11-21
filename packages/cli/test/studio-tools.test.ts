@@ -323,3 +323,42 @@ test("estúdio recusa excluir o único clip de uma raiz sem data-duration", asyn
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+// EDT-42: aparar pela borda esquerda.
+test("estúdio apara o início de um vídeo, mantém o fim e desfaz byte a byte", () =>
+  withStudio(async (server, _dir, entry) => {
+    const media = HTML.replace(
+      '<div data-clip-id="a" data-start="0" data-duration="1" class="clip">Primeiro</div>',
+      '<video data-clip-id="v" src="assets/v.mp4" data-start="1" data-duration="4" data-offset="0.5" data-playback-rate="2"></video>',
+    ).replace('data-duration="2"', 'data-duration="6"').replace('data-clip-id="b" data-start="1"', 'data-clip-id="b" data-start="v"');
+    assert.ok(media.includes('data-clip-id="v"') && media.includes('data-start="v"'), "fixture preparada");
+    await writeFile(entry, media, "utf8");
+    const before = loadComposition(media).clips;
+
+    const trimmed = await post(`${server.url}api/clips/v/trim`, { start: 2 });
+    assert.equal(trimmed.status, 200, JSON.stringify(trimmed.json));
+    assert.equal(trimmed.json.id, "v");
+    assert.equal(trimmed.json.duration, 6);
+    assert.equal((trimmed.json.history as { undo: string }).undo, "aparar v");
+    const after = await readFile(entry, "utf8");
+    assert.ok(after.includes('data-start="2" data-duration="3" data-offset="2.5"'), after);
+    const clips = new Map(loadComposition(after).clips.map((clip) => [clip.id, clip]));
+    assert.equal(clips.get("v")!.start, 2);
+    assert.equal(clips.get("v")!.end, 5);
+    assert.equal(clips.get("b")!.start, before.find((clip) => clip.id === "b")!.start, "b continua onde estava");
+
+    const undone = await post(`${server.url}api/undo`, {});
+    assert.equal(undone.status, 200);
+    assert.equal(await readFile(entry, "utf8"), media, "desfazer restaura o arquivo byte a byte");
+
+    // Falhas não gravam e não entram no histórico.
+    const early = await post(`${server.url}api/clips/v/trim`, { start: 0 });
+    assert.equal(early.status, 400);
+    assert.equal(early.json.code, "E_TRIM_OUT_OF_RANGE");
+    const missing = await post(`${server.url}api/clips/zzz/trim`, { start: 1 });
+    assert.equal(missing.status, 400);
+    assert.equal(missing.json.code, "E_CLIP_NOT_FOUND");
+    const invalid = await post(`${server.url}api/clips/v/trim`, { start: "2" });
+    assert.equal(invalid.status, 400);
+    assert.equal(await readFile(entry, "utf8"), media, "falha não grava");
+  }));

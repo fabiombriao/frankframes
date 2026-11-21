@@ -799,6 +799,24 @@ Qualquer outra falha de medição continua falhando alto.
   nenhum keyframe está selecionado; com um keyframe selecionado apaga só o keyframe. O botão fica desabilitado
   sem seleção ou com clip não editável, e após excluir a seleção é limpa.
 
+- **Aparar o início** (`POST /api/clips/<id>/trim`, corpo `{start}` em segundos da timeline da raiz; arrastar a
+  borda esquerda da barra, `.resize-handle-start`). Move só a borda esquerda: o fim do clip fica parado.
+  Com `delta = start - início atual`, grava `data-duration = fim - start`; `data-start` vira `seconds(start)`
+  (início absoluto) ou `"<ref>"` + o deslocamento antigo somado a `delta` (início por referência); em
+  `<video>`/`<audio>`, `data-offset` avança `delta × data-playback-rate` (o quadro que estava sob o novo início
+  continua sob ele; `data-fade-in` não muda). Como o fim não muda, quem começa no fim do clip
+  (`data-start="<id>"`) não se move. O movimento próprio do clip (`data-enter`/`data-exit`) é local ao clip e
+  passa a tocar a partir do novo início. Erros (400, arquivo intacto): `E_TRIM_OUT_OF_RANGE` quando `start < 0`,
+  `start > fim - 1/60 s` ou o `data-offset` resultante ficaria negativo (a mídia não tem material antes do
+  começo da fonte; a mensagem diz o início mais cedo possível); `E_TRIM_UNSUPPORTED` para clip dentro de
+  sub-composição, clip que contém outros clips, clip com `data-keyframes`, clip com `data-transition` (dica
+  "remova a transição antes de aparar": aparar mudaria a sobreposição) e clip sem início e fim resolvidos (dica
+  "declare data-duration"). Sucesso devolve `{ok, id, duration, history}` e entra no histórico como
+  `aparar <id>` (Ctrl+Z restaura o arquivo byte a byte). Na timeline a alça só aparece em clip editável sem
+  filhos, keyframes nem transição; durante o arrasto a barra para em 0, na borda da fonte (mídia) e a 0,1 s do
+  fim, e o início é arredondado ao frame. O `data-offset` é calculado pelo servidor e a Studio recarrega a
+  composição ao soltar.
+
 As escritas são serializadas: duas edições nunca intercalam leitura e gravação do mesmo arquivo.
 
 ## 10. Compatibilidade

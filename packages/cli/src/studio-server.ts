@@ -25,6 +25,7 @@ import {
   resolveFfmpeg,
   splitClip,
   deleteClip,
+  trimClipStart,
 } from "@frankframes/producer";
 import type { ClipPatch, KeyframeRequest, PreparedComposition } from "@frankframes/producer";
 import { listBlocks, motionThumbPath } from "@frankframes/catalog";
@@ -667,6 +668,23 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
     sendJson(res, 200, { ok: true, id: newId, duration: durationOf(composition), history: history.state() });
   };
 
+  /** `POST /api/clips/<id>/trim` com `{start}`; ver `trimClipStart`. O offset de mídia sai do servidor. */
+  const trim = async (clipId: string, req: IncomingMessage, res: ServerResponse): Promise<void> => {
+    const body = objectBody(await bodyJson(req));
+    const start = numeric(body, "start");
+    const source = await readFile(entryPath, "utf8");
+    let next: string;
+    try {
+      next = trimClipStart(source, { clipId, start });
+    } catch (error) {
+      if (error instanceof EditError) throw new ReplyError(400, error.code, error.message);
+      throw error;
+    }
+    const composition = validated(next, "aparar deixaria o contrato inválido");
+    if (next !== source) await commit(`aparar ${clipId}`, source, next);
+    sendJson(res, 200, { ok: true, id: clipId, duration: durationOf(composition), history: history.state() });
+  };
+
   /** `POST /api/clips/<id>/delete` com `{}`; ver `deleteClip`. */
   const remove = async (clipId: string, req: IncomingMessage, res: ServerResponse): Promise<void> => {
     objectBody(await bodyJson(req));
@@ -903,7 +921,12 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
           await serial(() => split(splitMatch[1]!, req, res));
           return;
         }
-        const deleteMatch = /^([^/]+)\/delete$/.exec(rest);
+        const trimMatch = /^([^/]+)\/trim$/.exec(rest);
+        if (trimMatch !== null) {
+          await serial(() => trim(trimMatch[1]!, req, res));
+          return;
+        }
+        const deleteMatch =/^([^/]+)\/delete$/.exec(rest);
         if (deleteMatch !== null) {
           await serial(() => remove(deleteMatch[1]!, req, res));
           return;

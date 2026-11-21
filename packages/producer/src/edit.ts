@@ -1,6 +1,6 @@
 // FrankFrames — proprietário. Ver LICENSE na raiz.
 import { parse } from "parse5";
-import { listPresets, loadComposition, parseMotionValue } from "@frankframes/contract";
+import { listPresets, loadComposition, MIN_DURATION_SECONDS, parseMotionValue } from "@frankframes/contract";
 import type { Composition, ResolvedClip } from "@frankframes/contract";
 
 interface P5Location {
@@ -41,6 +41,8 @@ export class EditError extends Error {
     | "E_SPLIT_UNSUPPORTED"
     | "E_SPLIT_OUT_OF_RANGE"
     | "E_DELETE_UNSUPPORTED"
+    | "E_TRIM_OUT_OF_RANGE"
+    | "E_TRIM_UNSUPPORTED"
     | "E_TRANSITION_GAP"
     | "E_KEYFRAME_NOT_FOUND"
     | "E_KEYFRAME_EXISTS"
@@ -380,6 +382,67 @@ export function deleteClip(source: string, request: DeleteRequest): string {
   const patched = patches.length > 0 ? applyPatches(source, patches) : source;
   const location = locateClip(patched, clipId);
   return removeRange(patched, location.start, location.end);
+}
+
+export interface TrimStartRequest {
+  clipId: string;
+  /** Novo início, em segundos no tempo da raiz (o mesmo de `clip.start`). */
+  start: number;
+}
+
+/**
+ * Apara o clip pela borda esquerda: o início vai para `start` e o fim fica onde estava. Em vídeo/áudio
+ * `data-offset` avança `delta × data-playback-rate` (o trecho cortado é o começo da fonte); `data-start`
+ * por referência continua referência, só muda o deslocamento. O motion (`data-enter` etc.) é local ao
+ * clip e passa a tocar no novo início. Como o fim não muda, quem referencia o clip não se move.
+ */
+export function trimClipStart(source: string, request: TrimStartRequest): string {
+  const { clipId, start } = request;
+  if (!Number.isFinite(start)) throw new EditError("E_TRIM_OUT_OF_RANGE", "início precisa ser número");
+  const composition = loadComposition(source);
+  const clip = topLevelClip(composition, clipId, "E_TRIM_UNSUPPORTED", "apare no arquivo dela");
+  if (clip.isSubComposition || clip.children.length > 0) {
+    throw new EditError("E_TRIM_UNSUPPORTED", `clip "${clipId}" contém outros clips; aparar deslocaria a sub-timeline`);
+  }
+  if (clip.keyframes !== undefined) {
+    throw new EditError("E_TRIM_UNSUPPORTED", `clip "${clipId}" tem data-keyframes; o tempo local mudaria, remova a automação antes de aparar`);
+  }
+  if (clip.start === undefined || clip.end === undefined) {
+    throw new EditError("E_TRIM_UNSUPPORTED", `clip "${clipId}" não tem início e fim resolvidos; declare data-duration`);
+  }
+  const location = locateClip(source, clipId);
+  // A sobreposição da transição é o deslocamento de data-start; aparar a mudaria (ou a invalidaria).
+  if (attr(location.node, "data-transition") !== undefined) {
+    throw new EditError("E_TRIM_UNSUPPORTED", `clip "${clipId}" tem data-transition; remova a transição antes de aparar`);
+  }
+
+  const maxStart = clip.end - MIN_DURATION_SECONDS;
+  if (start < 0 || start > maxStart) {
+    throw new EditError(
+      "E_TRIM_OUT_OF_RANGE",
+      `início ${seconds(start)}s fora do permitido para "${clipId}": entre 0 e ${seconds(maxStart)}s`,
+    );
+  }
+  const delta = start - clip.start;
+  const media = clip.tag === "video" || clip.tag === "audio";
+  const attributes: Record<string, string | null> = { "data-duration": seconds(clip.end - start) };
+  if (clip.startExpr.kind === "reference") {
+    attributes["data-start"] = `${clip.startExpr.refId}${refSuffix(clip.startExpr.offset + delta)}`;
+  } else {
+    attributes["data-start"] = seconds(start);
+  }
+  if (media) {
+    const offset = clip.offset + delta * clip.playbackRate;
+    if (offset < -1e-9) {
+      const earliest = clip.start - clip.offset / clip.playbackRate;
+      throw new EditError(
+        "E_TRIM_OUT_OF_RANGE",
+        `não há mídia antes do começo da fonte em "${clipId}": o início mais cedo é ${seconds(Math.max(0, earliest))}s`,
+      );
+    }
+    attributes["data-offset"] = seconds(Math.max(0, offset));
+  }
+  return applyPatches(source, [{ clipId, attributes }]);
 }
 
 /** Tolerância para dizer que A termina onde B começa (segundos). */
