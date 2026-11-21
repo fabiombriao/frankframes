@@ -314,6 +314,17 @@
           ],
           "acceptance": "Em `settle()` do relógio, `face.load()` não engole erro. Uma face declarada que falha ao carregar rejeita a prontidão com código estável e `hint` com o nome da família, e o render para em vez de capturar com fonte de fallback. Há um teste com `@font-face` apontando para um arquivo inexistente.",
           "jiraKey": "EDT-68"
+        },
+        {
+          "summary": "Captura e teste de goldens nunca esperam para sempre quando o Chrome cai",
+          "points": 2,
+          "labels": [
+            "engine",
+            "robustez",
+            "bug"
+          ],
+          "acceptance": "Visto em 2026-11-21: no gate completo, goldens.test.ts falhou e o processo node --test ficou pendurado 30 min, sem CPU e sem Chrome filho. Não reproduziu sozinho. Critério: (1) a sessão de captura ouve a queda do browser (disconnected/exit do processo) e rejeita toda operação pendente com E_BROWSER_CLOSED, sem retry cego; (2) seek/captura/prontidão têm timeout explícito com código e hint; (3) goldens.test.ts e os testes com Chrome fecham a sessão em finally e o node --test sai; (4) teste que mata o processo do Chrome no meio da captura e exige rejeição em menos de 30 s; (5) scripts/ci.ts tem timeout por etapa e, ao estourar, imprime o fim do log da etapa antes de matar a árvore.",
+          "jiraKey": "EDT-70"
         }
       ],
       "jiraKey": "EDT-26"

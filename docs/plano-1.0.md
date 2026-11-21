@@ -2892,7 +2892,7 @@ tocados por quase tudo). Cada item vira um commit depois de revisão e `node scr
 3. **B — Motion, em série:** EDT-49 (+ EDT-67, achado no gate: animação do autor corria em tempo real
    antes do primeiro seek; corrigido em `clock.ts` e goldens regenerados no mesmo commit) → **EDT-68**
    (`face.load().catch(() => {})` vira falha alta da prontidão com código e `hint`; só `clock.ts`, spec
-   §9 e um teste com `@font-face` quebrado) → **EDT-69** (`.gitattributes` com `eol=lf` e binários marcados; causa do CRLF é `core.autocrlf=true` no gitconfig do sistema sem `.gitattributes`) → 50 → 51 → 52 → 53 → 54 (contrato) → 55 → 54 (Studio) → 47 → 56.
+   §9 e um teste com `@font-face` quebrado) → **EDT-69** (`.gitattributes` com `eol=lf` e binários marcados; causa do CRLF é `core.autocrlf=true` no gitconfig do sistema sem `.gitattributes`) → **EDT-70** (browser que cai rejeita tudo pendente com `E_BROWSER_CLOSED`; timeout explícito em seek/captura/prontidão; `ci.ts` com timeout por etapa que imprime o fim do log antes de matar) → 50 → 51 → 52 → 53 → 54 (contrato) → 55 → 54 (Studio) → 47 → 56.
 4. **A — Studio, em série:** EDT-41 → 42 → 43 → 45 → 44 → 46.
 5. **C — Onda 1:** EDT-62 medição (o executor para e devolve os números) → EDT-61 lote → EDT-58 skill e `frames`.
 6. **C — EDT-59** `frankframes generate` (Codex), depois EDT-62 otimizações guiadas pela medição.
