@@ -6,23 +6,25 @@
  */
 import type { Diagnostic, DurationResolution, MotionKind, MotionSource, MotionTarget, MotionTrack, ResolvedClip } from "../types.ts";
 import { CODES, diag } from "../errors.ts";
-import { resolveCurve } from "./curves.ts";
+import { emitEasing, resolveCurve, springSettleSeconds } from "./curves.ts";
 import { parseAnchor, parseMotionValue, parseNumber, parseSeconds } from "./grammar.ts";
 import type { Anchor } from "./grammar.ts";
 import { presetsOf } from "./presets.ts";
 import type { ParamSpec, PresetDef } from "./presets.ts";
-import { mergeSegments, ownedProperties } from "./tracks.ts";
+import { keyframeSegments, mergeSegments, ownedProperties } from "./tracks.ts";
 import type { Segment } from "./tracks.ts";
 
-export { CURVE_NAMES, evaluateCurve, parseCurve, resolveCurve } from "./curves.ts";
-export type { Bezier, ParsedCurve } from "./curves.ts";
+export { CURVE_NAMES, emitEasing, evaluateCurve, parseCurve, resolveCurve, springSettleSeconds } from "./curves.ts";
+export type { Bezier, ParsedCurve, Spring } from "./curves.ts";
+export { MAX_KEYFRAMES, parseKeyframes } from "./keyframes.ts";
+export type { KeyframeContext, ParsedKeyframes } from "./keyframes.ts";
 export { parseAnchor, parseMotionValue } from "./grammar.ts";
 export type { Anchor, ParsedValue } from "./grammar.ts";
 export { PRESETS, presetsOf } from "./presets.ts";
 export type { ParamSpec, PresetDef } from "./presets.ts";
-export { MOTION_PROPERTIES, OWNED_BY_PROP, bindingsFor, mergeSegments, ownedProperties } from "./tracks.ts";
-export type { MergeResult, Segment } from "./tracks.ts";
-export { MOTION_ATTRS, hasMotion, isHost, isTimed, motionAttrsOf, motionElements } from "./targets.ts";
+export { CSS_PROP_OF, MOTION_PROPERTIES, OWNED_BY_PROP, bindingsFor, keyframeSegments, mergeSegments, ownedProperties } from "./tracks.ts";
+export type { MergeResult, Segment, SpringFailure } from "./tracks.ts";
+export { MOTION_ATTRS, hasKeyframes, hasMotion, isHost, isTimed, motionAttrsOf, motionElements } from "./targets.ts";
 export type { DomNode } from "./targets.ts";
 
 const KINDS: readonly MotionKind[] = ["enter", "exit", "emphasis", "camera", "transition"];
@@ -145,6 +147,29 @@ export function resolveMotion(
       }
       if (plan !== "waiting") planned.push(plan);
     }
+
+    // Keyframes visuais (§7b.7): um trecho por propriedade, entram na mesma fusão dos presets.
+    const keyframes = keyframeSegments(source.keyframes ?? []);
+    for (const failure of keyframes.failures) {
+      blocked = true;
+      error(
+        CODES.CURVE_INVALID,
+        `mola não assenta no trecho de ${failure.prop} que começa em ${round6(failure.time)} s em ${where} (dura ${failure.duration} s)`,
+        `mola precisa de dur ≥ ${failure.minimum} s; afaste os pontos ou use outra curva`,
+      );
+    }
+    if (D !== undefined) {
+      for (const point of source.keyframes ?? []) {
+        if (point.time > D + EPS) {
+          diagnostics.push(
+            diag(CODES.KEYFRAME_OUT_OF_RANGE, "warning", `ponto de data-keyframes em ${round6(point.time)} s passa do fim do clip em ${where}`, {
+              clipId: source.clipId,
+              hint: `o ponto em t=${round6(point.time)} s nunca aparece: o clip termina em ${round6(D)} s`,
+            }),
+          );
+        }
+      }
+    }
     if (blocked) continue;
 
     // Trechos por propriedade -> uma trilha por propriedade CSS.
@@ -155,6 +180,11 @@ export function resolveMotion(
         list.push({ start: item.start, duration: item.duration, keys: part.keys });
         bySegment.set(part.prop, list);
       }
+    }
+    for (const { prop, segment } of keyframes.segments) {
+      const list = bySegment.get(prop) ?? [];
+      list.push(segment);
+      bySegment.set(prop, list);
     }
 
     const tracks: MotionTrack[] = [];
@@ -265,7 +295,7 @@ function planPreset(input: PlanInput): Planned | "failed" | "waiting" {
     error(
       CODES.CURVE_INVALID,
       `curva inválida em ${attrName} de ${where}: ${JSON.stringify(curveName)} (${resolved.reason})`,
-      "use cubic-bezier(0.3,0,0.2,1) ou um nome: linear, ease, suave, freio, arranque, vaivem",
+      "use cubic-bezier(0.3,0,0.2,1) ou um nome: linear, ease, suave, freio, arranque, vaivem, mola, mola-firme",
     );
   }
   if (!ok || !resolved.curve) return "failed";
@@ -309,6 +339,35 @@ function planPreset(input: PlanInput): Planned | "failed" | "waiting" {
     }
   }
 
-  const segments = preset.build({ curve: resolved.curve.css, params: values });
+  let segments = preset.build({ curve: resolved.curve.css, params: values });
+  const spring = resolved.curve;
+  if (spring.spring !== undefined) {
+    // A mola só vira easing sabendo a duração de cada trecho: do offset da chave ao da próxima.
+    let minimum = 0;
+    let shortest = Infinity;
+    segments = segments.map((part) => ({
+      prop: part.prop,
+      keys: part.keys.map((key, index) => {
+        const next = part.keys[index + 1];
+        if (key.easing !== spring.css || next === undefined) return key;
+        const seconds = (next.offset - key.offset) * total;
+        const easing = emitEasing(spring, seconds);
+        if (easing === null) {
+          minimum = springSettleSeconds(spring.spring!);
+          shortest = Math.min(shortest, seconds);
+          return key;
+        }
+        return { ...key, easing };
+      }),
+    }));
+    if (minimum > 0) {
+      error(
+        CODES.CURVE_INVALID,
+        `mola não assenta em ${attrName} de ${where}: o trecho mais curto dura ${round6(shortest)} s`,
+        `mola precisa de dur ≥ ${minimum} s por trecho; aumente dur ou use outra curva`,
+      );
+      return "failed";
+    }
+  }
   return { kind, preset, start: round6(start), duration: round6(total), segments };
 }

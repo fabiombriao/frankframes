@@ -5,6 +5,7 @@ import { CODES, diag } from "./errors.ts";
 import { parseFps, parseTimeExpr } from "./timing.ts";
 import { MEDIA_TAGS, hasMotion, isHost, isTimed, motionAttrsOf, motionElements } from "./motion/targets.ts";
 import type { DomNode } from "./motion/targets.ts";
+import { parseKeyframes } from "./motion/keyframes.ts";
 
 type P5Node = DomNode;
 
@@ -163,30 +164,13 @@ function buildClip(
     );
   }
 
+  // `data-keyframes` do próprio clip: volume (áudio) e propriedades visuais (§7b.7).
   const rawKeyframes = attr(node, "data-keyframes");
-  let keyframes: Array<{ time: number; volume: number }> | undefined;
-  if (rawKeyframes !== undefined && rawKeyframes.trim() !== "") {
-    try {
-      const parsed = JSON.parse(rawKeyframes) as unknown;
-      if (!Array.isArray(parsed)) throw new Error("não é array");
-      keyframes = parsed.map((item) => {
-        const point = item as { time?: unknown; volume?: unknown };
-        const time = Number(point.time);
-        const volume = Number(point.volume);
-        if (!Number.isFinite(time) || !Number.isFinite(volume) || time < 0 || volume < 0) {
-          throw new Error("ponto inválido");
-        }
-        return { time, volume };
-      });
-    } catch {
-      diagnostics.push(
-        diag(CODES.NUMBER_INVALID, "error", `data-keyframes inválido em "${id}"`, {
-          clipId: id,
-          hint: 'use [{"time":0,"volume":1},{"time":2,"volume":0.2}]',
-        }),
-      );
-    }
-  }
+  const ownKeyframes =
+    rawKeyframes !== undefined && rawKeyframes.trim() !== ""
+      ? parseKeyframes(rawKeyframes, { clipId: id, own: true, diagnostics })
+      : undefined;
+  const keyframes = ownKeyframes !== undefined && ownKeyframes.volume.length > 0 ? ownKeyframes.volume : undefined;
 
   const role = attr(node, "data-audio-role");
   if (role !== undefined && !["voice", "music", "sfx"].includes(role)) {
@@ -262,9 +246,21 @@ function buildClip(
   const mediaSrc = attr(node, "src");
   if (mediaSrc) clip.mediaSrc = mediaSrc;
   for (const [position, element] of motionElements(node).entries()) {
-    const source: MotionSource = { clipId: id, ordinal: position, tag: element.nodeName, own: element === node, attrs: motionAttrsOf(element) };
+    const own = element === node;
+    const rawElementKeyframes = own ? undefined : attr(element, "data-keyframes");
+    const parsedKeyframes = own
+      ? ownKeyframes
+      : rawElementKeyframes !== undefined && rawElementKeyframes.trim() !== ""
+        ? parseKeyframes(rawElementKeyframes, { clipId: id, own: false, diagnostics })
+        : undefined;
+    const attrs = motionAttrsOf(element);
+    const visual = parsedKeyframes?.visual ?? [];
+    // Elemento só com volume (ou com keyframes inválidos) não é alvo de motion; o ordinal já foi contado.
+    if (Object.keys(attrs).length === 0 && visual.length === 0) continue;
+    const source: MotionSource = { clipId: id, ordinal: position, tag: element.nodeName, own, attrs };
     const style = attr(element, "style");
     if (style !== undefined) source.style = style;
+    if (visual.length > 0) source.keyframes = visual;
     counter.motion.push(source);
   }
   if (MEDIA[tag] === true) clip.hasAudio = tag === "audio" || (tag === "video" && attr(node, "data-has-audio") !== "false");

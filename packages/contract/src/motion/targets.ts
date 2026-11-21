@@ -55,6 +55,11 @@ export function hasMotion(node: DomNode): boolean {
   return Object.keys(motionAttrsOf(node)).length > 0;
 }
 
+/** `data-keyframes` presente e não vazio: pode trazer volume ou propriedades visuais (§7b.7). */
+export function hasKeyframes(node: DomNode): boolean {
+  return (nodeAttr(node, "data-keyframes") ?? "").trim() !== "";
+}
+
 /**
  * Elementos com motion de um clip, na ordem do documento: o próprio clip e os
  * descendentes. Num host de sub-composição, descendentes temporizados ou hosts são
@@ -69,7 +74,7 @@ export function motionElements<T extends DomNode>(clip: T): T[] {
   const visit = (node: DomNode, isClip: boolean): void => {
     if (node.nodeName === "#text" || node.nodeName === "#comment") return;
     if (host && !isClip && (isTimed(node) || isHost(node))) return;
-    if (hasMotion(node)) out.push(node as T);
+    if (hasMotion(node) || hasKeyframes(node)) out.push(node as T);
     for (const child of node.content?.childNodes ?? []) visit(child, false);
     for (const child of node.childNodes ?? []) visit(child, false);
   };

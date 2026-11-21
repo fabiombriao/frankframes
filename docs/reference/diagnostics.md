@@ -21,6 +21,8 @@ Gerado por `node scripts/generate-reference.ts` a partir do código. Não edite 
 | `E_GPL_ENCODER` | erro | licença/encode |
 | `E_H264_NOT_OPTED_IN` | erro | licença/encode |
 | `E_INTERNAL` | erro | render |
+| `E_KEYFRAME_INVALID` | erro | contrato |
+| `E_KEYFRAME_LIMIT` | erro | contrato |
 | `E_MEDIA_PROBE` | erro | render |
 | `E_MOTION_CONFLICT` | erro | contrato |
 | `E_MOTION_OUT_OF_RANGE` | erro | contrato |
@@ -41,6 +43,8 @@ Gerado por `node scripts/generate-reference.ts` a partir do código. Não edite 
 | `E_TRANSCRIBE_UNAVAILABLE` | erro | transcrição |
 | `E_VOLUME_INVALID` | erro | contrato |
 | `E_WHISPER_MISSING` | erro | transcrição |
+| `W_KEYFRAME_CURVE_IGNORED` | aviso | contrato |
+| `W_KEYFRAME_OUT_OF_RANGE` | aviso | contrato |
 | `W_MOTION_JUMP` | aviso | contrato |
 | `W_RATE_CLAMPED` | aviso | contrato |
 | `W_ROOT_START_IGNORED` | aviso | contrato |

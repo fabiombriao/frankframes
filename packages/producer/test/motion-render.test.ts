@@ -8,6 +8,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { openSession, openSessionFor, resolveChrome, startServer } from "@frankframes/engine";
+import { evaluateCurve } from "@frankframes/contract";
 import { compileComposition } from "../src/compile.ts";
 import { RenderError, renderComposition } from "../src/render.ts";
 
@@ -223,4 +224,103 @@ test("render real: conflito de posse sai como E_MOTION_RUNTIME na etapa capture;
   const divergent = [...first.hashes.keys()].filter((frame) => first.hashes.get(frame) !== second.hashes.get(frame));
   assert.deepEqual(divergent, [], "dois renders com motion têm que dar os mesmos hashes por frame");
   assert.notEqual(first.hashes.get(0), first.hashes.get(29), "o motion muda o frame ao longo do tempo");
+});
+
+// ---------- EDT-50: keyframes visuais no Chrome ----------
+
+const KEYFRAMES = [
+  { time: 0, opacity: 0, x: 0, y: "0%", scale: 1, rotate: 0, blur: 0, clip: "inset(0% 100% 0% 0%)", curve: "freio" },
+  { time: 2, opacity: 1, x: 300, y: "50%", scale: 1.5, rotate: 90, blur: 8, clip: "inset(0% 0% 0% 0%)", curve: "mola" },
+  { time: 4, opacity: 0.5, x: 100, y: "0%", scale: 1, rotate: 0, blur: 0, clip: "inset(0% 50% 0% 0%)" },
+];
+
+interface Sample {
+  opacity: string;
+  x: string;
+  y: string;
+  sx: string;
+  rot: string;
+  blur: string;
+  filter: string;
+  clip: string;
+}
+
+test("keyframes visuais: cada propriedade segue a curva do trecho no Chrome e o seek é independente de ordem", { timeout: 300_000 }, async (t) => {
+  if (!(await chromeOrSkip(t))) return;
+
+  const html = page(
+    "",
+    `<div id="k" class="box" data-clip-id="k" data-start="0" data-duration="6" data-keyframes='${JSON.stringify(KEYFRAMES)}'></div>`,
+  );
+  const dir = await mkdtemp(join(tmpdir(), "ff-keyframes-"));
+  const compiled = await compileComposition({ entryHtml: html, entryDir: dir });
+  assert.equal(compiled.composition.ok, true, JSON.stringify(compiled.composition.diagnostics));
+  assert.ok(compiled.html.includes("data-ff-motion"));
+
+  const server = await startServer(dir, { page: { path: "index.html", html: compiled.html } });
+  // Hash por frame só é prometido em `software` (invariante 3): com GPU de hardware, blur + rotação + clip combinados variam no pixel.
+  const session = await openSessionFor(server, { url: `${server.url}index.html`, viewport: VIEWPORT, gpu: "software" });
+  try {
+    const sample = async (frame: number): Promise<Sample> => {
+      await session.seekFrame(frame, FPS);
+      return session.evaluate<Sample>(`(() => {
+        const cs = getComputedStyle(document.getElementById("k"));
+        return {
+          opacity: cs.opacity,
+          x: cs.getPropertyValue("--ff-x").trim(),
+          y: cs.getPropertyValue("--ff-y").trim(),
+          sx: cs.getPropertyValue("--ff-sx").trim(),
+          rot: cs.getPropertyValue("--ff-rot").trim(),
+          blur: cs.getPropertyValue("--ff-blur").trim(),
+          filter: cs.filter,
+          clip: cs.clipPath,
+        };
+      })()`);
+    };
+    const near = (actual: number, expected: number, tolerance: number, what: string): void =>
+      assert.ok(Math.abs(actual - expected) <= tolerance, `${what}: ${actual} esperado ${expected} ±${tolerance}`);
+
+    // Trechos: [0 s, 2 s] com freio, [2 s, 4 s] com mola; amostras em 25 %, 50 % e 75 % de cada um.
+    const segments = [
+      { curve: "freio", from: KEYFRAMES[0]!, to: KEYFRAMES[1]!, frames: [15, 30, 45], start: 0 },
+      { curve: "mola", from: KEYFRAMES[1]!, to: KEYFRAMES[2]!, frames: [75, 90, 105], start: 2 },
+    ];
+    for (const seg of segments) {
+      for (const frame of seg.frames) {
+        const p = (frame / 30 - seg.start) / 2;
+        const e = evaluateCurve(seg.curve, p, 2);
+        const lerp = (a: number, b: number): number => a + (b - a) * e;
+        const got = await sample(frame);
+        const where = `${seg.curve} p=${p}`;
+        near(Number(got.opacity), Math.min(1, Math.max(0, lerp(seg.from.opacity, seg.to.opacity))), 0.01, `opacity ${where}`);
+        near(parseFloat(got.x), lerp(seg.from.x, seg.to.x), 0.5, `x ${where}`);
+        assert.ok(got.x.endsWith("px"), `x em px: ${got.x}`);
+        near(parseFloat(got.y), lerp(parseFloat(seg.from.y), parseFloat(seg.to.y)), 0.5, `y ${where}`);
+        assert.ok(got.y.endsWith("%"), `y em %: ${got.y}`);
+        near(Number(got.sx), lerp(seg.from.scale, seg.to.scale), 0.005, `scale ${where}`);
+        near(parseFloat(got.rot), lerp(seg.from.rotate, seg.to.rotate), 0.1, `rotate ${where}`);
+        const blur = lerp(seg.from.blur, seg.to.blur);
+        near(parseFloat(got.blur), blur, 0.1, `blur ${where}`);
+        if (blur > 0.2) assert.match(got.filter, /blur\(/, `filter ${where}: ${got.filter}`);
+        const right = Number(/inset\(\s*\S+\s+([\d.]+)%/.exec(got.clip)?.[1]);
+        const parsed = (v: string): number => Number(/inset\(\s*\S+\s+([\d.]+)%/.exec(v)?.[1]);
+        near(right, lerp(parsed(seg.from.clip), parsed(seg.to.clip)), 0.5, `clip ${where}: ${got.clip}`);
+      }
+    }
+    // A mola passa do alvo (overshoot, pico perto de 2,2 s): o x vai de 300 a 100 px e cruza 100. Prova que linear() acima de 1 não é clampado.
+    const overshoot = await sample(66);
+    assert.ok(parseFloat(overshoot.x) < 100, `x com overshoot abaixo de 100 px: ${overshoot.x}`);
+
+    // Determinismo: 20 frames em ordem, repetidos e invertidos dão o mesmo valor e o mesmo pixel.
+    const frames = Array.from({ length: 20 }, (_, i) => i * 8);
+    const hashOf = async (frame: number): Promise<string> => JSON.stringify(await sample(frame)) + (await session.capture()).sha256;
+    const ordered = new Map<number, string>();
+    for (const frame of frames) ordered.set(frame, await hashOf(frame));
+    for (const frame of frames) assert.equal(await hashOf(frame), ordered.get(frame), `frame ${frame} mudou ao repetir`);
+    for (const frame of [...frames].reverse()) assert.equal(await hashOf(frame), ordered.get(frame), `frame ${frame} mudou na ordem inversa`);
+    assert.deepEqual(session.pageErrors(), []);
+  } finally {
+    await session.close();
+    await server.close();
+  }
 });

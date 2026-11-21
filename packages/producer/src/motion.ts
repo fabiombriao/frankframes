@@ -35,14 +35,37 @@ function setAttr(node: DomNode, name: string, value: string): void {
 export function toRuntimeSpec(target: MotionTarget, clipStart: number, scopeMs: number): MotionRuntimeSpec {
   return {
     v: 1,
-    a: target.tracks.map((track) => ({
-      p: track.prop,
-      d: round3((clipStart + track.start) * 1000 - scopeMs),
-      n: Math.max(1, round3(track.duration * 1000)),
-      k: track.keys.map((key): [number, number | string, string | null] => [key.offset, key.value, key.easing]),
-    })),
+    a: target.tracks.map((track) => {
+      const keys = track.keys.map((key): [number, number | string, string | null] => [key.offset, cssValue(track.prop, key.value), key.easing]);
+      // Trilha constante (um ponto de keyframe): o WAAPI precisa de dois quadros, os dois iguais.
+      if (keys.length === 1) keys.push([1, keys[0]![1], null]);
+      return {
+        p: track.prop,
+        d: round3((clipStart + track.start) * 1000 - scopeMs),
+        n: Math.max(1, round3(track.duration * 1000)),
+        k: keys,
+      };
+    }),
     s: bindingsFor(target.tracks.map((track) => track.prop)),
   };
+}
+
+/**
+ * Valor CSS do quadro. As propriedades registradas (`@property`) exigem unidade:
+ * número solto só vale em opacity e escalas; texto (`%`, `inset(...)`) já vem formatado.
+ */
+function cssValue(prop: string, value: number | string): number | string {
+  if (typeof value === "string") return value;
+  switch (prop) {
+    case "--ff-x":
+    case "--ff-y":
+    case "--ff-blur":
+      return `${value}px`;
+    case "--ff-rot":
+      return `${value}deg`;
+    default:
+      return value;
+  }
 }
 
 /** Início absoluto de cada clip, em segundos (mesma conta do tempo anotado). */

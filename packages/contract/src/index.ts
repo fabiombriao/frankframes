@@ -12,12 +12,14 @@ export type {
   Fps,
   MotionKey,
   MotionKind,
+  MotionProp,
   MotionSource,
   MotionTarget,
   MotionTrack,
   RawClip,
   ResolvedClip,
   TimeExpr,
+  VisualKeyframe,
 } from "./types.ts";
 export * from "./motion/index.ts";
 export { CODES } from "./errors.ts";

@@ -1,6 +1,7 @@
 // FrankFrames — proprietário. Ver LICENSE na raiz.
 /** Propriedades CSS do motion e fusão de trechos em trilhas (docs/contract.md §7b.6, §7b.12). */
-import type { MotionKey, MotionTrack } from "../types.ts";
+import type { MotionKey, MotionProp, MotionTrack, VisualKeyframe } from "../types.ts";
+import { emitEasing, resolveCurve, springSettleSeconds } from "./curves.ts";
 
 /** Propriedades personalizadas que o runtime registra (`inherits:false`). Fonte única: o engine lê esta lista. */
 export const MOTION_PROPERTIES: ReadonlyArray<{ name: string; syntax: string; initial: string }> = [
@@ -55,6 +56,69 @@ export interface Segment {
   keys: MotionKey[];
 }
 
+/** Propriedade CSS animada por cada propriedade de `data-keyframes` (§7b.6). */
+export const CSS_PROP_OF: Readonly<Record<MotionProp, string>> = {
+  opacity: "opacity",
+  x: "--ff-x",
+  y: "--ff-y",
+  scaleX: "--ff-sx",
+  scaleY: "--ff-sy",
+  rotate: "--ff-rot",
+  blur: "--ff-blur",
+  clip: "clip-path",
+};
+
+/** Ordem canônica das trilhas de keyframes. */
+const KEYFRAME_PROPS = Object.keys(CSS_PROP_OF) as MotionProp[];
+
+/** Trecho de mola que não assenta: quem chama emite `E_CURVE_INVALID` com o mínimo. */
+export interface SpringFailure {
+  prop: MotionProp;
+  /** Início do trecho (segundos locais ao clip) e duração dele. */
+  time: number;
+  duration: number;
+  /** Menor duração em que a mola assenta, em segundos. */
+  minimum: number;
+}
+
+/**
+ * Um trecho por propriedade a partir dos pontos de `data-keyframes` (§7b.7). O trecho vai do
+ * primeiro ao último ponto que tem a propriedade; cada chave leva o easing da curva do ponto de
+ * partida, emitido para a duração do trecho entre ela e a próxima chave daquela propriedade.
+ * Ponto único vira trilha constante: duração 0 e uma só chave.
+ */
+export function keyframeSegments(keyframes: VisualKeyframe[]): {
+  segments: Array<{ prop: string; segment: Segment }>;
+  failures: SpringFailure[];
+} {
+  const segments: Array<{ prop: string; segment: Segment }> = [];
+  const failures: SpringFailure[] = [];
+  for (const prop of KEYFRAME_PROPS) {
+    const points = keyframes.filter((k) => k.values[prop] !== undefined).sort((a, b) => a.time - b.time);
+    if (points.length === 0) continue;
+    const first = points[0]!;
+    const last = points.at(-1)!;
+    const total = last.time - first.time;
+    const keys: MotionKey[] = [];
+    for (const [index, point] of points.entries()) {
+      const value = point.values[prop]!;
+      const next = points[index + 1];
+      let easing: string | null = null;
+      if (next !== undefined) {
+        const curve = resolveCurve(point.curve).curve!; // validada em parseKeyframes
+        const duration = next.time - point.time;
+        easing = emitEasing(curve, duration);
+        if (easing === null) {
+          failures.push({ prop, time: point.time, duration: round6(duration), minimum: springSettleSeconds(curve.spring!) });
+        }
+      }
+      keys.push({ offset: total <= 0 ? 0 : round6((point.time - first.time) / total), value, easing });
+    }
+    segments.push({ prop: CSS_PROP_OF[prop], segment: { start: first.time, duration: total, keys } });
+  }
+  return { segments, failures };
+}
+
 export type MergeResult = { ok: true; track: MotionTrack; jumps: number[] } | { ok: false; overlap: [number, number] };
 
 const EPS = 1e-9;
@@ -78,7 +142,8 @@ export function mergeSegments(prop: string, segments: Segment[]): MergeResult {
   const last = sorted.at(-1)!;
   const origin = first.start;
   const total = last.start + last.duration - origin;
-  const offsetOf = (t: number): number => round6((t - origin) / total);
+  // Trilha constante (um ponto de keyframe, duração 0): todas as chaves ficam em offset 0.
+  const offsetOf = (t: number): number => (total <= 0 ? 0 : round6((t - origin) / total));
 
   const keys: MotionKey[] = [];
   const jumps: number[] = [];

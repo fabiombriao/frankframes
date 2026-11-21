@@ -58,6 +58,24 @@ export interface RawClip {
 /** Atributos de movimento (docs/contract.md §7b). */
 export type MotionKind = "enter" | "exit" | "emphasis" | "camera" | "transition";
 
+/** Propriedades animáveis por `data-keyframes` (§7b.6, §7b.7). */
+export type MotionProp = "opacity" | "x" | "y" | "scaleX" | "scaleY" | "rotate" | "blur" | "clip";
+
+/**
+ * Valor normalizado de um ponto: número (px, graus, fator) ou texto (`"10%"` em x/y;
+ * `inset(...)`/`circle(...)` em clip, sempre em %).
+ */
+export type MotionValue = number | string;
+
+/** Um ponto de `data-keyframes` com propriedades visuais, já validado (docs/contract.md §7b.7). */
+export interface VisualKeyframe {
+  /** Segundos desde o início do clip dono. */
+  time: number;
+  values: Partial<Record<MotionProp, MotionValue>>;
+  /** Curva dos trechos que começam neste ponto (nome, `cubic-bezier(...)` ou `spring(...)`); padrão `linear`. */
+  curve: string;
+}
+
 /** Um elemento com atributos de motion, como o autor escreveu (ainda sem validar). */
 export interface MotionSource {
   /** Clip dono: o próprio elemento ou o clip temporizado mais próximo acima dele. */
@@ -71,6 +89,8 @@ export interface MotionSource {
   attrs: Partial<Record<MotionKind, string>>;
   /** Atributo `style` inline, para detectar conflito de posse. */
   style?: string;
+  /** Pontos visuais de `data-keyframes` (§7b.7), por ordem de `time`. Ausente quando não há. */
+  keyframes?: VisualKeyframe[];
 }
 
 export interface MotionKey {

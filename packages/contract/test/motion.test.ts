@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { parse } from "parse5";
-import { CODES, evaluateCurve, loadComposition, mergeSegments, motionElements, parseCurve, parseMotionValue } from "../src/index.ts";
+import { CODES, emitEasing, evaluateCurve, loadComposition, mergeSegments, motionElements, parseCurve, parseMotionValue, resolveCurve } from "../src/index.ts";
 import type { Composition } from "../src/index.ts";
 
 const SUAVE = "cubic-bezier(0.34, 0.1, 0.18, 1)";
@@ -189,7 +189,7 @@ test("parâmetros: chave desconhecida, dur<=0 e fora da faixa do preset", () => 
 });
 
 test("curvas inválidas: E_CURVE_INVALID", () => {
-  for (const curve of ["mola", "cubic-bezier(2,0,0.5,1)", "cubic-bezier(0.3,0,0.2,9)", "cubic-bezier(0.3, 0, 0.2, 1)", "xyz"]) {
+  for (const curve of ["molinha", "cubic-bezier(2,0,0.5,1)", "cubic-bezier(0.3,0,0.2,9)", "cubic-bezier(0.3, 0, 0.2, 1)", "xyz"]) {
     const c = clip(`data-enter="surgir curve=${curve}"`);
     assert.equal(c.ok, false, curve);
     assert.ok(codes(c).includes("E_CURVE_INVALID") || codes(c).includes("E_MOTION_SYNTAX"), curve);
@@ -307,7 +307,8 @@ test("curvas: nomes, bezier e avaliação determinística", () => {
   assert.equal(parseCurve("suave")?.css, SUAVE);
   assert.equal(parseCurve("freio")?.css, "cubic-bezier(0.18, 0.72, 0.28, 1)");
   assert.equal(parseCurve("cubic-bezier(0.3,0,0.2,1)")?.css, "cubic-bezier(0.3, 0, 0.2, 1)");
-  assert.equal(parseCurve("mola"), undefined);
+  assert.equal(parseCurve("molinha"), undefined);
+  assert.equal(parseCurve("mola")?.css, "spring(0.45, 18)");
   assert.equal(parseCurve("cubic-bezier(0.3,0,0.2)"), undefined);
 
   assert.equal(evaluateCurve("linear", 0.3), 0.3);
@@ -362,4 +363,228 @@ test("códigos de motion estão no contrato", () => {
   assert.equal(CODES.MOTION_JUMP, "W_MOTION_JUMP");
   assert.equal(CODES.MOTION_SYNTAX, "E_MOTION_SYNTAX");
   assert.equal(CODES.CURVE_INVALID, "E_CURVE_INVALID");
+});
+
+// ---------- EDT-50: keyframes visuais (§7b.7) e mola ----------
+
+/** Clip `c` de 3 s com `data-keyframes` (JSON). */
+const kf = (points: unknown, extra = "", duration = 3): Composition =>
+  loadComposition(
+    root(
+      `<div data-clip-id="c" data-start="0" data-duration="${duration}" ${extra} data-keyframes='${typeof points === "string" ? points : JSON.stringify(points)}'></div>`,
+    ),
+  );
+
+test("keyframes: só volume continua igual e não gera motion", () => {
+  const c = kf([
+    { time: 0, volume: 1 },
+    { time: 2, volume: 0.2 },
+  ]);
+  assert.equal(c.ok, true, JSON.stringify(c.diagnostics));
+  assert.deepEqual(c.clips[0]?.keyframes, [
+    { time: 0, volume: 1 },
+    { time: 2, volume: 0.2 },
+  ]);
+  assert.deepEqual(c.motion, {});
+  assert.deepEqual(c.diagnostics, []);
+});
+
+test("keyframes: opacidade em dois pontos com curva e x em um ponto (constante)", () => {
+  const c = kf([
+    { time: 0, opacity: 0, curve: "freio" },
+    { time: 1, opacity: 1, x: "10%" },
+  ]);
+  assert.equal(c.ok, true, JSON.stringify(c.diagnostics));
+  assert.equal(c.clips[0]?.keyframes, undefined, "sem volume, clip.keyframes não existe");
+  const opacity = trackOf(c, "opacity");
+  assert.equal(opacity.keys.length, 2);
+  assert.equal(opacity.keys[0]?.easing, "cubic-bezier(0.18, 0.72, 0.28, 1)");
+  assert.equal(opacity.keys[1]?.easing, null);
+  assert.deepEqual(
+    opacity.keys.map((k) => k.value),
+    [0, 1],
+  );
+  const x = trackOf(c, "--ff-x");
+  assert.equal(x.keys.length, 1);
+  assert.equal(x.keys[0]?.value, "10%");
+  assert.equal(x.duration, 0);
+});
+
+test("keyframes: trecho por propriedade usa a curva do ponto de partida", () => {
+  const c = kf([
+    { time: 0, x: 0, opacity: 0 },
+    { time: 1, x: 100, curve: "freio" },
+    { time: 2, x: 200, opacity: 1 },
+  ]);
+  assert.equal(c.ok, true, JSON.stringify(c.diagnostics));
+  const x = trackOf(c, "--ff-x");
+  assert.deepEqual(
+    x.keys.map((k) => [k.offset, k.value, k.easing]),
+    [
+      [0, 0, "linear"],
+      [0.5, 100, "cubic-bezier(0.18, 0.72, 0.28, 1)"],
+      [1, 200, null],
+    ],
+  );
+  // opacity pula o ponto do meio: um trecho 0→2 s com a curva do ponto 0
+  const opacity = trackOf(c, "opacity");
+  assert.equal(opacity.duration, 2);
+  assert.equal(opacity.keys.length, 2);
+});
+
+test("keyframes: scale expande para scaleX e scaleY; clip inset normaliza", () => {
+  const c = kf([
+    { time: 0, scale: 1, clip: "inset(0 100% 0 0)" },
+    { time: 1, scale: 2, clip: "inset(0% 0% 0% 0%)" },
+  ]);
+  assert.equal(c.ok, true, JSON.stringify(c.diagnostics));
+  assert.deepEqual(
+    trackOf(c, "--ff-sx").keys.map((k) => k.value),
+    [1, 2],
+  );
+  assert.deepEqual(
+    trackOf(c, "--ff-sy").keys.map((k) => k.value),
+    [1, 2],
+  );
+  assert.deepEqual(
+    trackOf(c, "clip-path").keys.map((k) => k.value),
+    ["inset(0% 100% 0% 0%)", "inset(0% 0% 0% 0%)"],
+  );
+});
+
+test("keyframes: cada tipo de ponto inválido dá E_KEYFRAME_INVALID", () => {
+  const cases: Record<string, unknown> = {
+    "chave desconhecida": [{ time: 0, brilho: 1 }],
+    "opacity fora de faixa": [{ time: 0, opacity: 2 }],
+    "blur negativo": [{ time: 0, blur: -1 }],
+    "scale junto com scaleX": [{ time: 0, scale: 1, scaleX: 2 }],
+    "mesmo time duas vezes": [
+      { time: 1, opacity: 0 },
+      { time: 1, opacity: 1 },
+    ],
+    "ponto sem propriedade": [{ time: 0 }],
+    "clip inset e circle": [
+      { time: 0, clip: "inset(0% 0% 0% 0%)" },
+      { time: 1, clip: "circle(50% at 50% 50%)" },
+    ],
+    "zoom reservado à câmera": [{ time: 0, zoom: 1.2 }],
+    "focusX reservado à câmera": [{ time: 0, focusX: 50 }],
+    "x com unidade inválida": [{ time: 0, x: "3em" }],
+  };
+  for (const [name, points] of Object.entries(cases)) {
+    const c = kf(points);
+    assert.equal(c.ok, false, name);
+    assert.ok(codes(c).includes("E_KEYFRAME_INVALID"), `${name}: ${JSON.stringify(codes(c))}`);
+  }
+});
+
+test("keyframes: volume em descendente é E_KEYFRAME_INVALID", () => {
+  const c = loadComposition(
+    root(
+      `<div data-clip-id="c" data-start="0" data-duration="3"><span data-keyframes='[{"time":0,"volume":1}]'></span></div>`,
+    ),
+  );
+  assert.equal(c.ok, false);
+  assert.ok(codes(c).includes("E_KEYFRAME_INVALID"));
+});
+
+test("keyframes: 257 pontos dão E_KEYFRAME_LIMIT, 256 passam", () => {
+  const points = (n: number) => Array.from({ length: n }, (_, i) => ({ time: i * 0.01, opacity: i % 2 }));
+  const over = kf(points(257), "", 10);
+  assert.equal(over.ok, false);
+  assert.ok(codes(over).includes("E_KEYFRAME_LIMIT"));
+  const at = kf(points(256), "", 10);
+  assert.ok(!codes(at).includes("E_KEYFRAME_LIMIT"), JSON.stringify(at.diagnostics));
+});
+
+test("keyframes: JSON quebrado mantém E_NUMBER_INVALID", () => {
+  const c = kf("[{time:0}]");
+  assert.ok(codes(c).includes("E_NUMBER_INVALID"));
+  const nonFinite = kf([{ time: "x", opacity: 1 }]);
+  assert.ok(codes(nonFinite).includes("E_NUMBER_INVALID"));
+});
+
+test("keyframes: ponto além do fim do clip dá W_KEYFRAME_OUT_OF_RANGE", () => {
+  const c = kf([
+    { time: 0, opacity: 0 },
+    { time: 9, opacity: 1 },
+  ]);
+  assert.equal(c.ok, true, JSON.stringify(c.diagnostics));
+  const warn = c.diagnostics.find((d) => d.code === "W_KEYFRAME_OUT_OF_RANGE");
+  assert.ok(warn, JSON.stringify(c.diagnostics));
+  assert.match(warn.hint ?? "", /t=9 s/);
+});
+
+test("keyframes: curva em ponto só de volume dá W_KEYFRAME_CURVE_IGNORED", () => {
+  const c = kf([{ time: 0, volume: 1, curve: "freio" }]);
+  assert.ok(codes(c).includes("W_KEYFRAME_CURVE_IGNORED"), JSON.stringify(c.diagnostics));
+});
+
+test("keyframes: opacity junto com data-enter na mesma janela é E_MOTION_OVERLAP", () => {
+  const c = kf(
+    [
+      { time: 0, opacity: 0 },
+      { time: 1, opacity: 1 },
+    ],
+    'data-enter="surgir"',
+  );
+  assert.equal(c.ok, false);
+  assert.ok(codes(c).includes("E_MOTION_OVERLAP"), JSON.stringify(c.diagnostics));
+});
+
+test("keyframes: curva desconhecida em ponto vira E_CURVE_INVALID", () => {
+  const c = kf([
+    { time: 0, opacity: 0, curve: "molinha" },
+    { time: 1, opacity: 1 },
+  ]);
+  assert.equal(c.ok, false);
+  assert.ok(codes(c).includes("E_CURVE_INVALID"));
+});
+
+test("mola: avaliação, overshoot e monotonia", () => {
+  assert.equal(evaluateCurve("mola", 0), 0);
+  assert.equal(evaluateCurve("mola", 1), 1);
+  let peak = 0;
+  for (let i = 0; i <= 200; i++) peak = Math.max(peak, evaluateCurve("spring(0.45,18)", i / 200, 0.8));
+  assert.ok(peak > 1.15 && peak < 1.25, `pico ${peak}`);
+  // ζ = 1: sem overshoot, monotônica
+  let previous = -1;
+  for (let i = 0; i <= 100; i++) {
+    const v = evaluateCurve("spring(1,18)", i / 100, 1);
+    assert.ok(v <= 1 + 1e-9 && v >= previous - 1e-9, `ζ=1 não monotônica em ${i}: ${v}`);
+    previous = v;
+  }
+});
+
+test("mola: emissão linear() com 64 amostras e valor conferido à mão", () => {
+  const css = emitEasing(resolveCurve("spring(0.45,18)").curve!, 0.8);
+  assert.ok(css !== null && css.startsWith("linear(0, "));
+  assert.equal(css.slice("linear(".length, -1).split(", ").length, 64);
+  // Conferido à mão: p=1/63 → τ=0,8/63 s; x = 1 − e^(−8,1τ)(cos(ω_d τ) + 0,5039·sen(ω_d τ)), ω_d = 16,0745 → 0,0243.
+  assert.equal(
+    css,
+    "linear(0, 0.0243, 0.09, 0.1862, 0.3028, 0.4305, 0.5613, 0.6883, 0.8064, 0.9116, 1.0015, 1.0745, 1.1305, 1.1699, 1.194, 1.2045, 1.2034, 1.193, 1.1754, 1.1529, 1.1273, 1.1006, 1.074, 1.049, 1.0262, 1.0065, 0.9901, 0.9773, 0.9679, 0.9617, 0.9585, 0.9579, 0.9593, 0.9624, 0.9667, 0.9718, 0.9772, 0.9827, 0.988, 0.9929, 0.9972, 1.0008, 1.0037, 1.0059, 1.0074, 1.0083, 1.0087, 1.0085, 1.008, 1.0072, 1.0062, 1.0051, 1.004, 1.0029, 1.0018, 1.0009, 1.0001, 0.9995, 0.9989, 0.9986, 0.9983, 0.9982, 0.9982, 1)",
+  );
+});
+
+test("mola: trecho curto demais não assenta e o hint traz a duração mínima (0,59 s)", () => {
+  assert.equal(emitEasing(resolveCurve("spring(0.45,18)").curve!, 0.3), null);
+  const c = kf([
+    { time: 0, x: 0, curve: "mola" },
+    { time: 0.3, x: 100 },
+  ]);
+  assert.equal(c.ok, false);
+  const error = c.diagnostics.find((d) => d.code === "E_CURVE_INVALID");
+  assert.ok(error, JSON.stringify(c.diagnostics));
+  assert.match(error.hint ?? "", /0\.59/);
+
+  const preset = clip('data-enter="surgir dur=0.3 curve=spring(0.45,18)"');
+  assert.equal(preset.ok, false);
+  assert.match(preset.diagnostics.find((d) => d.code === "E_CURVE_INVALID")?.hint ?? "", /0\.59/);
+});
+
+test("mola em preset: surgir dur=1 curve=mola emite linear() na chave", () => {
+  const c = clip('data-enter="surgir dur=1 curve=mola"');
+  assert.equal(c.ok, true, JSON.stringify(c.diagnostics));
+  assert.ok(trackOf(c, "opacity").keys[0]?.easing?.startsWith("linear(0, "));
 });

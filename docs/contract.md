@@ -61,6 +61,7 @@ tem `data-track` (sem duração) **não** é clip.
 | `data-audio-role` | `voice`, `music` ou `sfx`. Música (`music`) abaixa 9 dB sob qualquer `voice`, com 80 ms de ataque e 250 ms de release |
 | `data-fade-in` / `data-fade-out` | segundos ≥ 0; entram no mixer. Fade maior que a duração é ajustado com aviso |
 | `data-enter` / `data-exit` / `data-emphasis` / `data-camera` / `data-transition` | movimento declarativo do clip ou de um descendente; ver §7b |
+| `data-keyframes` | JSON com pontos de volume (só no clip) e de propriedades visuais (clip ou descendente); ver §7b.7 |
 | `data-track` | **só UI**. O render ignora. Não use para lógica |
 | `class="clip"` | convenção de autoria. **Nunca** governa visibilidade — o runtime usa o atributo `data-start` |
 
@@ -123,6 +124,8 @@ reproduz. CSS `@keyframes` continua permitido; os atributos de motion são a for
 
 Atributo reservado aceita só a gramática de §7b.4: qualquer valor dá `E_MOTION_PRESET_UNKNOWN`.
 
+`data-keyframes` (clip ou descendente) tem formato próprio, em JSON: §7b.7.
+
 ### 7b.4 Gramática
 
 ```
@@ -133,8 +136,9 @@ chave      = minúscula { minúscula } ;
 segundos   = dígito+ [ "." dígito+ ] ;
 âncora     = segundos | "-" segundos | segundos "%" | "end" | "end-" segundos ;
 curva      = "linear" | "ease" | "ease-in" | "ease-out" | "ease-in-out"
-           | "suave" | "freio" | "arranque" | "vaivem"
-           | "cubic-bezier(" num "," num "," num "," num ")" ;     (* sem espaços *)
+           | "suave" | "freio" | "arranque" | "vaivem" | "mola" | "mola-firme"
+           | "cubic-bezier(" num "," num "," num "," num ")"      (* sem espaços *)
+           | "spring(" num "," num ")" ;                           (* ζ, ω; sem espaços *)
 num        = [ "-" ] dígito+ [ "." dígito+ ] ;
 distância  = num [ "px" | "%" ] ;              (* sem unidade = px *)
 ```
@@ -165,7 +169,7 @@ Diagnósticos de gramática (todos `error`, com `clipId` e `hint`):
 | `E_MOTION_SYNTAX` | valor vazio, token sem `=`, chave repetida ou caractere inválido | `use data-enter="subir dur=0.6 at=0.2"` (com um preset existente) |
 | `E_MOTION_PRESET_UNKNOWN` | preset inexistente para aquele atributo | lista os presets válidos do atributo |
 | `E_MOTION_PARAM` | chave que o preset não tem, ou valor fora do tipo ou da faixa (`dur=-1`, `at=-1` fora de `data-enter`) | lista as chaves aceitas, ou mostra a faixa |
-| `E_CURVE_INVALID` | `curve` desconhecida; `cubic-bezier` com x1 ou x2 fora de [0,1] ou y fora de [-5,5] | `use cubic-bezier(0.3,0,0.2,1) ou um nome: linear, ease, suave, freio, arranque, vaivem` |
+| `E_CURVE_INVALID` | `curve` desconhecida; `cubic-bezier` com x1 ou x2 fora de [0,1] ou y fora de [-5,5]; `spring` com ζ fora de [0.05,1] ou ω fora de [1,100]; mola que não assenta no trecho (§7b.11) | `use cubic-bezier(0.3,0,0.2,1) ou um nome: linear, ease, suave, freio, arranque, vaivem, mola, mola-firme`; na mola que não assenta, `mola precisa de dur ≥ <mín> s` |
 
 ### 7b.5 Tempo
 
@@ -211,8 +215,8 @@ D conhecida:
 | `rotate` | `--ff-rot` → `rotate` | 0 | graus, [-3600,3600] |
 | `blur` | `--ff-blur` → `filter: blur()` | 0 | px, [0,200] |
 | `clip` | `clip-path` | `inset(0% 0% 0% 0%)` | `inset(t% r% b% l%)` ou `circle(r% at x% y%)` |
-| `zoom` | `--ff-zoom` → `object-view-box` | 1 | [1,10], só `<img>`; reservado à câmera (sem preset ainda) |
-| `focusX`, `focusY` | `--ff-fx`, `--ff-fy` → `object-view-box` | 0.5 | [0,1], só `<img>`; reservado à câmera (sem preset ainda) |
+| `zoom` | `--ff-zoom` → `object-view-box` | 1 | [1,10], só `<img>`; reservado à câmera (sem preset ainda); em `data-keyframes` dá `E_KEYFRAME_INVALID` até a câmera existir (§7b.7) |
+| `focusX`, `focusY` | `--ff-fx`, `--ff-fy` → `object-view-box` | 0.5 | [0,1], só `<img>`; reservado à câmera (sem preset ainda); mesma regra de `zoom` |
 
 - `scale` é atalho para `scaleX` e `scaleY` iguais.
 - O alvo com motion passa a ser **dono** das propriedades CSS que o movimento usa (`opacity`, `translate`,
@@ -231,6 +235,60 @@ D conhecida:
 - Se um movimento começa num valor diferente do que estava parado, o salto é aplicado e o contrato avisa
   com `W_MOTION_JUMP`.
 
+### 7b.7 Keyframes visuais (`data-keyframes`)
+
+`data-keyframes` é um array JSON de pontos, no clip ou em qualquer descendente. O mesmo atributo carrega o
+volume do clip (EDT-40) e as propriedades visuais (§7b.6):
+
+```
+ponto = { "time": s, "volume"?, "opacity"?, "x"?, "y"?, "scale"? | "scaleX"? | "scaleY"?,
+          "rotate"?, "blur"?, "clip"?, "zoom"?, "focusX"?, "focusY"?, "curve"? }
+```
+
+```html
+<div data-start="0" data-duration="3"
+     data-keyframes='[{"time":0,"opacity":0,"x":0,"curve":"mola"},
+                      {"time":1,"opacity":1,"x":400}]'>…</div>
+```
+
+- `time` é em segundos ≥ 0, relativo ao início do clip dono (o mesmo dos pontos de volume). A ordem dos
+  pontos no JSON não importa: as trilhas usam a ordem de `time`.
+- Valores aceitos (faixas de §7b.6):
+
+  | Chave | Valor |
+  |---|---|
+  | `opacity` | número em [0,1] |
+  | `x`, `y` | número (px) ou texto `"<n>px"` / `"<n>%"` (% da própria caixa) |
+  | `scale`, `scaleX`, `scaleY` | número em [0,20]; `scale` é atalho de `scaleX` e `scaleY` iguais |
+  | `rotate` | número em graus, [-3600,3600] |
+  | `blur` | número em px, [0,200] |
+  | `clip` | `inset(t r b l)` (1 a 4 valores, todos em `%`, [0,100]) ou `circle(r% at x% y%)` (r em [0,150], x e y em [0,100]) |
+  | `volume` | só no clip; número ≥ 0, como em §4 |
+  | `curve` | curva de §7b.4 |
+
+- Cada propriedade forma uma **trilha** com os pontos que a têm. O intervalo da trilha é [primeiro `time`,
+  último `time`]. Um ponto único é uma trilha constante: o valor vale o clip inteiro.
+- `curve` vale para os trechos que **começam** no ponto, em todas as propriedades dele; o padrão é `linear`.
+  Um trecho de uma trilha vai do ponto ao próximo ponto que **tem aquela propriedade**, com a curva do
+  ponto de partida. A duração do trecho (`time` seguinte − `time`) decide a emissão da mola (§7b.11).
+- A trilha entra nas mesmas regras de posse, sobreposição e salto de §7b.6 contra presets e outras trilhas
+  da mesma propriedade no mesmo alvo (`E_MOTION_OVERLAP`, `W_MOTION_JUMP`). Exemplo:
+  `opacity` de 0 a 1 em `[0,1]` mais `data-enter="surgir"` no mesmo alvo dá `E_MOTION_OVERLAP`.
+- `volume` mantém o formato e o resultado de sempre: `RawClip.keyframes` traz só `{time, volume}` dos
+  pontos que têm `volume`, sempre lineares. Ponto só de volume não cria alvo de motion.
+- `zoom`, `focusX` e `focusY` são reservados à câmera (§7b.6): enquanto ela não existe, dão
+  `E_KEYFRAME_INVALID` com hint explicando; nunca um movimento que não aparece.
+
+Diagnósticos (todos com `clipId`; os erros têm `hint`):
+
+| Código | Severidade | Quando | Hint |
+|---|---|---|---|
+| `E_NUMBER_INVALID` | error | JSON malformado, não é array, ou `time`/`volume` não finito ou negativo (como antes) | o de hoje |
+| `E_KEYFRAME_INVALID` | error | chave desconhecida; valor fora do tipo ou da faixa; `scale` junto com `scaleX`/`scaleY` no mesmo ponto; dois pontos com o mesmo `time`; ponto sem nenhuma propriedade; `clip` misturando `inset` e `circle` na mesma trilha; `zoom`/`focusX`/`focusY` (reservados à câmera); `volume` em descendente | diz o ponto (índice), a chave e a faixa válida |
+| `E_KEYFRAME_LIMIT` | error | mais de 256 pontos | `divida em elementos ou reduza para ≤ 256 pontos` |
+| `W_KEYFRAME_OUT_OF_RANGE` | warning | `time` maior que a duração D do clip; o ponto é mantido | `o ponto em t=<n> s nunca aparece: o clip termina em <D> s` |
+| `W_KEYFRAME_CURVE_IGNORED` | warning | `curve` num ponto só de volume (o volume é sempre linear) | `remova curve ou acrescente uma propriedade visual ao ponto` |
+
 ### 7b.11 Curvas
 
 - `linear`, `ease`, `ease-in`, `ease-out`, `ease-in-out`: as do CSS.
@@ -242,11 +300,26 @@ D conhecida:
   | `freio` | `cubic-bezier(0.18,0.72,0.28,1)` |
   | `arranque` | `cubic-bezier(0.56,0,0.84,0.42)` |
   | `vaivem` | `cubic-bezier(0.58,0.04,0.3,0.97)` |
+  | `mola` | `spring(0.45,18)` |
+  | `mola-firme` | `spring(0.7,14)` |
 
-- Cada trecho entre dois pontos do preset leva a curva do preset (ou a de `curve`).
+- Cada trecho entre dois pontos (do preset ou de `data-keyframes`) leva a curva do preset (ou a de `curve`),
+  ou a do ponto de partida em keyframes.
 - O easing sai como o nome CSS (`linear`, `ease-in`...) ou `cubic-bezier(x1, y1, x2, y2)`; a avaliação
   (`evaluateCurve`) usa bissecção determinística de 40 iterações.
-- Curvas de mola (`mola`, `mola-firme`, `spring(ζ,ω)`) ainda não existem: dão `E_CURVE_INVALID`.
+- `spring(ζ,ω)`, com ζ em [0.05,1] e ω em [1,100] (rad/s), é função fechada do tempo do trecho, τ ∈ [0,dur]
+  em segundos, com `x(0)=0` e `x(dur)=1`:
+  - ζ < 1: `x(τ) = 1 − e^(−ζωτ)·(cos(ω_d τ) + (ζω/ω_d)·sin(ω_d τ))`, com `ω_d = ω·√(1−ζ²)`;
+  - ζ = 1: `x(τ) = 1 − e^(−ωτ)·(1 + ωτ)`.
+  Passa de 1 (overshoot) quando ζ < 1. Nada é simulado passo a passo.
+- A mola precisa **assentar** dentro do trecho:
+  - envelope `e^(−ζω·dur)/√(1−ζ²)` ≤ 0.01 (com ζ = 1: `e^(−ω·dur)(1+ω·dur)` ≤ 0.01);
+  - senão `E_CURVE_INVALID`, com hint `mola precisa de dur ≥ <mín> s` (mín arredondado para cima em 0.01).
+    Exemplo: `spring(0.45,18)` pede dur ≥ 0.59 s.
+- Emissão da mola: como depende de `dur`, o easing do trecho é `linear(v0, v1, ..., v63)`:
+  - 64 amostras em p = i/63, com τ = p·dur; i = 0 vale 0 e i = 63 é forçado a 1;
+  - 4 casas decimais (`Number(v.toFixed(4))`).
+  Valores acima de 1 são válidos em `linear()`; o render prova que o Chrome pinado não os limita.
 
 ### 7b.12 Compilação e runtime
 
@@ -258,7 +331,11 @@ D conhecida:
   - `n` ≥ 1;
   - uma entrada em `a` por propriedade CSS; `easing` é o do trecho que **começa** naquele ponto e `null`
     vale `linear`;
-  - `s` traz as declarações de ligação, por exemplo `["translate","var(--ff-x) var(--ff-y)"]`.
+  - `s` traz as declarações de ligação, por exemplo `["translate","var(--ff-x) var(--ff-y)"]`;
+  - valores dos pontos: `x`/`y` viram `"<n>px"` (ou ficam em `%`), `rotate` vira `"<n>deg"`, `blur` vira
+    `"<n>px"`, `scale*` são números, e `clip` vai direto em `clip-path`, normalizado (`inset(0% 10% 0% 0%)`:
+    sempre `%`, 4 valores; `circle(50% at 50% 50%)`);
+  - trilha constante (ponto único) sai com duas chaves iguais e `n` = 1.
 - O runtime (engine):
   - registra as propriedades `--ff-*` (`inherits:false`);
   - aplica `s` no `style` do alvo;
@@ -420,4 +497,5 @@ Composições escritas para outro framework entram por um **importador separado*
 nomes no parsing. O núcleo não ganha um segundo nome para o mesmo conceito, nem modo "congela em t=0".
 
 Composições sem atributos de motion (§7b) compilam exatamente como antes: o compilador não grava
-`data-ff-motion` e o runtime de motion não cria animação.
+`data-ff-motion` e o runtime de motion não cria animação. Pontos de `data-keyframes` só com `volume`
+continuam idênticos: mesmo `RawClip.keyframes`, mesma mixagem, nenhum alvo de motion.
