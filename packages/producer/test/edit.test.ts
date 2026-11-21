@@ -1,7 +1,7 @@
 // FrankFrames — proprietário. Ver LICENSE na raiz.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { applyPatches, applyTransition, EditError, splitClip } from "../src/edit.ts";
+import { applyPatches, applyTransition, deleteClip, EditError, splitClip } from "../src/edit.ts";
 import { loadComposition } from "@frankframes/contract";
 
 const SOURCE = `<!doctype html>
@@ -188,4 +188,148 @@ test("preset que não é de transição e dur inválido falham com E_ATTRIBUTE_I
       JSON.stringify(request),
     );
   }
+});
+
+// ---- EDT-41: excluir clip sem mover o resto ----
+
+const CHAIN = `<!doctype html>
+<html><body>
+  <!-- fica -->
+  <div data-composition-id="main" data-root="true" data-duration="8">
+    <div data-clip-id="a" data-start="0" data-duration="2">a</div>
+    <div data-clip-id="b" data-start="a" data-duration="1">b</div>
+    <div data-clip-id="c" data-start="b + 0.5" data-duration="1">c</div>
+    <div data-clip-id="d" data-start="c" data-duration="1">d</div>
+  </div>
+</body></html>
+`;
+
+function startsOf(source: string): Record<string, number | undefined> {
+  const composition = loadComposition(source);
+  assert.equal(composition.ok, true, JSON.stringify(composition.diagnostics));
+  return Object.fromEntries(composition.clips.map((clip) => [clip.id, clip.start]));
+}
+
+/** O arquivo sem a (única) linha que contém `needle`. */
+function withoutLine(source: string, needle: string): string {
+  const lines = source.split(String.fromCharCode(10));
+  const hit = lines.filter((line) => line.includes(needle));
+  assert.equal(hit.length, 1, needle);
+  return lines.filter((line) => !line.includes(needle)).join(String.fromCharCode(10));
+}
+
+function deleteError(source: string, clipId: string): EditError {
+  try {
+    deleteClip(source, { clipId });
+  } catch (error) {
+    assert.ok(error instanceof EditError, String(error));
+    return error;
+  }
+  assert.fail("esperava EditError");
+}
+
+test("excluir b: quem começava no fim dele ganha início absoluto e nada se move", () => {
+  const before = startsOf(CHAIN);
+  const out = deleteClip(CHAIN, { clipId: "b" });
+  const after = startsOf(out);
+  assert.equal(after.b, undefined, "b saiu");
+  assert.equal(after.a, before.a);
+  assert.equal(after.c, before.c, "c continua no mesmo instante");
+  assert.equal(after.d, before.d, "d (encadeado em c) também");
+  assert.match(out, /data-clip-id="c" data-start="3.5"/);
+  // Fora das linhas tocadas o arquivo é idêntico: só a linha de b sumiu e o data-start de c mudou.
+  assert.equal(out, withoutLine(CHAIN, "data-clip-id=\"b\"").replace("data-start=\"b + 0.5\"", "data-start=\"3.5\""));
+});
+
+test("excluir sem referenciador só remove a linha, sem deixar vazio", () => {
+  const out = deleteClip(CHAIN, { clipId: "d" });
+  assert.equal(out, withoutLine(CHAIN, "data-clip-id=\"d\""));
+  assert.ok(out.split(String.fromCharCode(10)).every((line) => line.trim() !== "" || line === ""), "sem linha só de espaço");
+});
+
+test("excluir o primeiro clip da cadeia dá início absoluto ao seguinte (0 + duração)", () => {
+  const before = startsOf(CHAIN);
+  const out = deleteClip(CHAIN, { clipId: "a" });
+  const after = startsOf(out);
+  assert.equal(after.b, before.b);
+  assert.equal(after.c, before.c);
+});
+
+test("clip com filhos sai inteiro, e o referenciador mantém o início", () => {
+  const nested = `<div data-composition-id="main" data-root="true" data-duration="8">
+  <div data-clip-id="host" data-composition-id="card" data-start="0" data-duration="2">
+    <div data-clip-id="inner" data-start="0" data-duration="1">x</div>
+  </div>
+  <div data-clip-id="after" data-start="host" data-duration="1">y</div>
+</div>
+`;
+  const before = startsOf(nested);
+  const out = deleteClip(nested, { clipId: "host" });
+  assert.ok(!out.includes("inner") && !out.includes("host"), out);
+  assert.equal(startsOf(out).after, before.after);
+});
+
+test("referência de fora para um filho do clip excluído é recusada (atravessaria escopos)", () => {
+  const nested = `<div data-composition-id="main" data-root="true" data-duration="8">
+  <div data-clip-id="host" data-composition-id="card" data-start="0" data-duration="2">
+    <div data-clip-id="inner" data-start="0" data-duration="1">x</div>
+  </div>
+  <div data-clip-id="after" data-start="inner" data-duration="1">y</div>
+</div>
+`;
+  const error = deleteError(nested, "host");
+  assert.equal(error.code, "E_DELETE_UNSUPPORTED");
+  assert.match(error.message, /after/);
+});
+
+test("referenciador dentro de sub-composição apontando para clip da raiz é recusado", () => {
+  const nested = `<div data-composition-id="main" data-root="true" data-duration="8">
+  <div data-clip-id="a" data-start="0" data-duration="2">a</div>
+  <div data-clip-id="host" data-composition-id="card" data-start="0" data-duration="4">
+    <div data-clip-id="inner" data-start="a" data-duration="1">x</div>
+  </div>
+</div>
+`;
+  assert.equal(deleteError(nested, "a").code, "E_DELETE_UNSUPPORTED");
+});
+
+test("excluir clip de dentro de sub-composição é E_DELETE_UNSUPPORTED com dica", () => {
+  const nested = `<div data-composition-id="main" data-root="true" data-duration="8">
+  <div data-clip-id="host" data-composition-id="card" data-start="0" data-duration="2">
+    <div data-clip-id="inner" data-start="0" data-duration="1">x</div>
+  </div>
+</div>
+`;
+  const error = deleteError(nested, "inner");
+  assert.equal(error.code, "E_DELETE_UNSUPPORTED");
+  assert.match(error.message, /sub-composição/);
+});
+
+test("referenciador sem data-clip-id é E_DELETE_UNSUPPORTED", () => {
+  const anonymous = CHAIN.replace(`<div data-clip-id="c" data-start="b + 0.5"`, `<div data-start="b + 0.5"`);
+  const error = deleteError(anonymous, "b");
+  assert.equal(error.code, "E_DELETE_UNSUPPORTED");
+  assert.match(error.message, /data-clip-id/);
+});
+
+test("id inexistente é E_CLIP_NOT_FOUND", () => {
+  assert.equal(deleteError(CHAIN, "nope").code, "E_CLIP_NOT_FOUND");
+});
+
+test("transição: excluir A tira a transição de B e B não se move; excluir B só remove B", () => {
+  const withTransition = CHAIN.replace(
+    `<div data-clip-id="c" data-start="b + 0.5"`,
+    `<div data-clip-id="c" data-start="b - 0.5" data-transition="dissolver"`,
+  );
+  const before = startsOf(withTransition);
+  const outA = deleteClip(withTransition, { clipId: "b" });
+  assert.ok(!/data-transition/.test(outA), "a transição saiu junto com o parceiro");
+  const after = startsOf(outA);
+  assert.equal(after.c, before.c, "c continua no mesmo instante");
+  assert.equal(loadComposition(outA).ok, true);
+
+  const outB = deleteClip(withTransition, { clipId: "c" });
+  assert.ok(!outB.includes('data-clip-id="c"'));
+  assert.equal(loadComposition(outB).ok, true);
+  assert.equal(startsOf(outB).d, before.d, "d referenciava c e ganhou início absoluto igual ao de antes");
 });

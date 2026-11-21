@@ -273,3 +273,53 @@ test("estúdio mostra falha do mix no preview sem derrubar o vídeo", async (t) 
     assert.match(html, /E_PREVIEW_AUDIO: arquivo de áudio não encontrado: assets.{1,2}falta\.wav/); // o separador sai escapado no JSON
   });
 });
+
+// EDT-41: excluir clip sem mover o resto.
+test("estúdio exclui um clip, não move o resto e desfaz byte a byte", () =>
+  withStudio(async (server, _dir, entry) => {
+    const chained = HTML.replace('data-clip-id="b" data-start="1"', 'data-clip-id="b" data-start="a"');
+    await writeFile(entry, chained, "utf8");
+    const before = loadComposition(chained).clips.map((clip) => [clip.id, clip.start]);
+
+    const removed = await post(`${server.url}api/clips/a/delete`, {});
+    assert.equal(removed.status, 200, JSON.stringify(removed.json));
+    assert.equal(removed.json.id, "a");
+    assert.equal((removed.json.history as { undo: string }).undo, "excluir a");
+    const after = await readFile(entry, "utf8");
+    assert.ok(!after.includes('data-clip-id="a"'), "a saiu do arquivo");
+    const composition = loadComposition(after);
+    assert.equal(composition.ok, true);
+    assert.deepEqual(
+      composition.clips.map((clip) => [clip.id, clip.start]),
+      before.filter(([id]) => id !== "a"),
+      "b continua no mesmo instante",
+    );
+
+    const undone = await post(`${server.url}api/undo`, {});
+    assert.equal(undone.status, 200);
+    assert.equal(await readFile(entry, "utf8"), chained, "desfazer restaura o arquivo byte a byte");
+
+    const missing = await post(`${server.url}api/clips/zzz/delete`, {});
+    assert.equal(missing.status, 400);
+    assert.equal(missing.json.code, "E_CLIP_NOT_FOUND");
+    assert.equal(await readFile(entry, "utf8"), chained, "falha não grava");
+  }));
+
+test("estúdio recusa excluir o único clip de uma raiz sem data-duration", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "ff-studio-test-"));
+  const entry = join(dir, "solo.html");
+  const solo = HTML.replace(' data-duration="2">', ">").replace(/\s*<div data-clip-id="b"[^<]*<\/div>/, "");
+  assert.ok(!solo.includes('data-clip-id="b"') && !solo.includes('data-duration="2"'), "fixture preparada");
+  await writeFile(entry, solo, "utf8");
+  let server: StudioServer | undefined;
+  try {
+    server = await startStudio({ entry });
+    const refused = await post(`${server.url}api/clips/a/delete`, {});
+    assert.equal(refused.status, 400, JSON.stringify(refused.json));
+    assert.equal(refused.json.code, "E_CONTRACT_INVALID");
+    assert.equal(await readFile(entry, "utf8"), solo, "arquivo intacto");
+  } finally {
+    await server?.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});

@@ -40,6 +40,7 @@ export class EditError extends Error {
     | "E_ATTRIBUTE_INVALID"
     | "E_SPLIT_UNSUPPORTED"
     | "E_SPLIT_OUT_OF_RANGE"
+    | "E_DELETE_UNSUPPORTED"
     | "E_TRANSITION_GAP"
     | "E_KEYFRAME_NOT_FOUND"
     | "E_KEYFRAME_EXISTS"
@@ -335,6 +336,50 @@ export function splitClip(source: string, request: SplitRequest): string {
     patches.push({ clipId: referrer.id, attributes: { "data-start": `${newId}${refSuffix(offset)}` } });
   }
   return applyPatches(inserted, patches);
+}
+
+export interface DeleteRequest {
+  clipId: string;
+}
+
+/**
+ * Exclui um clip da raiz e tudo o que está dentro dele sem mover mais nada. Quem começava no fim
+ * dele (`data-start="<id>"` ou `"<id> + x"`) ganha `data-start` absoluto igual ao início que já
+ * tinha; se esse clip era a segunda ponta de uma transição com o excluído, `data-transition` sai
+ * junto (o par deixou de existir), e o início continua o mesmo. Recusa (`E_DELETE_UNSUPPORTED`)
+ * quando o cálculo atravessaria escopos: o `data-start` por referência resolve por id no arquivo
+ * todo, mas o número que sai é do escopo do referenciador.
+ */
+export function deleteClip(source: string, request: DeleteRequest): string {
+  const { clipId } = request;
+  const composition = loadComposition(source);
+  const all = flatten(composition.clips);
+  const clip = topLevelClip(composition, clipId, "E_DELETE_UNSUPPORTED", "edite o arquivo da sub-composição");
+  locateClip(source, clipId);
+  const removed = new Set(flatten([clip]).map((item) => item.id));
+  const referrers = referrersOf(all, removed, source, "E_DELETE_UNSUPPORTED");
+
+  const patches: ClipPatch[] = [];
+  for (const referrer of referrers) {
+    const target = referrer.startExpr.kind === "reference" ? referrer.startExpr.refId : "";
+    // Mesmo escopo: referenciador na raiz apontando para o próprio clip (não para um descendente).
+    if (!composition.clips.includes(referrer) || target !== clipId) {
+      throw new EditError(
+        "E_DELETE_UNSUPPORTED",
+        `clip "${referrer.id}" referencia "${target}" a partir de outro escopo; ajuste o data-start dele no arquivo antes de excluir`,
+      );
+    }
+    if (referrer.start === undefined) {
+      throw new EditError("E_DELETE_UNSUPPORTED", `clip "${referrer.id}" não tem início resolvido; corrija o contrato antes de excluir`);
+    }
+    const attributes: Record<string, string | null> = { "data-start": seconds(referrer.start) };
+    if (attr(locateClip(source, referrer.id).node, "data-transition") !== undefined) attributes["data-transition"] = null;
+    patches.push({ clipId: referrer.id, attributes });
+  }
+
+  const patched = patches.length > 0 ? applyPatches(source, patches) : source;
+  const location = locateClip(patched, clipId);
+  return removeRange(patched, location.start, location.end);
 }
 
 /** Tolerância para dizer que A termina onde B começa (segundos). */

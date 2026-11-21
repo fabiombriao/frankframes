@@ -783,6 +783,22 @@ Qualquer outra falha de medição continua falhando alto.
   com um losango selecionado é `op: "remove"` e nunca apaga o clip. A seleção é descartada ao trocar de clip e
   após desfazer/refazer se o ponto deixou de existir.
 
+- **Excluir** (`POST /api/clips/<id>/delete`, corpo `{}`; atalho Delete/Backspace e botão "Excluir"). Remove o
+  clip e o que estiver dentro dele. Clips que começavam no fim dele (`data-start="<id>"` ou `"<id> + x"`)
+  ganham `data-start` absoluto igual ao instante em que já começavam: nada mais se move. Se um desses clips
+  era a segunda ponta de uma transição com o excluído (`data-transition`, §7b.10), a transição sai junto com o
+  parceiro (`data-transition` é removido) e o clip mantém o mesmo início. Exige `data-clip-id` explícito e clip
+  de topo deste arquivo (`E_DELETE_UNSUPPORTED`, com a dica "edite o arquivo da sub-composição" ou "dê
+  data-clip-id a <id>"). Também é `E_DELETE_UNSUPPORTED` quando o início de quem o referencia teria de ser
+  calculado atravessando escopos: a referência resolve por id no arquivo todo, mas o número que sai é do
+  escopo de quem referencia (referenciador dentro de sub-composição, ou referência a um filho do clip
+  excluído). Id inexistente ou sem `data-clip-id` é `E_CLIP_NOT_FOUND`. Excluir o único clip de uma raiz sem
+  `data-duration` deixa a duração indefinida e responde `400 E_CONTRACT_INVALID` com o arquivo intacto. A linha
+  do clip some inteira, sem deixar vazio. Sucesso devolve `{ok, id, duration, history}` e entra no histórico
+  como `excluir <id>` (Ctrl+Z restaura o arquivo byte a byte). Delete/Backspace só exclui o clip quando
+  nenhum keyframe está selecionado; com um keyframe selecionado apaga só o keyframe. O botão fica desabilitado
+  sem seleção ou com clip não editável, e após excluir a seleção é limpa.
+
 As escritas são serializadas: duas edições nunca intercalam leitura e gravação do mesmo arquivo.
 
 ## 10. Compatibilidade

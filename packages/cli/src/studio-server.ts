@@ -24,6 +24,7 @@ import {
   renderPreviewAudio,
   resolveFfmpeg,
   splitClip,
+  deleteClip,
 } from "@frankframes/producer";
 import type { ClipPatch, KeyframeRequest, PreparedComposition } from "@frankframes/producer";
 import { listBlocks, motionThumbPath } from "@frankframes/catalog";
@@ -666,6 +667,22 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
     sendJson(res, 200, { ok: true, id: newId, duration: durationOf(composition), history: history.state() });
   };
 
+  /** `POST /api/clips/<id>/delete` com `{}`; ver `deleteClip`. */
+  const remove = async (clipId: string, req: IncomingMessage, res: ServerResponse): Promise<void> => {
+    objectBody(await bodyJson(req));
+    const source = await readFile(entryPath, "utf8");
+    let next: string;
+    try {
+      next = deleteClip(source, { clipId });
+    } catch (error) {
+      if (error instanceof EditError) throw new ReplyError(400, error.code, error.message);
+      throw error;
+    }
+    const composition = validated(next, "a exclusão deixaria o contrato inválido");
+    await commit(`excluir ${clipId}`, source, next);
+    sendJson(res, 200, { ok: true, id: clipId, duration: durationOf(composition), history: history.state() });
+  };
+
   /** `POST /api/clips/<id>/transition` com `{preset, dur, params?}`; ver `applyTransition`. */
   const transition = async (clipId: string, req: IncomingMessage, res: ServerResponse): Promise<void> => {
     const body = objectBody(await bodyJson(req));
@@ -884,6 +901,11 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
         const splitMatch = /^([^/]+)\/split$/.exec(rest);
         if (splitMatch !== null) {
           await serial(() => split(splitMatch[1]!, req, res));
+          return;
+        }
+        const deleteMatch = /^([^/]+)\/delete$/.exec(rest);
+        if (deleteMatch !== null) {
+          await serial(() => remove(deleteMatch[1]!, req, res));
           return;
         }
         const transitionMatch = /^([^/]+)\/transition$/.exec(rest);

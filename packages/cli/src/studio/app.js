@@ -46,6 +46,7 @@ import { keyframeMarks, keyframePropsFor, renderKeyframeSection, renderMotionSec
   const importButton = document.getElementById("importButton");
   const importInput = document.getElementById("importInput");
   const splitButton = document.getElementById("splitButton");
+  const deleteButton = document.getElementById("deleteButton");
   const undoButton = document.getElementById("undoButton");
   const redoButton = document.getElementById("redoButton");
   const dropOverlay = document.getElementById("dropOverlay");
@@ -456,6 +457,12 @@ import { keyframeMarks, keyframePropsFor, renderKeyframeSection, renderMotionSec
     return { clip, at };
   }
 
+  /** Clip selecionado que dá para excluir (da raiz, com data-clip-id explícito), ou null. */
+  function deletable() {
+    const clip = state.selectedId === null ? null : findClip(state.selectedId);
+    return clip && clip.editable === true ? clip : null;
+  }
+
   function updateToolbar() {
     const history = state.history;
     undoButton.disabled = state.busy || !history.canUndo;
@@ -463,6 +470,7 @@ import { keyframeMarks, keyframePropsFor, renderKeyframeSection, renderMotionSec
     undoButton.title = history.undo ? "Desfazer: " + history.undo + " (Ctrl+Z)" : "Nada para desfazer (Ctrl+Z)";
     redoButton.title = history.redo ? "Refazer: " + history.redo + " (Ctrl+Shift+Z)" : "Nada para refazer (Ctrl+Shift+Z)";
     splitButton.disabled = state.busy || splittable() === null;
+    deleteButton.disabled = state.busy || deletable() === null;
     importButton.disabled = state.busy;
   }
 
@@ -548,6 +556,25 @@ import { keyframeMarks, keyframePropsFor, renderKeyframeSection, renderMotionSec
       renderDiagnostics(toolDiagnostics, [
         { severity: "info", message: target.clip.id + " dividido em " + formatSeconds(target.at) + "." },
       ]);
+    });
+  }
+
+  function deleteSelected() {
+    const clip = deletable();
+    if (clip === null) {
+      renderDiagnostics(toolDiagnostics, [{ severity: "info", message: "Selecione um clip editável para excluir." }]);
+      return mutationQueue;
+    }
+    return runTool(async () => {
+      const result = await mutate("POST", "/api/clips/" + encodeURIComponent(clip.id) + "/delete", {});
+      if (result.payload && result.payload.history) applyHistory(result.payload.history);
+      if (!result.ok) {
+        renderDiagnostics(toolDiagnostics, result.diagnostics);
+        return;
+      }
+      clearInspector();
+      await refreshComposition();
+      renderDiagnostics(toolDiagnostics, [{ severity: "info", message: clip.id + " excluído; o resto da timeline não se moveu." }]);
     });
   }
 
@@ -1307,6 +1334,12 @@ import { keyframeMarks, keyframePropsFor, renderKeyframeSection, renderMotionSec
       removeSelectedKeyframe();
       return;
     }
+    // Sem keyframe selecionado, Delete/Backspace exclui o clip selecionado.
+    if (!mod && !event.altKey && (event.key === "Delete" || event.key === "Backspace") && state.selectedId !== null) {
+      event.preventDefault();
+      deleteSelected();
+      return;
+    }
     if (!mod && !event.altKey && key === "k") {
       event.preventDefault();
       addKeyframe(state.keyframeProp);
@@ -1345,6 +1378,7 @@ import { keyframeMarks, keyframePropsFor, renderKeyframeSection, renderMotionSec
     importFiles(files);
   });
   splitButton.addEventListener("click", () => splitSelected());
+  deleteButton.addEventListener("click", () => deleteSelected());
   undoButton.addEventListener("click", () => travel("undo"));
   redoButton.addEventListener("click", () => travel("redo"));
 
