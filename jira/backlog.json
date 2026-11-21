@@ -570,9 +570,9 @@
           "points": 3,
           "labels": [
             "catalog",
-            "decisao-titular"
+            "pos-1.0"
           ],
-          "acceptance": "Depende de decisão do titular sobre hospedagem. `blocks publish` envia índice e blocos com hash; `blocks add <url>` instala de lá e recusa hash divergente.",
+          "acceptance": "Pós-1.0 por decisão do titular; hospedagem a decidir. `blocks publish` envia índice e blocos com hash; `blocks add <url>` instala de lá e recusa hash divergente.",
           "jiraKey": "EDT-63"
         },
         {
@@ -590,7 +590,7 @@
           "labels": [
             "release"
           ],
-          "acceptance": "Versão 1.0.0 nos pacotes, CHANGELOG, THIRD-PARTY-NOTICES atualizado, pacote instalável testado; itens em stand-by (EDT-5, 13, 19, 34) listados como pendências conhecidas se ainda abertos.",
+          "acceptance": "Versão 1.0.0 nos pacotes, CHANGELOG, THIRD-PARTY-NOTICES atualizado, pacote instalável testado; itens em stand-by (EDT-5, 13, 19, 34) e o pós-1.0 EDT-63 listados como pendências conhecidas se ainda abertos.",
           "jiraKey": "EDT-65"
         }
       ],

@@ -107,3 +107,100 @@ test("estúdio lê, edita, insere clips e serve a prévia", async () => {
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+const MIXED = `<!doctype html>
+<html lang="pt-BR">
+<head><meta charset="utf-8"><title>mix</title></head>
+<body style="margin:0;background:#000">
+<div data-composition-id="mix" data-width="640" data-height="360" data-fps="30" data-duration="4">
+  <audio data-clip-id="a" data-track="3" src="a.wav" data-start="0" data-duration="1" data-fade-in="0.2"></audio>
+  <video data-clip-id="v" data-has-audio="false" src="v.mp4" data-start="1" data-duration="1"></video>
+  <div data-clip-id="titulo" data-start="2" data-duration="1">Oi</div>
+  <div data-composition-id="cena" data-start="0" data-duration="2">
+    <div data-clip-id="t" data-start="0" data-duration="1">Texto aninhado</div>
+  </div>
+</div>
+</body>
+</html>
+`;
+
+interface RichClip {
+  id: string;
+  tag: string;
+  track: number;
+  kind: string;
+  hasAudio: boolean;
+  mediaSrc: string | null;
+  fadeIn: number | null;
+  fadeOut: number | null;
+  hasKeyframes: boolean;
+  hasChildren: boolean;
+  parentId: string | null;
+  editable: boolean;
+}
+
+test("GET /api/composition devolve track, kind, mídia, parentId e editable", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "ff-studio-test-"));
+  const entry = join(dir, "mix.html");
+  await writeFile(entry, MIXED, "utf8");
+  let server: StudioServer | undefined;
+  try {
+    server = await startStudio({ entry });
+    const payload = (await (await fetch(`${server.url}api/composition`)).json()) as { clips: RichClip[] };
+    const byId = new Map(payload.clips.map((clip) => [clip.id, clip]));
+
+    const audio = byId.get("a");
+    assert.ok(audio !== undefined);
+    assert.equal(audio.kind, "audio");
+    assert.equal(audio.track, 3);
+    assert.equal(audio.hasAudio, true);
+    assert.equal(audio.mediaSrc, "a.wav");
+    assert.equal(audio.fadeIn, 0.2);
+    assert.equal(audio.fadeOut, null);
+    assert.equal(audio.parentId, null);
+    assert.equal(audio.editable, true);
+
+    const video = byId.get("v");
+    assert.ok(video !== undefined);
+    assert.equal(video.kind, "video");
+    assert.equal(video.hasAudio, false);
+
+    const title = byId.get("titulo");
+    assert.ok(title !== undefined);
+    assert.equal(title.kind, "text");
+    assert.equal(title.hasKeyframes, false);
+    assert.equal(title.hasChildren, false);
+
+    const host = byId.get("cena");
+    assert.ok(host !== undefined);
+    assert.equal(host.kind, "video", "host de sub-composição conta como vídeo");
+    assert.equal(host.hasChildren, true);
+    assert.equal(host.editable, false, "host sem data-clip-id explícito não é editável");
+
+    const nested = byId.get("t");
+    assert.ok(nested !== undefined);
+    assert.equal(nested.parentId, "cena");
+    assert.equal(nested.editable, false, "clip aninhado nunca é editável");
+    assert.equal(nested.kind, "text");
+  } finally {
+    await server?.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("o Studio serve timeline-math.js como JavaScript", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "ff-studio-test-"));
+  const entry = join(dir, "comp.html");
+  await writeFile(entry, HTML, "utf8");
+  let server: StudioServer | undefined;
+  try {
+    server = await startStudio({ entry });
+    const response = await fetch(`${server.url}timeline-math.js`);
+    assert.equal(response.status, 200);
+    assert.match(response.headers.get("content-type") ?? "", /text\/javascript/);
+    assert.match(await response.text(), /export function lastFrameTime/);
+  } finally {
+    await server?.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});

@@ -120,39 +120,83 @@ export const CLOCK_SOURCE = `(() => {
 
   const liveHooks = [];
   const liveErrors = [];
+  // Eventos de transporte: { type: "start" | "stop" | "seek" | "end" | "loop", ms }.
+  const transportHooks = [];
   let liveHandle = null;
 
   let liveToken = 0;
 
+  // Limites do relógio ao vivo. Sem chamada a setLiveBounds, o relógio é ilimitado.
+  let bounds = null;
+  const setLiveBounds = (next) => {
+    const endMs = Number(next.endMs);
+    const frameMs = Number(next.frameMs);
+    bounds = { endMs, frameMs, lastFrameMs: Math.max(0, endMs - frameMs), loop: next.loop === true };
+  };
+  // Sem limites o valor passa intacto (render e relógio ao vivo sem barra).
+  const clampLive = (ms) => (bounds === null ? ms : Math.min(Math.max(0, ms), bounds.lastFrameMs));
+
+  const emit = (type, ms) => {
+    for (const hook of transportHooks) {
+      try {
+        hook({ type, ms });
+      } catch (error) {
+        liveErrors.push(String(error && error.message ? error.message : error));
+      }
+    }
+  };
+
   const stopLive = () => {
+    const wasPlaying = liveHandle !== null;
     liveToken += 1;
     liveHandle = null;
+    if (wasPlaying) emit("stop", nowMs);
+  };
+
+  // O instante guardado nunca passa do último frame, mesmo na folga entre ele e o fim.
+  const persistNow = () => {
+    try {
+      sessionStorage.setItem("__ffTime", String(Math.round(bounds === null ? nowMs : Math.min(nowMs, bounds.lastFrameMs))));
+    } catch {}
   };
 
   let persistOnHide = false;
-  const startLive = (startAtMs) => {
+  const startLive = (requestedMs) => {
     if (liveHandle !== null) return;
+    const startAtMs = clampLive(requestedMs || 0);
     const token = ++liveToken;
     if (!persistOnHide) {
       persistOnHide = true;
       // Recarregar/navegar precisa gravar o instante exato, não o último tick periódico.
-      const persist = () => {
-        try {
-          sessionStorage.setItem("__ffTime", String(Math.round(nowMs)));
-        } catch {}
-      };
-      window.addEventListener("pagehide", persist);
-      window.addEventListener("visibilitychange", persist);
+      window.addEventListener("pagehide", persistNow);
+      window.addEventListener("visibilitychange", persistNow);
     }
-    const base = realNow() - (startAtMs || 0);
+    let base = realNow() - startAtMs;
     let lastPersist = 0;
     // Primeiro passe é síncrono: nada de mostrar o estado errado antes do primeiro rAF.
     nowMs = realNow() - base;
     syncAnimations();
     syncVisibility();
+    liveHandle = 0; // marca "tocando" antes do evento, para playing() já valer nos hooks
+    emit("start", nowMs);
+    if (token !== liveToken) return; // um hook de "start" parou o relógio
     const tick = () => {
       if (token !== liveToken) return;
-      nowMs = realNow() - base;
+      let t = realNow() - base;
+      let ended = false;
+      let looped = false;
+      if (bounds !== null && t >= bounds.endMs) {
+        if (bounds.loop) {
+          t = t % bounds.endMs;
+          base = realNow() - t;
+          lastPersist = 0;
+          looped = true;
+        } else {
+          t = bounds.lastFrameMs;
+          ended = true;
+        }
+      }
+      nowMs = t;
       try {
         syncAnimations();
         syncVisibility();
@@ -160,11 +204,16 @@ export const CLOCK_SOURCE = `(() => {
       } catch (error) {
         liveErrors.push(String(error && error.message ? error.message : error));
       }
+      if (ended) {
+        persistNow();
+        stopLive();
+        emit("end", nowMs);
+        return;
+      }
+      if (looped) emit("loop", nowMs);
       if (nowMs - lastPersist > 250) {
         lastPersist = nowMs;
-        try {
-          sessionStorage.setItem("__ffTime", String(Math.round(nowMs)));
-        } catch {}
+        persistNow();
       }
       liveHandle = realRaf(tick);
     };
@@ -193,10 +242,14 @@ export const CLOCK_SOURCE = `(() => {
     syncAnimations,
     startLive,
     stopLive,
+    setLiveBounds,
+    playing: () => liveHandle !== null,
+    transportHooks,
     liveHooks,
     liveErrors,
     now: () => nowMs,
-    seek(ms) {
+    seek(requestedMs) {
+      const ms = clampLive(requestedMs);
       nowMs = ms;
       seed = (0x9e3779b1 ^ (Math.trunc(ms) + 1)) >>> 0;
       for (const timer of [...timers]) {
@@ -217,6 +270,7 @@ export const CLOCK_SOURCE = `(() => {
       for (const cb of generation) cb(nowMs);
       syncAnimations();
       syncVisibility();
+      emit("seek", nowMs);
       return nowMs;
     },
   };

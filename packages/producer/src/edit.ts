@@ -1,7 +1,7 @@
 // FrankFrames — proprietário. Ver LICENSE na raiz.
 import { parse } from "parse5";
 import { loadComposition } from "@frankframes/contract";
-import type { ResolvedClip } from "@frankframes/contract";
+import type { Composition, ResolvedClip } from "@frankframes/contract";
 
 interface P5Location {
   startOffset: number;
@@ -157,6 +157,93 @@ function flatten(clips: ResolvedClip[], into: ResolvedClip[] = []): ResolvedClip
   return into;
 }
 
+function parseSource(source: string): P5Node {
+  return parse(source, { sourceCodeLocationInfo: true }) as unknown as P5Node;
+}
+
+export interface ClipLocation {
+  node: P5Node;
+  /** Offsets do elemento inteiro (abertura até fechamento) no arquivo. */
+  start: number;
+  end: number;
+}
+
+/** Ids com `data-clip-id` explícito, uma única vez, no arquivo. Só esses clips são editáveis. */
+export function explicitClipIds(source: string): Set<string> {
+  const seen = new Map<string, number>();
+  for (const node of walk(parseSource(source).childNodes)) {
+    if (node.nodeName === "#text") continue;
+    const id = attr(node, "data-clip-id");
+    if (id !== undefined) seen.set(id, (seen.get(id) ?? 0) + 1);
+  }
+  return new Set([...seen].filter(([, count]) => count === 1).map(([id]) => id));
+}
+
+/** Localiza o elemento com `data-clip-id` explícito; exatamente um, senão `E_CLIP_NOT_FOUND`. */
+export function locateClip(source: string, clipId: string): ClipLocation {
+  const nodes = [...walk(parseSource(source).childNodes)].filter(
+    (node) => node.nodeName !== "#text" && attr(node, "data-clip-id") === clipId,
+  );
+  if (nodes.length !== 1) {
+    throw new EditError("E_CLIP_NOT_FOUND", `clip "${clipId}" precisa de data-clip-id explícito no arquivo para ser editado`);
+  }
+  const node = nodes[0]!;
+  const location = node.sourceCodeLocation;
+  if (!location) throw new EditError("E_CLIP_NOT_FOUND", `clip "${clipId}" sem localização no arquivo`);
+  return { node, start: location.startOffset, end: location.endOffset };
+}
+
+/** Clip da raiz (não aninhado em sub-composição). `code` é o erro da operação; `hint` completa a frase. */
+export function topLevelClip(
+  composition: Composition,
+  clipId: string,
+  code: EditError["code"],
+  hint = "edite no arquivo dela",
+): ResolvedClip {
+  const clip = flatten(composition.clips).find((item) => item.id === clipId);
+  if (clip === undefined) throw new EditError("E_CLIP_NOT_FOUND", `clip "${clipId}" não existe`);
+  if (!composition.clips.includes(clip)) {
+    throw new EditError(code, `clip "${clipId}" está dentro de uma sub-composição; ${hint}`);
+  }
+  return clip;
+}
+
+/**
+ * Clips fora de `ids` cujo `data-start` referencia o fim de algum clip de `ids`.
+ * Quem for reescrito precisa ter `data-clip-id` no arquivo; senão lança `code`.
+ */
+export function referrersOf(all: ResolvedClip[], ids: Set<string>, source: string, code: EditError["code"]): ResolvedClip[] {
+  const referrers = all.filter(
+    (item) => !ids.has(item.id) && item.startExpr.kind === "reference" && ids.has(item.startExpr.refId),
+  );
+  const known = referrers.length > 0 ? explicitClipIds(source) : new Set<string>();
+  for (const referrer of referrers) {
+    if (!known.has(referrer.id)) {
+      const target = referrer.startExpr.kind === "reference" ? referrer.startExpr.refId : "";
+      throw new EditError(code, `clip "${referrer.id}" referencia "${target}" mas não tem data-clip-id no arquivo`);
+    }
+  }
+  return referrers;
+}
+
+/** Remove o trecho; se a linha ficar só com espaço, remove a linha inteira. */
+export function removeRange(source: string, start: number, end: number): string {
+  const lineStart = source.lastIndexOf("\n", start - 1) + 1;
+  const newline = source.indexOf("\n", end);
+  const lineEnd = newline === -1 ? source.length : newline;
+  const alone = /^[ \t]*$/.test(source.slice(lineStart, start)) && /^[ \t\r]*$/.test(source.slice(end, lineEnd));
+  if (alone) {
+    const after = newline === -1 ? source.length : newline + 1;
+    return source.slice(0, lineStart) + source.slice(after);
+  }
+  return source.slice(0, start) + source.slice(end);
+}
+
+/** Sufixo de `data-start` por referência: `" + 1.5"`, `" - 0.2"` ou vazio. */
+export function refSuffix(offset: number): string {
+  return offset > 0 ? ` + ${seconds(offset)}` : offset < 0 ? ` - ${seconds(-offset)}` : "";
+}
+
 export interface SplitRequest {
   clipId: string;
   /** Instante do corte, em segundos desde o início da composição. */
@@ -181,11 +268,7 @@ export function splitClip(source: string, request: SplitRequest): string {
   const composition = loadComposition(source);
   const all = flatten(composition.clips);
   if (all.some((clip) => clip.id === newId)) throw new EditError("E_AMBIGUOUS_CLIP", `id "${newId}" já existe`);
-  const clip = all.find((item) => item.id === clipId);
-  if (clip === undefined) throw new EditError("E_CLIP_NOT_FOUND", `clip "${clipId}" não existe`);
-  if (!composition.clips.includes(clip)) {
-    throw new EditError("E_SPLIT_UNSUPPORTED", `clip "${clipId}" está dentro de uma sub-composição; divida no arquivo dela`);
-  }
+  const clip = topLevelClip(composition, clipId, "E_SPLIT_UNSUPPORTED", "divida no arquivo dela");
   if (clip.isSubComposition || clip.children.length > 0) {
     throw new EditError("E_SPLIT_UNSUPPORTED", `clip "${clipId}" contém outros clips; dividir copiaria a sub-timeline inteira`);
   }
@@ -202,24 +285,9 @@ export function splitClip(source: string, request: SplitRequest): string {
     );
   }
 
-  const document = parse(source, { sourceCodeLocationInfo: true }) as unknown as P5Node;
-  const nodes = [...walk(document.childNodes)].filter((node) => node.nodeName !== "#text" && attr(node, "data-clip-id") === clipId);
-  if (nodes.length !== 1) {
-    throw new EditError("E_CLIP_NOT_FOUND", `clip "${clipId}" precisa de data-clip-id explícito no arquivo para ser dividido`);
-  }
-  const location = nodes[0]!.sourceCodeLocation;
-  if (!location) throw new EditError("E_CLIP_NOT_FOUND", `clip "${clipId}" sem localização no arquivo`);
-
+  const location = locateClip(source, clipId);
   // Quem referencia o clip precisa ter id no arquivo para ser reescrito.
-  const referrers = all.filter((item) => item.id !== clipId && item.startExpr.kind === "reference" && item.startExpr.refId === clipId);
-  const referrerIds = new Set(
-    [...walk(document.childNodes)].map((node) => attr(node, "data-clip-id")).filter((id): id is string => id !== undefined),
-  );
-  for (const referrer of referrers) {
-    if (!referrerIds.has(referrer.id)) {
-      throw new EditError("E_SPLIT_UNSUPPORTED", `clip "${referrer.id}" referencia "${clipId}" mas não tem data-clip-id no arquivo`);
-    }
-  }
+  const referrers = referrersOf(all, new Set([clipId]), source, "E_SPLIT_UNSUPPORTED");
 
   const first = at - clip.start;
   const copyAttributes: Record<string, string | null> = {
@@ -229,18 +297,17 @@ export function splitClip(source: string, request: SplitRequest): string {
     "data-fade-in": null,
   };
   if (clip.tag === "video" || clip.tag === "audio") copyAttributes["data-offset"] = seconds(clip.offset + first * clip.playbackRate);
-  const copy = applyPatches(source.slice(location.startOffset, location.endOffset), [{ clipId, attributes: copyAttributes }]);
+  const copy = applyPatches(source.slice(location.start, location.end), [{ clipId, attributes: copyAttributes }]);
 
-  const lineStart = source.lastIndexOf("\n", location.startOffset - 1) + 1;
-  const lead = source.slice(lineStart, location.startOffset);
+  const lineStart = source.lastIndexOf("\n", location.start - 1) + 1;
+  const lead = source.slice(lineStart, location.start);
   const separator = /^[ \t]*$/.test(lead) ? `\n${lead}` : "";
-  const inserted = source.slice(0, location.endOffset) + separator + copy + source.slice(location.endOffset);
+  const inserted = source.slice(0, location.end) + separator + copy + source.slice(location.end);
 
   const patches: ClipPatch[] = [{ clipId, attributes: { "data-duration": seconds(first), "data-fade-out": null } }];
   for (const referrer of referrers) {
     const offset = referrer.startExpr.kind === "reference" ? referrer.startExpr.offset : 0;
-    const suffix = offset > 0 ? ` + ${seconds(offset)}` : offset < 0 ? ` - ${seconds(-offset)}` : "";
-    patches.push({ clipId: referrer.id, attributes: { "data-start": `${newId}${suffix}` } });
+    patches.push({ clipId: referrer.id, attributes: { "data-start": `${newId}${refSuffix(offset)}` } });
   }
   return applyPatches(inserted, patches);
 }

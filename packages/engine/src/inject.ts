@@ -1,7 +1,7 @@
 // FrankFrames — proprietário. Ver LICENSE na raiz.
 import { CLOCK_SOURCE } from "./clock.ts";
 import { MEDIA_SHIM_SOURCE } from "./media-shim.ts";
-import { PREVIEW_UI_SOURCE } from "./preview-ui.ts";
+import { PREVIEW_RELOAD_SOURCE, PREVIEW_UI_SOURCE } from "./preview-ui.ts";
 import type { Fps } from "@frankframes/contract";
 import { fontFaceCss } from "./fonts.ts";
 import type { MediaManifest } from "./media.ts";
@@ -15,7 +15,7 @@ export interface Injection {
   /** Preview: relógio em tempo real e recarga por SSE. */
   live?: boolean;
   /** Preview com barra de controle; `frames` alimenta o scrub. */
-  preview?: { fps: Fps; frames: number; id?: string };
+  preview?: { fps: Fps; frames: number; id?: string; reload?: boolean };
 }
 
 /**
@@ -35,7 +35,9 @@ export function injectionScript(injection: Injection = {}): string {
   if (injection.preview) {
     parts.push(`<script>window.__ffPreviewMeta=${JSON.stringify(injection.preview)};</script>`);
     parts.push(
-      `<script>document.addEventListener("DOMContentLoaded",function(){${PREVIEW_UI_SOURCE}})();</script>`,
+      `<script>document.addEventListener("DOMContentLoaded",function(){${PREVIEW_UI_SOURCE}${
+        injection.preview.reload === false ? "" : PREVIEW_RELOAD_SOURCE
+      }});</script>`,
     );
   } else if (injection.live) {
     parts.push(

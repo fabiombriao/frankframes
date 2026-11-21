@@ -1,3 +1,5 @@
+import { lastFrameTime } from "/timeline-math.js";
+
 (() => {
   "use strict";
 
@@ -117,7 +119,22 @@
       role: role === "voice" || role === "music" || role === "sfx" ? role : null,
       playbackRate: asNumber(raw.playbackRate) ?? 1,
       text: typeof raw.text === "string" ? raw.text : null,
+      track: asNumber(raw.track) ?? 0,
+      kind: raw.kind === "audio" || raw.kind === "video" ? raw.kind : "text",
+      hasAudio: raw.hasAudio === true,
+      mediaSrc: typeof raw.mediaSrc === "string" ? raw.mediaSrc : null,
+      fadeIn: asNumber(raw.fadeIn),
+      fadeOut: asNumber(raw.fadeOut),
+      hasKeyframes: raw.hasKeyframes === true,
+      hasChildren: raw.hasChildren === true,
+      parentId: typeof raw.parentId === "string" ? raw.parentId : null,
+      editable: raw.editable === true,
     };
+  }
+
+  /* O playhead vai de 0 ao início do último frame, não ao fim da composição. */
+  function maxPlayhead() {
+    return state.total > 0 ? lastFrameTime(state.total, state.fps) : 0;
   }
 
   function findClip(id) {
@@ -193,7 +210,7 @@
     const declared = asNumber(data.duration) ?? asNumber(data.seconds);
     const maxEnd = state.clips.reduce((max, clip) => (clip.end !== null && clip.end > max ? clip.end : max), 0);
     state.total = Math.max(0, declared !== null ? declared : maxEnd);
-    state.playhead = clamp(state.playhead, 0, state.total);
+    state.playhead = clamp(state.playhead, 0, maxPlayhead());
 
     renderTop();
     renderTimeline();
@@ -961,45 +978,50 @@
     };
   }
 
-  function togglePlayback() {
-    let clicked = false;
+  /* Clica num botão da barra de controle do preview; falha alto se a barra não existe. */
+  function clickPlayerControl(selector) {
+    let button = null;
     try {
       const doc = player.contentDocument;
-      const button = doc ? doc.querySelector("[data-ff-play]") : null;
-      if (button) {
-        button.click();
-        clicked = true;
-      }
+      button = doc ? doc.querySelector(selector) : null;
     } catch (error) {
-      /* documento do preview inacessível */
+      setConnection("preview inacessível: " + error.message, true);
+      return;
     }
-    if (!clicked) {
-      try {
-        if (player.contentWindow) player.contentWindow.postMessage({ type: "ff-toggle" }, "*");
-        else setConnection("player indisponível", true);
-      } catch (error) {
-        setConnection("player indisponível", true);
-      }
+    if (button === null) {
+      setConnection("preview sem barra de controle", true);
+      return;
     }
+    button.click();
   }
 
-  function isEditing(event) {
+  function togglePlayback() {
+    clickPlayerControl("[data-ff-play]");
+  }
+
+  /* Atalhos não disparam enquanto o foco está num campo de edição. */
+  function isTyping(event) {
     const target = event.target;
     return (
       target instanceof HTMLElement &&
-      (target.matches("input, textarea, select") || target.isContentEditable)
+      (target.matches("input, textarea, select") || target.isContentEditable || target.closest("[contenteditable]") !== null)
     );
   }
 
   document.addEventListener("keydown", (event) => {
-    if (event.code === "Space" && !isEditing(event)) {
+    if (event.code === "Space" && !isTyping(event)) {
       event.preventDefault();
       togglePlayback();
       return;
     }
-    if (event.defaultPrevented || isEditing(event)) return;
+    if (event.defaultPrevented || isTyping(event)) return;
     const mod = event.ctrlKey || event.metaKey;
     const key = event.key.toLowerCase();
+    if (!mod && !event.altKey && key === "l") {
+      event.preventDefault();
+      clickPlayerControl("[data-ff-loop]");
+      return;
+    }
     if (mod && !event.altKey && key === "z") {
       event.preventDefault();
       travel(event.shiftKey ? "redo" : "undo");
@@ -1092,7 +1114,7 @@
   setInterval(() => {
     const timeMs = readPlayerTime();
     if (timeMs === null) return;
-    state.playhead = state.total > 0 ? clamp(timeMs / 1000, 0, state.total) : Math.max(0, timeMs / 1000);
+    state.playhead = state.total > 0 ? clamp(timeMs / 1000, 0, maxPlayhead()) : Math.max(0, timeMs / 1000);
     paintPlayhead();
     updateToolbar();
   }, FRAME_POLL_MS);

@@ -13,6 +13,77 @@ const COMPOSITION = `<html><head><style>
   <div data-composition-id="ui" data-root="true" data-duration="3"><div class="b"></div></div>
 </body></html>`;
 
+const SHORT = `<html><head><style>
+  .b { position: fixed; top: 0; left: 0; width: 40px; height: 40px; background: #ff2d55; }
+</style></head><body>
+  <div data-composition-id="curta" data-root="true" data-duration="0.5"><div class="b"></div></div>
+</body></html>`;
+
+/** Preview de 15 frames a 30 fps (500 ms); o último frame começa em 14 × 1000/30 ms. */
+async function withShortPreview(
+  t: { skip: (reason: string) => void },
+  run: (session: Awaited<ReturnType<typeof openSession>>) => Promise<void>,
+): Promise<void> {
+  try {
+    await resolveChrome();
+  } catch {
+    return t.skip("Chrome não encontrado");
+  }
+  const dir = await mkdtemp(join(tmpdir(), "ff-ui-short-"));
+  await writeFile(join(dir, "index.html"), SHORT);
+  const server = await startServer(dir, { live: true, preview: { fps: { num: 30, den: 1 }, frames: 15 } });
+  const session = await openSession({ url: server.url, viewport: { width: 480, height: 270 }, gpu: "auto" });
+  try {
+    await run(session);
+  } finally {
+    await session.close();
+    await server.close();
+  }
+}
+
+const LAST_FRAME_MS = (14 * 1000) / 30;
+const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+
+test("relógio ao vivo para no último frame e fica nele", { timeout: 60_000 }, (t) =>
+  withShortPreview(t, async (session) => {
+    await sleep(1200); // 500 ms de composição; o resto é folga
+    const now = await session.evaluate<number>("window.__ff.now()");
+    assert.ok(Math.abs(now - LAST_FRAME_MS) < 0.001, `deveria parar em ${LAST_FRAME_MS} ms, obtido ${now}`);
+    assert.equal(await session.evaluate<boolean>("window.__ff.playing()"), false);
+    assert.equal(await session.evaluate<string>(`document.querySelector("[data-ff-play]").textContent`), "play");
+    const stored = await session.evaluate<number[]>(
+      `Object.keys(sessionStorage).filter((key) => key.startsWith("__ffTime")).map((key) => Number(sessionStorage.getItem(key)))`,
+    );
+    for (const value of stored) assert.ok(value <= 467, `sessionStorage nunca acima do último frame, obtido ${value}`);
+  }));
+
+test("Play no fim recomeça do início", { timeout: 60_000 }, (t) =>
+  withShortPreview(t, async (session) => {
+    await sleep(1200);
+    await session.evaluate(`document.querySelector("[data-ff-play]").click()`);
+    await sleep(120);
+    const now = await session.evaluate<number>("window.__ff.now()");
+    assert.ok(now < 200, `Play no fim precisa recomeçar do 0, obtido ${Math.round(now)} ms`);
+    assert.equal(await session.evaluate<boolean>("window.__ff.playing()"), true);
+  }));
+
+test("Loop volta ao início sem parar", { timeout: 60_000 }, (t) =>
+  withShortPreview(t, async (session) => {
+    await sleep(1200);
+    await session.evaluate(`document.querySelector("[data-ff-loop]").click()`);
+    assert.equal(await session.evaluate<string>(`document.querySelector("[data-ff-loop]").getAttribute("aria-pressed")`), "true");
+    await session.evaluate(`document.querySelector("[data-ff-play]").click()`);
+    await sleep(1200); // mais de duas voltas
+    assert.equal(await session.evaluate<boolean>("window.__ff.playing()"), true, "em loop o relógio não para");
+    const now = await session.evaluate<number>("window.__ff.now()");
+    assert.ok(now < 500, `em loop o tempo nunca passa do fim, obtido ${Math.round(now)} ms`);
+  }));
+
+test("carregar a barra do preview não lança exceção", { timeout: 60_000 }, (t) =>
+  withShortPreview(t, async (session) => {
+    assert.deepEqual(session.pageErrors(), []);
+  }));
+
 test("barra do preview: pausa, scrub por frame e #f na URL", { timeout: 120_000 }, async (t) => {
   try {
     await resolveChrome();

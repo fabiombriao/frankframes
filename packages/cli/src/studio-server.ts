@@ -11,7 +11,7 @@ import { fileURLToPath } from "node:url";
 import { loadComposition } from "@frankframes/contract";
 import type { ResolvedClip } from "@frankframes/contract";
 import { assetPath, injectEngine, probeDuration } from "@frankframes/engine";
-import { applyPatches, EditError, prepare, resolveFfmpeg, splitClip } from "@frankframes/producer";
+import { applyPatches, EditError, explicitClipIds, prepare, resolveFfmpeg, splitClip } from "@frankframes/producer";
 import type { ClipPatch, PreparedComposition } from "@frankframes/producer";
 import { listBlocks } from "@frankframes/catalog";
 import { HistoryStaleError, StudioHistory } from "./studio-history.ts";
@@ -32,6 +32,7 @@ const STUDIO_FILES: Record<string, string> = {
   "/": "index.html",
   "/index.html": "index.html",
   "/app.js": "app.js",
+  "/timeline-math.js": "timeline-math.js",
   "/style.css": "style.css",
 };
 const MEDIA_PREFIX = "/__ff_media/";
@@ -130,16 +131,29 @@ function objectBody(body: unknown): Record<string, unknown> {
   return body as Record<string, unknown>;
 }
 
-function flattenClips(clips: ResolvedClip[]): ResolvedClip[] {
-  const out: ResolvedClip[] = [];
-  const visit = (list: ResolvedClip[]): void => {
+interface FlatClip {
+  clip: ResolvedClip;
+  /** Id do clip pai (host de sub-composição) ou `null` na raiz. */
+  parentId: string | null;
+}
+
+function flattenClips(clips: ResolvedClip[]): FlatClip[] {
+  const out: FlatClip[] = [];
+  const visit = (list: ResolvedClip[], parentId: string | null): void => {
     for (const clip of list) {
-      out.push(clip);
-      visit(clip.children);
+      out.push({ clip, parentId });
+      visit(clip.children, clip.id);
     }
   };
-  visit(clips);
+  visit(clips, null);
   return out;
+}
+
+/** Tipo de linha na timeline: áudio; vídeo (inclui imagem e sub-composição); texto para o resto. */
+function clipKind(clip: ResolvedClip): "audio" | "video" | "text" {
+  if (clip.tag === "audio") return "audio";
+  if (clip.tag === "video" || clip.tag === "img" || clip.isSubComposition) return "video";
+  return "text";
 }
 
 function clipDuration(clip: ResolvedClip): number | null {
@@ -322,7 +336,8 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
       manifest: prepared.manifest,
       fontsBase: "/__ff_fonts",
       live: true,
-      preview: { fps: prepared.fps, frames: prepared.totalFrames, id: prepared.composition.id },
+      // O Studio recarrega pelo próprio /api/events; a barra não abre /__ff_reload (404 aqui).
+      preview: { fps: prepared.fps, frames: prepared.totalFrames, id: prepared.composition.id, reload: false },
     }).replace(/<head[^>]*>/i, (head) => `${head}<base href="${SITE_PREFIX}">`);
     preview = { mtimeMs: current.mtimeMs, prepared, html };
     return { prepared, html };
@@ -371,12 +386,13 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
   const compositionPayload = async (): Promise<unknown> => {
     const source = await readFile(entryPath, "utf8");
     const composition = loadComposition(source);
+    const explicit = explicitClipIds(source);
     return {
       entry: entryPath,
       id: composition.id,
       fps: composition.fps,
       duration: composition.duration.kind === "unresolved" ? null : composition.duration.seconds,
-      clips: flattenClips(composition.clips).map((clip) => ({
+      clips: flattenClips(composition.clips).map(({ clip, parentId }) => ({
         id: clip.id,
         tag: clip.tag,
         start: clip.start ?? null,
@@ -387,6 +403,17 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
         volume: clip.volume ?? 1,
         role: clip.audioRole ?? null,
         text: extractClipText(source, clip.tag, clip.id),
+        track: clip.track,
+        kind: clipKind(clip),
+        hasAudio: clip.hasAudio === true,
+        mediaSrc: clip.mediaSrc ?? null,
+        fadeIn: clip.fadeIn ?? null,
+        fadeOut: clip.fadeOut ?? null,
+        hasKeyframes: clip.keyframes !== undefined,
+        hasChildren: clip.children.length > 0 || clip.isSubComposition,
+        parentId,
+        // Só clip de topo com data-clip-id explícito aceita ferramentas de edição.
+        editable: parentId === null && explicit.has(clip.id),
       })),
       diagnostics: composition.diagnostics,
     };

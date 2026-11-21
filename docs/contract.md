@@ -146,9 +146,13 @@ para fonte do sistema.
 anotado, mídia extraída), então o que aparece no navegador é o que sai no MP4 — exceto a garantia de
 pixel, que só existe no render.
 
-No preview o relógio roda em **tempo real** (`__ff.startLive`): animações e visibilidade avançam
-sozinhas, sem seek. Salvar qualquer arquivo do diretório recompila (~4 ms medidos) e recarrega por SSE;
-o instante atual é guardado em `sessionStorage` e retomado após a recarga.
+No preview o relógio roda em **tempo real** (`__ff.startLive`) e **termina no último frame**
+(`(frames − 1) / fps`): ao chegar lá, para e fica nele; Play no fim recomeça do 0. Com **Loop** ligado
+(botão ⟳ da barra; tecla L no Studio; lembrado na aba), volta ao 0 sem parar. Animações e visibilidade
+avançam sozinhas, sem seek. Salvar qualquer arquivo do diretório recompila (~4 ms medidos) e recarrega por
+SSE; o instante atual é guardado em `sessionStorage` (nunca acima do último frame) e retomado após a
+recarga. `__ff.transportHooks` recebe `start`, `stop`, `seek`, `end` e `loop`. Sem `__ff.setLiveBounds`
+o relógio ao vivo é ilimitado; a barra de controle sempre o chama.
 
 ## 9d. Studio
 
@@ -173,8 +177,15 @@ o instante atual é guardado em `sessionStorage` e retomado após a recarga.
   200 versões completas do arquivo, só em memória, e some quando o Studio fecha. Se o arquivo mudou fora
   do Studio, desfazer/refazer recusa com `409 E_HISTORY_STALE` e descarta o histórico em vez de
   sobrescrever a mudança. Desfazer uma importação remove o clip, não o arquivo em `assets/`.
+- **Playhead.** Vai de 0 ao início do último frame, `(frames − 1) / fps`, nunca ao fim da composição. A
+  barra do preview no Studio não abre `/__ff_reload`: o Studio recarrega pelo próprio `/api/events`.
 - **Caminhos relativos** do preview resolvem contra o diretório da entrada via `<base href="/__ff_site/">`.
   Nenhum caminho com segmento começando por `.` (`.env`, `.git`) é servido.
+
+- **Composição** (`GET /api/composition`). Devolve, por clip, `track`, `kind` (`video`, `text` ou `audio`),
+  `editable` e os campos de mídia (`hasAudio`, `mediaSrc`, `fadeIn`, `fadeOut`, `hasKeyframes`,
+  `hasChildren`, `parentId`). Ferramentas de edição só operam em clip `editable`: de topo e com
+  `data-clip-id` explícito no arquivo.
 
 As escritas são serializadas: duas edições nunca intercalam leitura e gravação do mesmo arquivo.
 
