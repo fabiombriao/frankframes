@@ -2707,9 +2707,9 @@ pendência conhecida.
     5. Legendas: extrair o trecho de áudio
        `ffmpeg -ss 8 -t 30 -i A001….MOV -vn -ac 1 -ar 16000 out/aceite-a001/trecho.wav` e rodar
        `frankframes captions out/aceite-a001/trecho.wav -o out/aceite-a001/legendas.html --size 1920x1080`;
-       inserir como sub-composição em 0 com duração 30 s. **Decisão do titular**: provedor — local exige
-       whisper.cpp (EDT-19 em stand-by); Groq/OpenAI-compatible manda o áudio para fora. Sem decisão, este
-       passo fica bloqueado.
+       inserir como sub-composição em 0 com duração 30 s. Provedor: **Groq** (decisão do titular), com
+       `GROQ_API_KEY` no `.env`; só o trecho de 30 s sai da máquina. Se a chave faltar, falhar alto com o
+       código de erro do `transcribe`, sem cair para outro provedor.
     6. Exportar pelo Studio (EDT-46), preset `standard`, para `out/aceite-a001/final.mp4`.
   - `scripts/accept-video.ts <final.mp4> --entry <index.html> --source <MOV> --spec <keyframes.json>`
     (novo, fora do gate porque precisa do vídeo do titular):
@@ -2745,11 +2745,11 @@ pendência conhecida.
 - **Arquivos tocados**: `scripts/accept-video.ts`, `scripts/accept/keyframes-a001.json`,
   `packages/producer/test/accept-checks.test.ts` (novos), `docs/aceite.md` (novo).
 - **Dependências**: EDT-36/38 (já feitos), EDT-41 (apagar), EDT-46 (exportar), EDT-55 (motion no
-  inspetor), EDT-49..51 (motion), captions com provedor decidido, EDT-58 (`inspectFrames`), EDT-62
+  inspetor), EDT-49..51 (motion), captions pela Groq, EDT-58 (`inspectFrames`), EDT-62
   (68 s → 30 s em software é lento hoje). Adianta já: passos 1–2 e o teste.
 - **Riscos**: H.264 da câmera decodifica no FFmpeg LGPL (decodificador nativo), mas 24 fps numa composição
   30 fps duplica frames — aceitável, documentar; se o Studio não deixar mudar `data-fps` da raiz, não é
-  defeito deste item; legenda depende do provedor; PSNR ≥ 30 dB pode falhar em cena com muito movimento por
+  defeito deste item; legenda depende da Groq estar acessível (erro de rede falha alto, sem retry cego); PSNR ≥ 30 dB pode falhar em cena com muito movimento por
   causa do AV1 `standard` — se falhar, comparar também contra frame vizinho ±1 antes de concluir defeito.
 
 ---
@@ -2859,12 +2859,12 @@ de 2–3 linhas no topo de `main()`, para que executores paralelos só colidam n
 | 3 | **G** EDT-62 passo 4 (hipóteses, uma por vez, na ordem fixada pelo planejador a partir do baseline) | depois de B (mesmo `render.ts`/`cache.ts`) e do retorno de A |
 | 4 | EDT-58 passo 9 e EDT-59 passo 9 (motion na skill e no contexto) | depois do EDT-49/50/51 (outro planejador) |
 | 5 | EDT-58 passo 10 (`generate-eval.ts --real`, 5/5) | depois da onda 4; roda com a conta ChatGPT do titular |
-| 6 | EDT-64 passos 3–4 (roteiro com o vídeo do titular) | depois de EDT-41, 46, 55 (Studio), motion, G e da decisão do provedor de legendas; **último item antes do release** |
+| 6 | EDT-64 passos 3–4 (roteiro com o vídeo do titular) | depois de EDT-41, 46, 55 (Studio), motion, G e da `GROQ_API_KEY` (já no `.env`); **último item antes do release** |
 | 7 | EDT-65 passos 7–8 (versão 1.0.0, CHANGELOG, `ci.ts --release`) | depois do EDT-64 |
 | pós-1.0 | EDT-63 | decisão de host e de público/privado |
 
-Decisões pendentes do titular que este plano levanta (curtas):
-1. Provedor das legendas no aceite (EDT-64): local exige EDT-19; Groq manda o áudio para fora.
+Decisões que este plano levantou (situação atual em "Ordem global" abaixo):
+1. Provedor das legendas no aceite (EDT-64): **Groq**, decidido pelo titular.
 2. Release como tarball único `@frankframes/cli` em vez de 7 pacotes (EDT-65) — proposto; confirmar.
 3. `engines` 22.18 (atual) contra "Node 20+" do EDT-2.
 4. Rejeitar login do Codex com chave de API (só conta ChatGPT) — proposto conforme o EDT-59.
@@ -2889,4 +2889,4 @@ tocados por quase tudo). Cada item vira um commit depois de revisão e `node scr
 
 Decisões já tomadas pelo planejamento (técnicas): release como tarball único `@frankframes/cli`;
 `engines` Node ≥ 22.18; `generate` aceita só login do Codex com conta ChatGPT (nunca chave de API).
-Pendente do titular: provedor das legendas no aceite (EDT-64) — não bloqueia nada antes do item 7.
+Decidido pelo titular: legendas do aceite (EDT-64) pela Groq, com `GROQ_API_KEY` no `.env` (o áudio do vídeo sai da máquina só nesse passo).
