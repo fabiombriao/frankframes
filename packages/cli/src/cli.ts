@@ -159,12 +159,15 @@ async function main(): Promise<void> {
   }
 
   if (cli.command === "setup") {
-    process.exit(await runSetup({ check: cli.flags.includes("--check"), fontsOnly: cli.flags.includes("--fonts-only") }));
+    // `process.exit()` logo após fetch pode abortar com UV_HANDLE_CLOSING no Node 24/Windows.
+    process.exitCode = await runSetup({ check: cli.flags.includes("--check"), fontsOnly: cli.flags.includes("--fonts-only") });
+    return;
   }
 
   if (cli.command === "upgrade") {
     try {
-      process.exit(await runUpgrade({ apply: cli.flags.includes("--apply") }));
+      process.exitCode = await runUpgrade({ apply: cli.flags.includes("--apply") });
+      return;
     } catch (error) {
       process.stderr.write(`erro ao verificar atualização: ${(error as Error).message}\n`);
       process.exit(1);
@@ -242,7 +245,8 @@ async function main(): Promise<void> {
       } else {
         process.stdout.write(`${result.provider}: ${result.segments.length} segmento(s)\n${result.text}\n`);
       }
-      process.exit(0);
+      process.exitCode = 0;
+      return;
     } catch (error) {
       const err = error as { code?: string; message: string };
       process.stderr.write(`erro ${err.code ?? "E_TRANSCRIBE"}: ${err.message}\n`);
