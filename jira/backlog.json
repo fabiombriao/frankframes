@@ -341,9 +341,261 @@
           ],
           "acceptance": "Tecla S ou botão divide o clip selecionado no playhead em dois clips válidos; mídia ganha data-offset correto; referências de data-start ao clip original passam a apontar para a segunda metade; fora do intervalo falha com E_SPLIT_OUT_OF_RANGE.",
           "jiraKey": "EDT-38"
+        },
+        {
+          "summary": "Relógio do preview para no fim da composição",
+          "points": 2,
+          "labels": [
+            "studio",
+            "preview"
+          ],
+          "acceptance": "Play no preview para no último frame (ou volta ao início em loop explícito); o playhead do Studio nunca passa da duração e S/Dividir funciona logo após tocar até o fim. Teste cobre o relógio ao vivo.",
+          "jiraKey": "EDT-39"
+        },
+        {
+          "summary": "Áudio fiel no player do Studio e do preview",
+          "points": 8,
+          "labels": [
+            "studio",
+            "audio"
+          ],
+          "acceptance": "Preview toca vídeo/áudio com data-volume, fades, data-playback-rate, data-offset, automação por data-keyframes e ducking de voz, sincronizados ao relógio do player; seek e pausa não dessincronizam mais que 1 frame.",
+          "jiraKey": "EDT-40"
+        },
+        {
+          "summary": "Apagar clip no Studio",
+          "points": 2,
+          "labels": [
+            "studio"
+          ],
+          "acceptance": "Delete/Backspace ou botão remove o clip selecionado; clips que referenciavam o fim dele passam a ter data-start absoluto equivalente para nada se mover; entra no desfazer.",
+          "jiraKey": "EDT-41"
+        },
+        {
+          "summary": "Aparar o início do clip arrastando a borda esquerda",
+          "points": 3,
+          "labels": [
+            "studio"
+          ],
+          "acceptance": "Arrastar a borda esquerda altera data-start e data-duration mantendo o fim; em vídeo/áudio avança data-offset multiplicado por data-playback-rate.",
+          "jiraKey": "EDT-42"
+        },
+        {
+          "summary": "Copiar, colar e duplicar clip",
+          "points": 3,
+          "labels": [
+            "studio"
+          ],
+          "acceptance": "Ctrl+C/Ctrl+V cola no playhead e Ctrl+D duplica logo depois do original, com data-clip-id novo; clip com filhos é copiado inteiro.",
+          "jiraKey": "EDT-43"
+        },
+        {
+          "summary": "Faixas por camada com encaixe magnético",
+          "points": 8,
+          "labels": [
+            "studio"
+          ],
+          "acceptance": "Timeline agrupa clips em faixas (data-track) de vídeo, texto e áudio; arrastar entre faixas muda data-track; bordas encaixam no playhead e nas bordas vizinhas; ordem de camada visual segue a faixa.",
+          "jiraKey": "EDT-44"
+        },
+        {
+          "summary": "Zoom da timeline e forma de onda no áudio",
+          "points": 5,
+          "labels": [
+            "studio"
+          ],
+          "acceptance": "Ctrl+roda ou controle ajusta a escala da timeline até nível de frame; clips de áudio e vídeo mostram forma de onda gerada pelo FFmpeg e guardada em cache por hash.",
+          "jiraKey": "EDT-45"
+        },
+        {
+          "summary": "Exportar MP4 pelo Studio",
+          "points": 5,
+          "labels": [
+            "studio"
+          ],
+          "acceptance": "Botão Exportar escolhe preset e destino, renderiza com progresso por etapa, permite cancelar (limpa temporários) e abre a pasta ao terminar; contrato inválido bloqueia com os diagnósticos.",
+          "jiraKey": "EDT-46"
+        },
+        {
+          "summary": "Keyframes no Studio (visuais e de volume)",
+          "points": 5,
+          "labels": [
+            "studio",
+            "motion"
+          ],
+          "acceptance": "Adicionar, mover e remover keyframe no playhead para volume e para as propriedades visuais do contrato de motion; marcas aparecem na barra do clip; valor e curva editáveis no inspetor; entra no desfazer.",
+          "jiraKey": "EDT-47"
         }
       ],
       "jiraKey": "EDT-35"
+    },
+    {
+      "name": "Motion",
+      "summary": "Animação declarativa própria: presets, keyframes visuais, tipografia cinética, câmera e transições, compilados para CSS/WAAPI determinístico",
+      "priority": "Highest",
+      "stories": [
+        {
+          "summary": "Contrato de motion relativo ao clip",
+          "points": 8,
+          "labels": [
+            "motion",
+            "contract"
+          ],
+          "acceptance": "Spec em docs/contract.md antes do código: atributos próprios de entrada/saída/ênfase com tempo relativo ao início e ao fim do clip; o compilador gera CSS/WAAPI com tempo absoluto (fim do animation-delay manual); valor inválido é erro de contrato com hint; seek em qualquer ordem dá o mesmo frame.",
+          "jiraKey": "EDT-49"
+        },
+        {
+          "summary": "Keyframes visuais por propriedade",
+          "points": 8,
+          "labels": [
+            "motion",
+            "contract"
+          ],
+          "acceptance": "Keyframes de opacidade, posição, escala, rotação, desfoque e recorte com curva por trecho (linear, ease, cubic-bezier, spring determinístico); mesmo formato de tempo dos keyframes de volume; teste de determinismo por frame.",
+          "jiraKey": "EDT-50"
+        },
+        {
+          "summary": "Biblioteca própria de presets de movimento",
+          "points": 5,
+          "labels": [
+            "motion",
+            "catalog"
+          ],
+          "acceptance": "Pelo menos 24 presets (entrada, saída, ênfase) com nomes e curvas próprios, documentados com miniatura animada; nenhum nome, curva ou texto copiado de terceiros (PROVENANCE.md).",
+          "jiraKey": "EDT-51"
+        },
+        {
+          "summary": "Tipografia cinética",
+          "points": 5,
+          "labels": [
+            "motion"
+          ],
+          "acceptance": "Texto quebrado por palavra ou letra com atraso escalonado e preset por unidade; quebra preserva acentos, espaços e fontes do catálogo; funciona com legendas geradas.",
+          "jiraKey": "EDT-52"
+        },
+        {
+          "summary": "Movimentos de câmera em imagem e vídeo",
+          "points": 3,
+          "labels": [
+            "motion"
+          ],
+          "acceptance": "Pan, zoom e deriva lenta em img/video por keyframes ou preset, sem serrilhado visível em 1080p; vídeo continua decodificado pelo FFmpeg.",
+          "jiraKey": "EDT-53"
+        },
+        {
+          "summary": "Transições entre clips adjacentes",
+          "points": 5,
+          "labels": [
+            "motion"
+          ],
+          "acceptance": "Dissolver, cortina, empurrar, zoom e íris aplicáveis no ponto de corte entre dois clips, com duração ajustável; Studio mostra a transição na timeline.",
+          "jiraKey": "EDT-54"
+        },
+        {
+          "summary": "Aplicar motion pelo inspetor do Studio",
+          "points": 3,
+          "labels": [
+            "motion",
+            "studio"
+          ],
+          "acceptance": "Inspetor lista presets de entrada/saída/ênfase com prévia ao passar o mouse; escolher grava os atributos validados; entra no desfazer.",
+          "jiraKey": "EDT-55"
+        },
+        {
+          "summary": "Blocos do catálogo usando o contrato de motion",
+          "points": 5,
+          "labels": [
+            "motion",
+            "catalog"
+          ],
+          "acceptance": "Os 48 blocos trocam CSS de animação escrito à mão pelos atributos de motion onde couber, sem regressão visual (goldens atualizados de propósito e revisados).",
+          "jiraKey": "EDT-56"
+        }
+      ],
+      "jiraKey": "EDT-48"
+    },
+    {
+      "name": "Geração",
+      "summary": "Do pedido em texto ao vídeo pronto, usando contrato, catálogo e motion",
+      "priority": "High",
+      "stories": [
+        {
+          "summary": "Skill de geração: pedido em texto até MP4 conferido",
+          "points": 5,
+          "labels": [
+            "geracao",
+            "skill"
+          ],
+          "acceptance": "Skill própria do FrankFrames guia o agente de ponta a ponta: escolher formato, blocos e presets, escrever a composição, laço lint --json até zero erro, render draft, conferir frames-chave e entregar; 5 pedidos de teste viram MP4 válido sem correção manual.",
+          "jiraKey": "EDT-58"
+        },
+        {
+          "summary": "Comando `frankframes generate` com LLM na CLI",
+          "points": 8,
+          "labels": [
+            "geracao",
+            "decisao-titular"
+          ],
+          "acceptance": "Depende de decisão do titular: provedor, chave em .env e custo medido por vídeo antes de ligar. Gera a composição a partir do pedido, valida pelo contrato, abre no Studio; nunca envia mídia do projeto sem opt-in.",
+          "jiraKey": "EDT-59"
+        }
+      ],
+      "jiraKey": "EDT-57"
+    },
+    {
+      "name": "Versão 1.0",
+      "summary": "Fechamento: escala, desempenho, aceite com vídeo real e release",
+      "priority": "High",
+      "stories": [
+        {
+          "summary": "Exportação em lote",
+          "points": 5,
+          "labels": [
+            "render"
+          ],
+          "acceptance": "`frankframes render` aceita várias entradas ou um arquivo de lote (variações de dados), roda em fila com limite de paralelismo, continua após falha de um item e termina com relatório JSON e resumo.",
+          "jiraKey": "EDT-61"
+        },
+        {
+          "summary": "Desempenho de captura medido e otimizado",
+          "points": 8,
+          "labels": [
+            "render",
+            "perf"
+          ],
+          "acceptance": "Medição antes: frames/s e segundos por minuto de vídeo em 1080p, por preset, nesta máquina; otimização guiada pela medição; número final registrado no Jira e em docs/.",
+          "jiraKey": "EDT-62"
+        },
+        {
+          "summary": "Publicar o catálogo remoto",
+          "points": 3,
+          "labels": [
+            "catalog",
+            "decisao-titular"
+          ],
+          "acceptance": "Depende de decisão do titular sobre hospedagem. `blocks publish` envia índice e blocos com hash; `blocks add <url>` instala de lá e recusa hash divergente.",
+          "jiraKey": "EDT-63"
+        },
+        {
+          "summary": "Aceite de ponta a ponta com vídeo real",
+          "points": 3,
+          "labels": [
+            "aceite"
+          ],
+          "acceptance": "Com o vídeo de câmera do titular: importar no Studio, cortar, aplicar motion e legendas, exportar; MP4 confere duração, áudio −14 LUFS e frames-chave. Último item antes do release.",
+          "jiraKey": "EDT-64"
+        },
+        {
+          "summary": "Release 1.0",
+          "points": 3,
+          "labels": [
+            "release"
+          ],
+          "acceptance": "Versão 1.0.0 nos pacotes, CHANGELOG, THIRD-PARTY-NOTICES atualizado, pacote instalável testado; itens em stand-by (EDT-5, 13, 19, 34) listados como pendências conhecidas se ainda abertos.",
+          "jiraKey": "EDT-65"
+        }
+      ],
+      "jiraKey": "EDT-60"
     }
   ]
 }
