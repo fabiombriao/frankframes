@@ -73,8 +73,8 @@ packages/producer   pipeline HTML -> MP4 e mixagem de áudio
 packages/transcribe transcrição: local opt-in, Groq, OpenAI-compatible
 packages/catalog    leitura dos blocos do catálogo
 packages/cli        interface de linha de comando
-catalog/README.md    índice dos 36 blocos (gerado por scripts/generate-catalog.ts)
-catalog/blocks      36 composições prontas (22 paisagem 16:9 + 14 vertical 9:16)
+catalog/README.md    índice dos 48 blocos (gerado por scripts/generate-catalog.ts)
+catalog/blocks      48 composições prontas (28 paisagem 16:9 + 20 vertical 9:16)
 skills/frankframes  skill para agente de código
 docs/getting-started.md  do zero ao MP4 em 5 minutos
 docs/contract.md    a especificação (fonte de verdade)
