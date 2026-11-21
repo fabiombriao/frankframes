@@ -207,5 +207,6 @@ export async function runSetup(options: SetupOptions = {}): Promise<number> {
 
 const invokedDirectly = process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url);
 if (invokedDirectly) {
-  process.exit(await runSetup({ check: process.argv.includes("--check"), fontsOnly: process.argv.includes("--fonts-only") }));
+  // `process.exit()` logo após fetch pode abortar com UV_HANDLE_CLOSING no Node 24/Windows.
+  process.exitCode = await runSetup({ check: process.argv.includes("--check"), fontsOnly: process.argv.includes("--fonts-only") });
 }

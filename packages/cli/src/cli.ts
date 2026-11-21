@@ -122,24 +122,26 @@ function defaultOutput(entry: string, codec: VideoCodec): string {
   return resolve("out", `${basename(entry, extname(entry))}.${containerFor(codec)}`);
 }
 
-async function browserCommand(action: string): Promise<never> {
+// Devolve o código de saída; quem chama grava em `process.exitCode` e deixa o loop drenar
+// (`process.exit()` logo após I/O de processo filho pode abortar com UV_HANDLE_CLOSING no Node 24/Windows).
+async function browserCommand(action: string): Promise<number> {
   if (action === "check") {
     const pin = await checkPinnedBrowser();
     if (!pin.present) {
       process.stderr.write("shell pinado ausente: rode `frankframes browser install`\n");
-      process.exit(1);
+      return 1;
     }
     if (!pin.matches) {
       process.stderr.write(`digest não confere em ${pin.path}\nesperado ${PINNED_BROWSER.sha256}\nobtido   ${pin.digest}\n`);
-      process.exit(1);
+      return 1;
     }
     process.stdout.write(`ok ${PINNED_BROWSER.version} · ${pin.path}\n`);
-    process.exit(0);
+    return 0;
   }
 
   if (action !== "install") {
     process.stderr.write(`ação desconhecida: ${action}\n\n${HELP}\n`);
-    process.exit(2);
+    return 2;
   }
 
   const vendor = assetPath("browsers");
@@ -150,21 +152,21 @@ async function browserCommand(action: string): Promise<never> {
       : ["--yes", "@puppeteer/browsers", "install", `chrome-headless-shell@${PINNED_BROWSER.version}`, "--path", vendor],
     { stdio: "inherit" },
   );
+  const exited = Promise.withResolvers<number>();
   child.on("error", (error) => {
     process.stderr.write(`falha ao executar npx: ${error.message}\n`);
-    process.exit(1);
+    exited.resolve(1);
   });
-  const exited = Promise.withResolvers<number>();
   child.on("exit", (value) => exited.resolve(value ?? 1));
   const code = await exited.promise;
-  if (code !== 0) process.exit(code);
+  if (code !== 0) return code;
   const pin = await checkPinnedBrowser();
   if (!pin.matches) {
     process.stderr.write(`download concluído, mas o digest não confere: ${pin.digest}\n`);
-    process.exit(1);
+    return 1;
   }
   process.stdout.write(`ok ${PINNED_BROWSER.version} · ${pin.path}\n`);
-  process.exit(0);
+  return 0;
 }
 
 async function main(): Promise<void> {
@@ -183,7 +185,7 @@ async function main(): Promise<void> {
   }
 
   if (cli.command === "browser") {
-    await browserCommand(cli.file ?? "check");
+    process.exitCode = await browserCommand(cli.file ?? "check");
     return;
   }
 
@@ -199,12 +201,14 @@ async function main(): Promise<void> {
       return;
     } catch (error) {
       process.stderr.write(`erro ao verificar atualização: ${(error as Error).message}\n`);
-      process.exit(1);
+      process.exitCode = 1;
+      return;
     }
   }
 
   if (cli.command === "doctor") {
-    process.exit(await runDoctor());
+    process.exitCode = await runDoctor();
+    return;
   }
 
   if (cli.command === "init") {
@@ -241,7 +245,8 @@ async function main(): Promise<void> {
     } finally {
       process.off("SIGINT", stop);
     }
-    process.exit(0);
+    process.exitCode = 0;
+    return;
   }
 
   const entry = cli.file;
@@ -300,7 +305,8 @@ async function main(): Promise<void> {
     } catch (error) {
       const err = error as { code?: string; message: string };
       process.stderr.write(`erro ${err.code ?? "E_TRANSCRIBE"}: ${err.message}\n`);
-      process.exit(1);
+      process.exitCode = 1;
+      return;
     }
   }
 
@@ -323,11 +329,13 @@ async function main(): Promise<void> {
       });
       await writeFile(outPath, html, "utf8");
       process.stdout.write(`${outPath} · ${result.segments.length} segmento(s) · ${result.provider}\n`);
-      process.exit(0);
+      process.exitCode = 0;
+      return;
     } catch (error) {
       const err = error as { code?: string; message: string };
       process.stderr.write(`erro ${err.code ?? "E_CAPTIONS"}: ${err.message}\n`);
-      process.exit(1);
+      process.exitCode = 1;
+      return;
     }
   }
 
@@ -343,7 +351,8 @@ async function main(): Promise<void> {
       destPath: dest,
     });
     process.stdout.write(`${installed.path} · ${(installed.bytes / 1e9).toFixed(2)} GB\n`);
-    process.exit(0);
+    process.exitCode = 0;
+    return;
   }
 
   if (cli.command === "blocks") {
@@ -400,7 +409,8 @@ async function main(): Promise<void> {
       } finally {
         process.off("SIGINT", stop);
       }
-      process.exit(0);
+      process.exitCode = 0;
+      return;
     }
     if (action === "add") {
       const slug = process.argv[4];
@@ -521,7 +531,8 @@ async function main(): Promise<void> {
     });
     watcher.on("error", (error) => process.stderr.write(`watcher: ${error.message}\n`));
 
-    const stop = Promise.withResolvers<never>();
+    // Encerramento sem `process.exit()`: fecha watcher, timer e servidor e deixa o loop drenar.
+    const stop = Promise.withResolvers<number>();
     let closing = false;
     const shutdown = (code: number): void => {
       if (closing) return;
@@ -532,15 +543,11 @@ async function main(): Promise<void> {
       void server
         .close()
         .catch(() => {})
-        .finally(() => stop.resolve(process.exit(code) as never));
+        .finally(() => stop.resolve(code));
     };
     process.on("SIGINT", () => shutdown(0));
     process.on("SIGTERM", () => shutdown(0));
-    try {
-      await stop.promise;
-    } finally {
-      if (!closing) shutdown(0);
-    }
+    process.exitCode = await stop.promise;
     return;
   }
 
@@ -624,11 +631,12 @@ async function main(): Promise<void> {
     } else {
       process.stdout.write(`${result.outPath} · ${result.frames} frames · ${result.durationSeconds.toFixed(3)}s · ${result.codec}/${result.preset}\n`);
     }
-    process.exit(0);
+    process.exitCode = 0;
   } catch (error) {
+    process.exitCode = 1;
     if (cli.json) {
       process.stdout.write(`${JSON.stringify(toErrorPayload(error), null, 2)}\n`);
-      process.exit(1);
+      return;
     }
     if (error instanceof RenderError) {
       process.stderr.write(`erro ${error.code} no estágio ${error.stage}: ${error.message}\n`);
@@ -639,7 +647,6 @@ async function main(): Promise<void> {
     } else {
       process.stderr.write(`erro: ${(error as Error).message}\n`);
     }
-    process.exit(1);
   }
 }
 
