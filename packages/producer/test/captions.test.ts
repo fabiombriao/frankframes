@@ -87,3 +87,60 @@ test("palavras inválidas caem no modo texto", () => {
   assert.ok(!html.includes('class="w"'));
   assert.ok(html.includes("sem palavras"));
 });
+
+const karaoke = [
+  {
+    start: 1,
+    end: 3,
+    text: "olá mundo lindo",
+    words: [
+      { start: 1, end: 1.5, word: "olá" },
+      { start: 1.9, end: 2.4, word: "mundo" },
+      { start: 2.95, end: 3, word: "lindo" },
+    ],
+  },
+];
+
+test("motion nas legendas: data-unit é o início da palavra menos o do segmento e o contrato valida", () => {
+  const html = buildCaptionComposition(karaoke, { motion: { enter: "subir" } });
+  const composition = loadComposition(html);
+  assert.equal(composition.ok, true, JSON.stringify(composition.diagnostics));
+  assert.match(html, /data-split="word stagger=0" data-enter="subir dur=0\.[0-9]+"/);
+  const units = [...html.matchAll(/class="w" data-unit="([0-9.]+)"/g)].map((m) => m[1]);
+  // a última palavra cai no fim da fala: a âncora é limitada a D − dur
+  assert.deepEqual(units.slice(0, 2), ["0.000", "0.900"]);
+  const dur = Number(/data-enter="subir dur=([0-9.]+)"/.exec(html)![1]);
+  assert.ok(Number(units[2]) <= 2 - dur + 1e-9 && Number(units[2]) > 0.9, `última âncora ${units[2]} (dur ${dur})`);
+  assert.ok(html.includes("animation-delay:1.000s"), "o karaokê continua em CSS");
+  // o texto das palavras não muda
+  assert.equal((html.match(/class="w"/g) ?? []).length, 3);
+});
+
+test("motion nas legendas sem palavras: stagger encolhe para a última entrada caber na fala", () => {
+  const html = buildCaptionComposition([{ start: 0, end: 1, text: "um dois três quatro cinco" }], { motion: { enter: "subir" } });
+  const composition = loadComposition(html);
+  assert.equal(composition.ok, true, JSON.stringify(composition.diagnostics));
+  const stagger = Number(/data-split="word stagger=([0-9.]+)"/.exec(html)![1]);
+  assert.ok(stagger > 0 && stagger <= 0.06, `stagger ${stagger}`);
+  assert.ok(!html.includes("data-unit"), "sem palavras com tempo, as unidades são automáticas");
+});
+
+test("motion nas legendas: saída entra depois da última entrada; preset inválido ou sem espaço falha alto", () => {
+  const html = buildCaptionComposition(
+    [{ start: 0, end: 4, text: "olá mundo", words: [{ start: 0, end: 1, word: "olá" }, { start: 1, end: 2, word: "mundo" }] }],
+    { motion: { enter: "subir dur=0.4", exit: "apagar dur=0.5" } },
+  );
+  assert.equal(loadComposition(html).ok, true);
+  assert.match(html, /data-exit="apagar dur=0\.5"/);
+  assert.throws(() => buildCaptionComposition(karaoke, { motion: { enter: "inexistente" } }), /preset "inexistente" não existe/);
+  assert.throws(() => buildCaptionComposition(karaoke, { motion: { enter: "subir dur=x" } }), /dur inválido/);
+  assert.throws(
+    () => buildCaptionComposition(karaoke, { motion: { enter: "subir dur=1", exit: "apagar" } }),
+    /não tem espaço para a saída/,
+  );
+});
+
+test("sem motion, a legenda sai exatamente como antes", () => {
+  const html = buildCaptionComposition(karaoke);
+  assert.ok(!html.includes("data-split") && !html.includes("data-unit") && !html.includes("data-enter"));
+});

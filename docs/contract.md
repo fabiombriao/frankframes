@@ -122,6 +122,9 @@ reproduz. CSS `@keyframes` continua permitido; os atributos de motion são a for
 | `data-camera` | `<img>` (clip ou descendente) | `<preset> [chave=valor ...]`; reservado: ainda sem presets |
 | `data-transition` | clip que **entra** | `<preset> [chave=valor ...]`; reservado: ainda sem presets |
 
+| `data-split` | elemento com texto | `word` ou `letter`, mais `stagger=<s>` e `order=forward\|reverse\|center`: §7b.8 |
+| `data-unit` | descendente de um `data-split` | vazio ou âncora em segundos; marca a unidade à mão: §7b.8 |
+
 Atributo reservado aceita só a gramática de §7b.4: qualquer valor dá `E_MOTION_PRESET_UNKNOWN`.
 
 Os presets de `data-enter`, `data-exit` e `data-emphasis` estão em [`docs/motion.md`](motion.md).
@@ -309,6 +312,86 @@ Diagnósticos (todos com `clipId`; os erros têm `hint`):
 | `W_KEYFRAME_OUT_OF_RANGE` | warning | `time` maior que a duração D do clip; o ponto é mantido | `o ponto em t=<n> s nunca aparece: o clip termina em <D> s` |
 | `W_KEYFRAME_CURVE_IGNORED` | warning | `curve` num ponto só de volume (o volume é sempre linear) | `remova curve ou acrescente uma propriedade visual ao ponto` |
 
+### 7b.8 Tipografia cinética (`data-split`)
+
+`data-split` divide o texto de um elemento em **unidades** (palavras ou letras) e aplica `data-enter`,
+`data-exit` e `data-emphasis` do mesmo elemento a **cada unidade**, com um atraso escalonado.
+
+```
+split   = modo { ws+ param } ;
+modo    = "word" | "letter" ;
+param   = "stagger=" segundos | "order=" ( "forward" | "reverse" | "center" ) ;
+```
+
+```html
+<h1 data-start="0" data-duration="4" data-split="word stagger=0.08" data-enter="subir dur=0.5">
+  Coração, ação e emoção
+</h1>
+```
+
+- `stagger` (segundos ≥ 0, no máximo 10): padrão `0.06` em `word` e `0.03` em `letter`. `order` padrão
+  `forward`.
+- O elemento precisa ter `data-enter`, `data-exit` ou `data-emphasis`; sem nenhum dá `E_MOTION_TARGET` com
+  hint `data-split precisa de data-enter, data-exit ou data-emphasis`. Os três valem por unidade, com a
+  gramática, os presets e as faixas de §7b.4 a §7b.6.
+- `data-keyframes` no mesmo elemento continua valendo para o **elemento inteiro** (não por unidade).
+- `data-split` não combina com `data-camera` nem `data-transition` (`E_MOTION_TARGET`).
+
+**Segmentação** (`Intl.Segmenter` com locale fixo `und`, nunca o do sistema). O texto alvo são os nós de
+texto descendentes do elemento (ignora `script`, `style`, `textarea`, `title`, `svg`, `math`, `noscript` e
+sub-composições); cada nó é segmentado sozinho. A soma dos pedaços reconstrói o texto byte a byte.
+
+- `word`: cada palavra é uma unidade; espaço e quebra de linha ficam soltos, fora das unidades. Pontuação
+  colada ao fim gruda na palavra anterior (`Olá,` é uma unidade); a do começo (`“Sim`, `¿Qué`) gruda na
+  seguinte. Pontuação ou emoji isolado entre espaços vira unidade própria.
+- `letter`: cada grafema é uma unidade (`é` decomposto, `👍🏽` e `👨‍👩‍👧` são uma só). Espaços ficam soltos e
+  cada palavra vai num `<span>` com `white-space:nowrap`, para a linha nunca quebrar no meio dela.
+- Elemento com motion próprio dentro do alvo (`data-enter`, `data-exit`, `data-emphasis`, `data-keyframes`,
+  `data-split`) dá `E_MOTION_TARGET`: o split anima o texto, não dois níveis de movimento. Sem nenhuma
+  unidade, `E_MOTION_TARGET` com hint `data-split sem texto: ponha texto no elemento ou marque as unidades
+  com data-unit`.
+
+**Tempo por unidade.** Com `n` unidades, a unidade `i` tem posto `r`: `forward` = i, `reverse` = n−1−i,
+`center` = ⌊|i−(n−1)/2|⌋. Seja `R` o maior posto. Cada preset usa a âncora `T` de §7b.5 e ganha o
+deslocamento:
+
+| Atributo | Intervalo da unidade |
+|---|---|
+| enter | começa em `T + r·stagger` |
+| exit | termina em `T − (R−r)·stagger` (a última a sair termina em `T`) |
+| emphasis | começa em `T + r·stagger`; sem `at`, `T` = fim da última entrada |
+
+Cada intervalo passa pelas regras de faixa de §7b.5; estourar dá `E_MOTION_OUT_OF_RANGE` dizendo qual unidade
+(`unidade 3 de 8`) e com hint sugerindo reduzir `stagger` ou `dur`. Sobreposição de trilhas de **uma mesma
+unidade** segue §7b.6 (`E_MOTION_OVERLAP`); unidades diferentes nunca conflitam entre si.
+
+**Modo explícito** (`data-unit`). Se há descendentes com `data-unit`, só eles são unidades, na ordem do
+documento, e o texto não é reescrito. Valor vazio segue o escalonamento; um número em segundos (aceita
+negativo) fixa o **início da entrada** daquela unidade, no tempo do clip; `data-exit` e `data-emphasis`
+seguem sempre o escalonamento pelo posto. Valor inválido dá `E_MOTION_PARAM`. `data-unit` fora de um `data-split`, ou
+dentro de outro `data-unit`, é `E_MOTION_TARGET`. `style` inline de uma unidade com propriedade possuída
+(§7b.6) dá `E_MOTION_CONFLICT` com o número da unidade.
+
+**Compilação.** O producer reescreve o texto como `<span data-ff-unit="<i>" style="display:inline-block">`
+(o `transform` não vale em elemento `inline`) e grava `data-ff-motion` (§7b.12) em cada unidade, usando o
+serializer do HTML, que escapa o texto. Unidades explícitas só ganham `data-ff-unit` e
+`display:inline-block` (a não ser que o autor já declare `display`). O `textContent` do elemento não muda;
+a fonte, o tamanho e a cor continuam herdados.
+
+**Legendas.** `buildCaptionComposition(segments, { motion: { enter, exit? } })` e a flag
+`frankframes captions --motion "<preset de entrada>"` ligam o split nas legendas: o bloco da fala recebe
+`data-split="word"`, `data-enter` e `data-exit`; com palavras temporizadas, cada palavra leva
+`data-unit="<início da palavra − início do segmento>"` e o `stagger` é 0, de modo que a entrada acompanha a
+fala. Sem palavras com tempo, as palavras do texto entram em sequência e o `stagger` encolhe (até 0.06 s)
+para a última terminar dentro da fala. A duração do preset é limitada à fala e as âncoras são limitadas a
+`D − dur`. O gerador passa o resultado pelo contrato: o que ainda não couber (mola curta demais para a fala,
+saída sem espaço depois da última entrada) falha na geração com o diagnóstico, nunca vira legenda inválida.
+
+**Limitações.** Em escritas cursivas (árabe) o modo `letter` perde a ligação entre letras, porque cada
+grafema vira uma caixa; use `word`. Ligaduras entre unidades vizinhas e o kerning entre elas se perdem. O
+resultado do `letter` depende da tabela Unicode do ICU: o teste de segmentação imprime a versão do Node e do
+ICU quando falha.
+
 ### 7b.11 Curvas
 
 - `linear`, `ease`, `ease-in`, `ease-out`, `ease-in-out`: as do CSS.
@@ -355,7 +438,10 @@ Diagnósticos (todos com `clipId`; os erros têm `hint`):
   - valores dos pontos: `x`/`y` viram `"<n>px"` (ou ficam em `%`), `rotate` vira `"<n>deg"`, `blur` vira
     `"<n>px"`, `scale*` são números, e `clip` vai direto em `clip-path`, normalizado (`inset(0% 10% 0% 0%)`:
     sempre `%`, 4 valores; `circle(50% at 50% 50%)`);
-  - trilha constante (ponto único) sai com duas chaves iguais e `n` = 1.
+  - trilha constante (ponto único) sai com duas chaves iguais e `n` = 1;
+  - com `data-split` (§7b.8) o `data-ff-motion` vai em cada `<span data-ff-unit>`, com o atraso `d` da
+    unidade; o elemento só recebe o seu se tiver `data-keyframes`. O runtime não sabe de unidades: cada
+    `[data-ff-motion]` é uma animação como qualquer outra.
 - O runtime (engine):
   - registra as propriedades `--ff-*` (`inherits:false`);
   - aplica `s` no `style` do alvo;

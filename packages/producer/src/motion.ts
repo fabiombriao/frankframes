@@ -4,8 +4,10 @@
  * as trilhas em segundos locais ao clip dono; aqui elas viram milissegundos relativos ao
  * escopo que o relógio usa (`data-ff-comp-start` mais próximo). Sem I/O.
  */
-import { bindingsFor, motionElements } from "@frankframes/contract";
-import type { Composition, DomNode, MotionTarget } from "@frankframes/contract";
+import { defaultTreeAdapter, html } from "parse5";
+import type { DefaultTreeAdapterTypes } from "parse5";
+import { bindingsFor, motionElements, scanSplit, splitText } from "@frankframes/contract";
+import type { Composition, DomNode, MotionTarget, MotionTrack } from "@frankframes/contract";
 
 /** Formato de `data-ff-motion`, versão 1. */
 export interface MotionRuntimeSpec {
@@ -32,7 +34,7 @@ function setAttr(node: DomNode, name: string, value: string): void {
  * @param clipStart início absoluto do clip dono, em segundos
  * @param scopeMs `data-ff-comp-start` do escopo do alvo, em ms (o que o relógio subtrai)
  */
-export function toRuntimeSpec(target: MotionTarget, clipStart: number, scopeMs: number): MotionRuntimeSpec {
+export function toRuntimeSpec(target: MotionTarget | { tracks: MotionTrack[] }, clipStart: number, scopeMs: number): MotionRuntimeSpec {
   return {
     v: 1,
     a: target.tracks.map((track) => {
@@ -66,6 +68,85 @@ function cssValue(prop: string, value: number | string): number | string {
     default:
       return value;
   }
+}
+
+const INLINE_BLOCK = "display:inline-block";
+const NOWRAP = "white-space:nowrap";
+
+/** `display:inline-block` no fim do `style`, a não ser que o autor já tenha declarado `display`. */
+function withInlineBlock(style: string | undefined): string {
+  const current = (style ?? "").trim();
+  if (/(^|;)\s*display\s*:/i.test(current)) return current;
+  if (current === "") return INLINE_BLOCK;
+  return `${current.endsWith(";") ? current : `${current};`}${INLINE_BLOCK}`;
+}
+
+type P5Element = DefaultTreeAdapterTypes.Element;
+type P5Parent = DefaultTreeAdapterTypes.ParentNode;
+type P5Child = DefaultTreeAdapterTypes.ChildNode;
+
+function span(attrs: Array<{ name: string; value: string }>): P5Element {
+  return defaultTreeAdapter.createElement("span", html.NS.HTML, attrs);
+}
+
+/**
+ * Reescreve o texto de um alvo com `data-split` (§7b.8) e devolve as unidades, na ordem do documento.
+ * Modo automático: cada nó de texto vira unidades `<span data-ff-unit>` com `display:inline-block`
+ * (o transform não vale em inline) e texto solto entre elas; no modo letter, cada palavra vai num
+ * `<span>` com `white-space:nowrap` para a linha não quebrar no meio. Modo explícito: os elementos
+ * `data-unit` do autor só ganham `data-ff-unit` e `display:inline-block`. O texto passa pelo
+ * serializer do parse5, que escapa; nada de HTML concatenado.
+ */
+function rewriteSplit(owner: string, element: DomNode, target: MotionTarget): DomNode[] {
+  const split = target.split!;
+  const scan = scanSplit(element);
+  const units: DomNode[] = [];
+
+  if (split.explicit) {
+    for (const node of scan.explicit) {
+      setAttr(node, "data-ff-unit", String(units.length));
+      setAttr(node, "style", withInlineBlock(attrOf(node, "style")));
+      units.push(node);
+    }
+  } else {
+    for (const text of scan.texts) {
+      const pieces = splitText(text.value ?? "", split.mode);
+      if (!pieces.some((piece) => piece.unit)) continue;
+      const node = text as unknown as P5Child;
+      const parent = node.parentNode as P5Parent | null;
+      if (parent === null) throw new Error(`motion: texto de "${owner}" sem pai no documento compilado`);
+      let wrapper: P5Element | undefined;
+      let wrapperWord: number | undefined;
+      for (const piece of pieces) {
+        if (!piece.unit) {
+          wrapper = undefined;
+          defaultTreeAdapter.insertTextBefore(parent, piece.text, node);
+          continue;
+        }
+        const unit = span([
+          { name: "data-ff-unit", value: String(units.length) },
+          { name: "style", value: INLINE_BLOCK },
+        ]);
+        defaultTreeAdapter.insertText(unit, piece.text);
+        if (split.mode === "letter") {
+          if (wrapper === undefined || wrapperWord !== piece.word) {
+            wrapper = span([{ name: "style", value: NOWRAP }]);
+            wrapperWord = piece.word;
+            defaultTreeAdapter.insertBefore(parent, wrapper, node);
+          }
+          defaultTreeAdapter.appendChild(wrapper, unit);
+        } else {
+          defaultTreeAdapter.insertBefore(parent, unit, node);
+        }
+        units.push(unit as unknown as DomNode);
+      }
+      defaultTreeAdapter.detachNode(node);
+    }
+  }
+  if (units.length !== (target.units?.length ?? 0)) {
+    throw new Error(`motion: "${owner}" tem ${units.length} unidades no documento e ${target.units?.length ?? 0} no contrato (alvo ${target.ordinal})`);
+  }
+  return units;
 }
 
 /** Início absoluto de cada clip, em segundos (mesma conta do tempo anotado). */
@@ -128,8 +209,16 @@ export function annotateMotion(document: { childNodes?: DomNode[] }, composition
       if (element === undefined || element.nodeName !== target.tag) {
         throw new Error(`motion: alvo ${target.ordinal} de "${owner}" não bate com o documento (esperado <${target.tag}>)`);
       }
-      const spec = toRuntimeSpec(target, clipStart, scopes.get(element) ?? 0);
-      setAttr(element, "data-ff-motion", JSON.stringify(spec));
+      const scope = scopes.get(element) ?? 0;
+      // Com split, `tracks` é só o que vale pro elemento inteiro (data-keyframes); o resto vai por unidade.
+      if (target.tracks.length > 0) setAttr(element, "data-ff-motion", JSON.stringify(toRuntimeSpec(target, clipStart, scope)));
+      if (target.split !== undefined && target.units !== undefined) {
+        const unitNodes = rewriteSplit(owner, element, target);
+        for (const [i, unit] of unitNodes.entries()) {
+          const tracks = target.units[i]!;
+          if (tracks.length > 0) setAttr(unit, "data-ff-motion", JSON.stringify(toRuntimeSpec({ tracks }, clipStart, scopes.get(unit) ?? scope)));
+        }
+      }
       annotated++;
     }
   }

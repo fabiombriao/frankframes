@@ -41,7 +41,7 @@ uso:
   frankframes preview <arquivo.html> [--open]
   frankframes studio <arquivo.html> [--port N]
   frankframes transcribe <audio> [--provider local|groq|openai-compatible] [--language pt] [--json]
-  frankframes captions <audio> [-o legenda.html] [--size 1920x1080] [--language pt]
+  frankframes captions <audio> [-o legenda.html] [--size 1920x1080] [--language pt] [--motion "<preset de entrada>"]
   frankframes models install whisper-large-v3-turbo
   frankframes blocks list
   frankframes blocks add <slug> [destino]
@@ -75,6 +75,8 @@ interface Cli {
   keep: boolean;
   provider?: string;
   language?: string;
+  /** `captions --motion`: preset de entrada por palavra (§7b.8). */
+  motion?: string;
   port?: number;
   root?: string;
   gpu?: "auto" | "software" | "hardware";
@@ -96,6 +98,11 @@ function parseCli(argv: string[]): Cli {
     else if (arg === "--workers") cli.workers = Number(argv[++i]);
     else if (arg === "--provider") cli.provider = argv[++i];
     else if (arg === "--language") cli.language = argv[++i];
+    else if (arg === "--motion") {
+      const value = argv[++i];
+      if (value === undefined || value.startsWith("-")) throw new Error('--motion precisa de um preset de entrada, por exemplo --motion "subir"');
+      cli.motion = value;
+    }
     else if (arg === "--port") cli.port = Number(argv[++i]);
     else if (arg === "--root") cli.root = argv[++i];
     else if (arg === "--gpu") cli.gpu = (argv[++i] ?? "auto") as "auto" | "software" | "hardware";
@@ -312,6 +319,7 @@ async function main(): Promise<void> {
       const html = buildCaptionComposition(segments, {
         ...(Number.isFinite(width) ? { width } : {}),
         ...(Number.isFinite(height) ? { height } : {}),
+        ...(cli.motion !== undefined ? { motion: { enter: cli.motion } } : {}),
       });
       await writeFile(outPath, html, "utf8");
       process.stdout.write(`${outPath} · ${result.segments.length} segmento(s) · ${result.provider}\n`);

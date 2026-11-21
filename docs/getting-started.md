@@ -94,6 +94,11 @@ Se o provedor devolver tempos por palavra, a legenda sai em **karaokê**: cada p
 instante exato (`animation-delay` absoluto) e as já faladas ficam na cor de destaque. Sem palavras,
 o texto quebra em linhas equilibradas e a fonte encolhe para caber na largura segura.
 
+Para cada palavra entrar com movimento, acrescente `--motion` com um preset de entrada
+(`frankframes captions audio.wav -o legendas.html --motion "subir dur=0.3"`): com tempos por palavra, a
+palavra entra quando é falada; sem eles, as palavras entram em sequência. A duração se ajusta à fala
+(`docs/contract.md` §7b.8).
+
 ## 7. Usar um bloco pronto
 
 ```bash

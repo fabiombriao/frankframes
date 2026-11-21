@@ -4,6 +4,8 @@ import type { MotionKind } from "../types.ts";
 
 export interface DomNode {
   nodeName: string;
+  /** Conteúdo de um nó `#text`. */
+  value?: string;
   attrs?: Array<{ name: string; value: string }>;
   childNodes?: DomNode[];
   content?: { childNodes: DomNode[] };
@@ -60,6 +62,11 @@ export function hasKeyframes(node: DomNode): boolean {
   return (nodeAttr(node, "data-keyframes") ?? "").trim() !== "";
 }
 
+/** `data-split` presente (§7b.8): o elemento é alvo mesmo sem `data-enter`, para o erro dele aparecer. */
+export function hasSplit(node: DomNode): boolean {
+  return nodeAttr(node, "data-split") !== undefined;
+}
+
 /**
  * Elementos com motion de um clip, na ordem do documento: o próprio clip e os
  * descendentes. Num host de sub-composição, descendentes temporizados ou hosts são
@@ -74,7 +81,7 @@ export function motionElements<T extends DomNode>(clip: T): T[] {
   const visit = (node: DomNode, isClip: boolean): void => {
     if (node.nodeName === "#text" || node.nodeName === "#comment") return;
     if (host && !isClip && (isTimed(node) || isHost(node))) return;
-    if (hasMotion(node) || hasKeyframes(node)) out.push(node as T);
+    if (hasMotion(node) || hasKeyframes(node) || hasSplit(node)) out.push(node as T);
     for (const child of node.content?.childNodes ?? []) visit(child, false);
     for (const child of node.childNodes ?? []) visit(child, false);
   };

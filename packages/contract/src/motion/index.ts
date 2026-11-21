@@ -13,6 +13,7 @@ import { DIRECTIONS, parseDistance, presetsOf } from "./presets.ts";
 import type { Direction, ParamSpec, PresetDef } from "./presets.ts";
 import { keyframeSegments, mergeSegments, ownedProperties } from "./tracks.ts";
 import type { Segment } from "./tracks.ts";
+import { unitRanks } from "./split.ts";
 
 export { CURVE_NAMES, emitEasing, evaluateCurve, parseCurve, resolveCurve, springSettleSeconds } from "./curves.ts";
 export type { Bezier, ParsedCurve, Spring } from "./curves.ts";
@@ -24,8 +25,10 @@ export { DIRECTIONS, PRESETS, listPresets, parseDistance, presetsOf } from "./pr
 export type { Direction, ParamSpec, PresetContext, PresetDef } from "./presets.ts";
 export { CSS_PROP_OF, MOTION_PROPERTIES, OWNED_BY_PROP, bindingsFor, keyframeSegments, mergeSegments, ownedProperties } from "./tracks.ts";
 export type { MergeResult, Segment, SpringFailure } from "./tracks.ts";
-export { MOTION_ATTRS, hasKeyframes, hasMotion, isHost, isTimed, motionAttrsOf, motionElements } from "./targets.ts";
+export { MOTION_ATTRS, hasKeyframes, hasMotion, hasSplit, isHost, isTimed, motionAttrsOf, motionElements } from "./targets.ts";
 export type { DomNode } from "./targets.ts";
+export { DEFAULT_STAGGER, MAX_STAGGER, SPLIT_MODES, SPLIT_ORDERS, buildSplit, orphanUnits, scanSplit, splitText, unitRanks } from "./split.ts";
+export type { SplitMode, SplitOrder, SplitProblem, SplitResult, SplitScan, TextPiece } from "./split.ts";
 
 const KINDS: readonly MotionKind[] = ["enter", "exit", "emphasis", "camera", "transition"];
 const ATTR_OF: Record<MotionKind, string> = {
@@ -47,6 +50,8 @@ interface Planned {
   start: number;
   duration: number;
   segments: Array<{ prop: string; keys: Segment["keys"] }>;
+  /** Com `data-split`: deslocamento de cada unidade em relação a `start` (§7b.8). */
+  shifts?: number[];
 }
 
 /** Propriedades de CSS declaradas no `style` inline, em minúsculas. */
@@ -108,7 +113,27 @@ export function resolveMotion(
     if (source.attrs.transition !== undefined && !source.own) {
       refuse(`data-transition em descendente em ${where}`, "data-transition vale só no clip que entra: mova para o clip");
     }
+    const split = source.split;
+    if (split !== undefined && (source.attrs.camera !== undefined || source.attrs.transition !== undefined)) {
+      refuse(`data-split não combina com data-camera nem data-transition em ${where}`, "tire data-split, ou mova data-camera/data-transition para outro elemento");
+    }
     if (invalid) continue;
+
+    // Tempo por unidade (§7b.8): cada preset de enter/exit/emphasis ganha um deslocamento por unidade.
+    const spread = split !== undefined ? unitRanks(split.units.length, split.order) : undefined;
+    const shiftsFor = (kind: MotionKind): ((start: number) => number[]) | undefined => {
+      if (split === undefined || spread === undefined) return undefined;
+      if (kind === "enter") {
+        return (start) =>
+          spread.ranks.map((rank, i) => {
+            const anchor = split.units[i]!.anchor;
+            return round6(anchor !== undefined ? anchor - start : rank * split.stagger);
+          });
+      }
+      if (kind === "exit") return () => spread.ranks.map((rank) => round6(-(spread.max - rank) * split.stagger));
+      if (kind === "emphasis") return () => spread.ranks.map((rank) => round6(rank * split.stagger));
+      return undefined;
+    };
 
     const planned: Planned[] = [];
     let blocked = false;
@@ -140,7 +165,8 @@ export function resolveMotion(
         continue;
       }
 
-      const plan = planPreset({ kind, preset, params: parsed.params, attrName, where, D, planned, duration, error });
+      const unitShifts = shiftsFor(kind);
+      const plan = planPreset({ kind, preset, params: parsed.params, attrName, where, D, planned, duration, error, ...(unitShifts ? { unitShifts } : {}) });
       if (plan === "failed") {
         blocked = true;
         continue;
@@ -172,60 +198,98 @@ export function resolveMotion(
     }
     if (blocked) continue;
 
-    // Trechos por propriedade -> uma trilha por propriedade CSS.
-    const bySegment = new Map<string, Segment[]>();
-    for (const item of planned) {
-      for (const part of item.segments) {
-        const list = bySegment.get(part.prop) ?? [];
-        list.push({ start: item.start, duration: item.duration, keys: part.keys });
-        bySegment.set(part.prop, list);
+    // Trechos por propriedade -> uma trilha por propriedade CSS. Sem split, presets e keyframes
+    // vão juntos para o elemento; com split, os presets valem por unidade e só os keyframes ficam no elemento.
+    const addSegments = (into: Map<string, Segment[]>, unit: number | undefined): void => {
+      for (const item of planned) {
+        const shift = unit === undefined ? 0 : (item.shifts?.[unit] ?? 0);
+        for (const part of item.segments) {
+          const list = into.get(part.prop) ?? [];
+          list.push({ start: round6(item.start + shift), duration: item.duration, keys: part.keys });
+          into.set(part.prop, list);
+        }
       }
-    }
-    for (const { prop, segment } of keyframes.segments) {
-      const list = bySegment.get(prop) ?? [];
-      list.push(segment);
-      bySegment.set(prop, list);
-    }
+    };
+    const addKeyframes = (into: Map<string, Segment[]>): void => {
+      for (const { prop, segment } of keyframes.segments) {
+        const list = into.get(prop) ?? [];
+        list.push(segment);
+        into.set(prop, list);
+      }
+    };
+    // `unit` (base 1) só aparece nas mensagens do modo split; os saltos saem uma vez, da primeira unidade.
+    const buildTracks = (segmentsByProp: Map<string, Segment[]>, unit: number | undefined): MotionTrack[] => {
+      const label = unit === undefined ? "" : `, unidade ${unit} de ${split!.units.length}`;
+      const out: MotionTrack[] = [];
+      for (const [prop, segments] of segmentsByProp) {
+        const merged = mergeSegments(prop, segments);
+        if (!merged.ok) {
+          blocked = true;
+          error(
+            CODES.MOTION_OVERLAP,
+            `dois movimentos de ${prop} se sobrepõem em ${where}${label}`,
+            `o segundo começa em ${merged.overlap[1]} s, antes do primeiro terminar; ajuste at, dur${unit === undefined ? "" : " ou stagger"} (encostar nas pontas é permitido)`,
+          );
+          continue;
+        }
+        if (unit === undefined || unit === 1) {
+          for (const at of merged.jumps) {
+            diagnostics.push(
+              diag(CODES.MOTION_JUMP, "warning", `${prop} salta em ${at} s em ${where}: o próximo movimento começa num valor diferente do parado`, {
+                clipId: source.clipId,
+                hint: "faça o movimento seguinte começar no valor em que o anterior terminou",
+              }),
+            );
+          }
+        }
+        out.push(merged.track);
+      }
+      return out;
+    };
 
-    const tracks: MotionTrack[] = [];
-    for (const [prop, segments] of bySegment) {
-      const merged = mergeSegments(prop, segments);
-      if (!merged.ok) {
-        blocked = true;
-        error(
-          CODES.MOTION_OVERLAP,
-          `dois movimentos de ${prop} se sobrepõem em ${where}`,
-          `o segundo começa em ${merged.overlap[1]} s, antes do primeiro terminar; ajuste at ou dur (encostar nas pontas é permitido)`,
-        );
-        continue;
+    const elementSegments = new Map<string, Segment[]>();
+    if (split === undefined) addSegments(elementSegments, undefined);
+    addKeyframes(elementSegments);
+    const tracks = buildTracks(elementSegments, undefined);
+    let unitTracks: MotionTrack[][] | undefined;
+    if (split !== undefined && !blocked) {
+      unitTracks = [];
+      for (let i = 0; i < split.units.length && !blocked; i++) {
+        const into = new Map<string, Segment[]>();
+        addSegments(into, i);
+        unitTracks.push(buildTracks(into, i + 1));
       }
-      for (const at of merged.jumps) {
-        diagnostics.push(
-          diag(CODES.MOTION_JUMP, "warning", `${prop} salta em ${at} s em ${where}: o próximo movimento começa num valor diferente do parado`, {
-            clipId: source.clipId,
-            hint: "faça o movimento seguinte começar no valor em que o anterior terminou",
-          }),
-        );
-      }
-      tracks.push(merged.track);
     }
     if (blocked) continue;
 
     // Posse (§7b.6): `opacity` inline é estática e a animação a sobrepõe; o resto não.
-    const declared = inlineProperties(source.style);
-    for (const owned of ownedProperties(tracks.map((t) => t.prop))) {
-      if (owned !== "opacity" && declared.has(owned)) {
-        error(
-          CODES.MOTION_CONFLICT,
-          `${owned} é controlado pelo motion em ${where}, mas também está no style inline`,
-          `remova ${owned} do style; para posição ou rotação fixas use transform, que compõe depois do motion`,
-        );
-        blocked = true;
+    const checkOwnership = (style: string | undefined, props: string[], whereText: string): void => {
+      const declared = inlineProperties(style);
+      for (const owned of ownedProperties(props)) {
+        if (owned !== "opacity" && declared.has(owned)) {
+          error(
+            CODES.MOTION_CONFLICT,
+            `${owned} é controlado pelo motion em ${whereText}, mas também está no style inline`,
+            `remova ${owned} do style; para posição ou rotação fixas use transform, que compõe depois do motion`,
+          );
+          blocked = true;
+        }
+      }
+    };
+    checkOwnership(source.style, tracks.map((t) => t.prop), where);
+    if (split?.explicit && unitTracks !== undefined) {
+      for (const [i, unitTrack] of unitTracks.entries()) {
+        checkOwnership(split.units[i]!.style, unitTrack.map((t) => t.prop), `${where}, unidade ${i + 1} (data-unit)`);
       }
     }
-    if (blocked || tracks.length === 0) continue;
+    if (blocked || (tracks.length === 0 && (unitTracks === undefined || unitTracks.every((t) => t.length === 0)))) continue;
 
-    (result[source.clipId] ??= []).push({ ordinal: source.ordinal, tag: source.tag, tracks });
+    const target: MotionTarget = { ordinal: source.ordinal, tag: source.tag, tracks };
+    if (split !== undefined && unitTracks !== undefined) {
+      target.units = unitTracks;
+      target.split = { mode: split.mode, explicit: split.explicit };
+    }
+    (result[source.clipId] ??= []).push(target);
   }
   return result;
 }
@@ -240,6 +304,8 @@ interface PlanInput {
   planned: Planned[];
   duration: DurationResolution;
   error: (code: string, message: string, hint: string) => void;
+  /** Com `data-split`: deslocamento de cada unidade dado o início do preset (§7b.8). */
+  unitShifts?: (start: number) => number[];
 }
 
 /** Valida parâmetros e calcula o intervalo e as chaves de um atributo. */
@@ -335,23 +401,32 @@ function planPreset(input: PlanInput): Planned | "failed" | "waiting" {
     at = anchor.value;
   } else {
     // Ênfase sem `at` começa onde a entrada do mesmo alvo termina.
+    // Com `data-split`, "onde a entrada termina" é onde termina a última unidade.
     const entering = kind === "emphasis" ? input.planned.find((p) => p.kind === "enter") : undefined;
-    at = entering ? entering.start + entering.duration : 0;
+    const lastShift = entering?.shifts !== undefined ? Math.max(...entering.shifts) : 0;
+    at = entering ? entering.start + entering.duration + lastShift : 0;
   }
 
   const start = kind === "exit" ? at - total : at;
   const end = start + total;
+  const shifts = input.unitShifts?.(start);
   if (D !== undefined) {
     const lowest = kind === "enter" ? -Infinity : 0;
-    if (end > D + EPS || start < lowest - EPS) {
-      error(
-        CODES.MOTION_OUT_OF_RANGE,
-        `${attrName} de ${where} ocupa [${round6(start)}, ${round6(end)}] s e o clip tem ${round6(D)} s`,
-        kind === "enter"
-          ? `o movimento precisa terminar em ${round6(D)} s ou antes; reduza dur ou antecipe at`
-          : `o movimento precisa caber em [0, ${round6(D)}] s; reduza dur ou ajuste at`,
-      );
-      return "failed";
+    for (const [i, shift] of (shifts ?? [0]).entries()) {
+      const first = start + shift;
+      const last = end + shift;
+      if (last > D + EPS || first < lowest - EPS) {
+        const unit = shifts === undefined ? "" : `, unidade ${i + 1} de ${shifts.length}`;
+        const adjust = shifts === undefined ? "" : ", stagger";
+        error(
+          CODES.MOTION_OUT_OF_RANGE,
+          `${attrName} de ${where}${unit} ocupa [${round6(first)}, ${round6(last)}] s e o clip tem ${round6(D)} s`,
+          kind === "enter"
+            ? `o movimento precisa terminar em ${round6(D)} s ou antes; reduza dur${adjust} ou antecipe at`
+            : `o movimento precisa caber em [0, ${round6(D)}] s; reduza dur${adjust} ou ajuste at`,
+        );
+        return "failed";
+      }
     }
   }
 
@@ -393,5 +468,7 @@ function planPreset(input: PlanInput): Planned | "failed" | "waiting" {
       return "failed";
     }
   }
-  return { kind, preset, start: round6(start), duration: round6(total), segments };
+  const plan: Planned = { kind, preset, start: round6(start), duration: round6(total), segments };
+  if (shifts !== undefined) plan.shifts = shifts;
+  return plan;
 }

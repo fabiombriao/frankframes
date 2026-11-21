@@ -1,11 +1,12 @@
 // FrankFrames — proprietário. Ver LICENSE na raiz.
 import { parse } from "parse5";
-import type { Diagnostic, MotionSource, RawClip, RawComposition } from "./types.ts";
+import type { Diagnostic, MotionSource, MotionSplit, RawClip, RawComposition } from "./types.ts";
 import { CODES, diag } from "./errors.ts";
 import { parseFps, parseTimeExpr } from "./timing.ts";
-import { MEDIA_TAGS, hasMotion, isHost, isTimed, motionAttrsOf, motionElements } from "./motion/targets.ts";
+import { MEDIA_TAGS, hasMotion, hasSplit, isHost, isTimed, motionAttrsOf, motionElements } from "./motion/targets.ts";
 import type { DomNode } from "./motion/targets.ts";
 import { parseKeyframes } from "./motion/keyframes.ts";
+import { buildSplit, orphanUnits } from "./motion/split.ts";
 
 type P5Node = DomNode;
 
@@ -255,13 +256,35 @@ function buildClip(
         : undefined;
     const attrs = motionAttrsOf(element);
     const visual = parsedKeyframes?.visual ?? [];
+    // `data-split` (§7b.8): validado aqui, onde há DOM para contar as unidades.
+    const rawSplit = attr(element, "data-split");
+    let split: MotionSplit | undefined;
+    if (rawSplit !== undefined) {
+      const built = buildSplit(element, rawSplit, `"${id}" (${element.nodeName}${own ? "" : ", descendente"})`);
+      if (!built.ok) {
+        for (const problem of built.problems) {
+          diagnostics.push(diag(problem.code, "error", problem.message, { clipId: id, hint: problem.hint }));
+        }
+        continue;
+      }
+      split = built.split;
+    }
     // Elemento só com volume (ou com keyframes inválidos) não é alvo de motion; o ordinal já foi contado.
     if (Object.keys(attrs).length === 0 && visual.length === 0) continue;
     const source: MotionSource = { clipId: id, ordinal: position, tag: element.nodeName, own, attrs };
     const style = attr(element, "style");
     if (style !== undefined) source.style = style;
     if (visual.length > 0) source.keyframes = visual;
+    if (split !== undefined) source.split = split;
     counter.motion.push(source);
+  }
+  for (const orphan of orphanUnits(node, isSubComposition)) {
+    diagnostics.push(
+      diag(CODES.MOTION_TARGET, "error", `data-unit em <${orphan.nodeName}> fora de data-split em "${id}"`, {
+        clipId: id,
+        hint: 'data-unit só vale dentro de um elemento com data-split (por exemplo data-split="word")',
+      }),
+    );
   }
   if (MEDIA[tag] === true) clip.hasAudio = tag === "audio" || (tag === "video" && attr(node, "data-has-audio") !== "false");
   return clip;
@@ -312,8 +335,8 @@ function checkMotionOutsideClips(root: P5Node, diagnostics: Diagnostic[]): void 
   const visit = (node: P5Node, isRoot: boolean): void => {
     if (node.nodeName === "#text" || node.nodeName === "#comment") return;
     if (!isRoot && (isTimed(node) || isHost(node))) return;
-    if (hasMotion(node)) {
-      const names = Object.keys(motionAttrsOf(node)).map((kind) => `data-${kind}`).join(", ");
+    if (hasMotion(node) || hasSplit(node)) {
+      const names = [...Object.keys(motionAttrsOf(node)).map((kind) => `data-${kind}`), ...(hasSplit(node) ? ["data-split"] : [])].join(", ");
       diagnostics.push(
         diag(CODES.MOTION_TARGET, "error", `${names} em <${node.nodeName}> fora de qualquer clip${isRoot ? " (é a raiz)" : ""}`, {
           hint: "coloque o atributo num elemento temporizado (data-start) ou dentro dele",

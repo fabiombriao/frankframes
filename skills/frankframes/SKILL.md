@@ -74,6 +74,12 @@ Presets de entrada (12): `surgir`, `subir`, `descer`, `chegar-esquerda`, `chegar
 `partir-baixo`, `partir-esquerda`, `partir-direita`, `recuar`, `desfocar`, `fechar`. De ênfase (6):
 `pulsar`, `balancar`, `tremer`, `respirar`, `piscar`, `quicar`.
 
+Tipografia cinética: `data-split="word"` (ou `letter`, com `stagger=<s>` e `order=forward|reverse|center`)
+no elemento com texto, mais `data-enter`/`data-exit`/`data-emphasis` no mesmo elemento, anima cada palavra
+(ou letra) em sequência. Exemplo: `<h1 data-clip-id="t" data-start="0" data-duration="4"
+data-split="word stagger=0.08" data-enter="subir">Coração e emoção</h1>`. Não ponha motion em elemento
+interno do texto. `letter` não serve para árabe (perde a ligação entre letras): use `word`.
+
 Chaves comuns: `dur` (segundos), `at` (instante: `0.5`, `50%`, `end`, `end-0.3`) e `curve` (`suave`,
 `freio`, `arranque`, `vaivem`, `mola`, `cubic-bezier(...)`). Cada preset acrescenta `distance`
 (`32`, `32px` ou `10%`), `amount`, `dir` (`left|right|up|down`) ou `repeat`. `mola` só assenta com `dur` longo
@@ -141,7 +147,8 @@ quando tiver espaço: `font-family: "Space Grotesk", sans-serif`.
 
 - `frankframes captions <audio> -o legendas.html` gera a composição de legendas. Se o provedor devolver
   tempos por palavra, a saída é **karaokê**: cada palavra acende quando é falada
-  (`animation-delay` absoluto) e as anteriores ficam na cor de destaque.
+  (`animation-delay` absoluto) e as anteriores ficam na cor de destaque. Com `--motion "<preset de
+  entrada>"` (ex.: `--motion "subir"`), cada palavra também entra com esse preset, na hora em que é falada.
 - Papel no mix: `data-audio-role="voice"` faz a música com `data-audio-role="music"` abaixar 9 dB.
 - Entrega sai normalizada a −14 LUFS; use `--no-loudness` só para pós-produção externa.
 - Animações CSS começam no tempo 0 da composição. Para a entrada acontecer quando o clip aparece,

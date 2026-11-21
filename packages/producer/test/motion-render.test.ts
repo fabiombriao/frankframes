@@ -10,6 +10,7 @@ import { promisify } from "node:util";
 import { openSession, openSessionFor, resolveChrome, startServer } from "@frankframes/engine";
 import { evaluateCurve } from "@frankframes/contract";
 import { compileComposition } from "../src/compile.ts";
+import { buildCaptionComposition } from "../src/captions.ts";
 import { RenderError, renderComposition } from "../src/render.ts";
 
 const run = promisify(execFile);
@@ -318,6 +319,104 @@ test("keyframes visuais: cada propriedade segue a curva do trecho no Chrome e o 
     for (const frame of frames) ordered.set(frame, await hashOf(frame));
     for (const frame of frames) assert.equal(await hashOf(frame), ordered.get(frame), `frame ${frame} mudou ao repetir`);
     for (const frame of [...frames].reverse()) assert.equal(await hashOf(frame), ordered.get(frame), `frame ${frame} mudou na ordem inversa`);
+    assert.deepEqual(session.pageErrors(), []);
+  } finally {
+    await session.close();
+    await server.close();
+  }
+});
+
+// ---- Tipografia cinética (§7b.8) ----
+
+const PHRASE = "Coração, ação e emoção 👍🏽";
+
+const SPLIT = page(
+  "h1{position:absolute;left:20px;top:20px;width:240px;margin:0;color:#fff;font:700 40px/1.2 Inter, sans-serif}",
+  `<h1 id="t" data-clip-id="t" data-start="0" data-duration="4" data-split="letter stagger=0.05" data-enter="subir dur=0.4">${PHRASE}</h1>`,
+);
+
+test("data-split letter: texto intacto, fonte herdada, palavra sem quebra no meio e frames independentes de ordem", { timeout: 300_000 }, async (t) => {
+  if (!(await chromeOrSkip(t))) return;
+
+  const dir = await mkdtemp(join(tmpdir(), "ff-split-"));
+  const compiled = await compileComposition({ entryHtml: SPLIT, entryDir: dir });
+  assert.equal(compiled.composition.ok, true, JSON.stringify(compiled.composition.diagnostics));
+
+  const server = await startServer(dir, { page: { path: "index.html", html: compiled.html } });
+  const session = await openSessionFor(server, { url: `${server.url}index.html`, viewport: VIEWPORT, gpu: "auto" });
+  try {
+    await session.seekFrame(90, FPS);
+    const facts = await session.evaluate<{ text: string; fonts: string[]; parent: string; broken: number; units: number; opacities: string[] }>(`(() => {
+      const h1 = document.getElementById("t");
+      const units = [...h1.querySelectorAll("[data-ff-unit]")];
+      // dentro de cada palavra (span nowrap) todas as letras ficam na mesma linha
+      const words = [...h1.querySelectorAll("span:not([data-ff-unit])")];
+      const broken = words.filter((w) => new Set([...w.querySelectorAll("[data-ff-unit]")].map((u) => u.offsetTop)).size > 1).length;
+      return {
+        text: h1.innerText,
+        fonts: units.map((u) => getComputedStyle(u).fontFamily),
+        parent: getComputedStyle(h1).fontFamily,
+        broken,
+        units: units.length,
+        opacities: units.map((u) => getComputedStyle(u).opacity),
+      };
+    })()`);
+    assert.equal(facts.text, PHRASE, "innerText igual ao original (sem acento solto, emoji inteiro)");
+    assert.ok(facts.fonts.every((font) => font === facts.parent), `fonte das unidades ${new Set(facts.fonts).size} diferente da do pai`);
+    assert.equal(facts.broken, 0, "nenhuma palavra quebra no meio");
+    assert.equal(facts.units, [...new Intl.Segmenter("und", { granularity: "grapheme" }).segment(PHRASE.replace(/\s/g, ""))].length);
+    assert.ok(facts.opacities.every((o) => o === "1"), "depois da última entrada tudo está visível");
+
+    const frames = [0, 5, 12, 25, 40, 60];
+    const hashOf = async (frame: number): Promise<string> => {
+      await session.seekFrame(frame, FPS);
+      return (await session.capture()).sha256;
+    };
+    const ordered = new Map<number, string>();
+    for (const frame of frames) ordered.set(frame, await hashOf(frame));
+    assert.notEqual(ordered.get(0), ordered.get(25), "as letras entram ao longo do tempo");
+    for (const frame of frames) assert.equal(await hashOf(frame), ordered.get(frame), `frame ${frame} mudou ao repetir`);
+    for (const frame of [...frames].reverse()) assert.equal(await hashOf(frame), ordered.get(frame), `frame ${frame} mudou na ordem inversa`);
+    assert.deepEqual(session.pageErrors(), []);
+  } finally {
+    await session.close();
+    await server.close();
+  }
+});
+
+test("legendas com motion renderizam sem erro de página e as palavras entram no instante falado", { timeout: 300_000 }, async (t) => {
+  if (!(await chromeOrSkip(t))) return;
+
+  const dir = await mkdtemp(join(tmpdir(), "ff-caps-"));
+  const html = buildCaptionComposition(
+    [
+      {
+        start: 0,
+        end: 3,
+        text: "olá mundo lindo",
+        words: [
+          { start: 0, end: 0.5, word: "olá" },
+          { start: 1, end: 1.5, word: "mundo" },
+          { start: 2, end: 2.5, word: "lindo" },
+        ],
+      },
+    ],
+    { width: 640, height: 360, motion: { enter: "subir dur=0.3" } },
+  );
+  const compiled = await compileComposition({ entryHtml: html, entryDir: dir });
+  assert.equal(compiled.composition.ok, true, JSON.stringify(compiled.composition.diagnostics));
+
+  const server = await startServer(dir, { page: { path: "index.html", html: compiled.html } });
+  const session = await openSessionFor(server, { url: `${server.url}index.html`, viewport: VIEWPORT, gpu: "auto" });
+  try {
+    const opacities = async (frame: number): Promise<string[]> => {
+      await session.seekFrame(frame, FPS);
+      return session.evaluate<string[]>(`[...document.querySelectorAll("[data-ff-unit]")].map((u) => getComputedStyle(u).opacity)`);
+    };
+    assert.deepEqual(await opacities(0), ["0", "0", "0"], "no começo nenhuma palavra apareceu");
+    assert.deepEqual(await opacities(20), ["1", "0", "0"], "aos 0,67 s só a primeira");
+    assert.deepEqual(await opacities(50), ["1", "1", "0"], "aos 1,67 s as duas primeiras");
+    assert.deepEqual(await opacities(80), ["1", "1", "1"], "aos 2,67 s todas");
     assert.deepEqual(session.pageErrors(), []);
   } finally {
     await session.close();

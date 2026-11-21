@@ -131,3 +131,129 @@ test("E_MOTION_RUNTIME é um código de render publicado", () => {
   const payload = toErrorPayload({ code: "E_MOTION_RUNTIME", stage: "capture", message: "x" });
   assert.equal(payload.code, "E_MOTION_RUNTIME");
 });
+
+// ---- Tipografia cinética: reescrita do texto (§7b.8) ----
+
+interface UnitInfo {
+  index: string;
+  text: string;
+  style: string;
+  motion?: MotionRuntimeSpec;
+}
+
+/** Texto de um nó, concatenando os descendentes de texto. */
+function textContent(node: Record<string, unknown>): string {
+  if (node["nodeName"] === "#text") return String(node["value"]);
+  const kids = [
+    ...(((node["content"] as { childNodes?: Array<Record<string, unknown>> } | undefined)?.childNodes) ?? []),
+    ...((node["childNodes"] as Array<Record<string, unknown>> | undefined) ?? []),
+  ];
+  return kids.map(textContent).join("");
+}
+
+/** Elemento com `id` e suas unidades `data-ff-unit` na ordem do documento. */
+function unitsOf(html: string, id: string): { text: string; units: UnitInfo[]; nowrap: number } {
+  const document = parse(html) as unknown as { childNodes: Array<Record<string, unknown>> };
+  let found: Record<string, unknown> | undefined;
+  const attrsOf = (node: Record<string, unknown>): Array<{ name: string; value: string }> =>
+    (node["attrs"] as Array<{ name: string; value: string }> | undefined) ?? [];
+  const find = (nodes: Array<Record<string, unknown>> | undefined): void => {
+    for (const node of nodes ?? []) {
+      if (attrsOf(node).some((a) => a.name === "id" && a.value === id)) found = node;
+      find(node["childNodes"] as Array<Record<string, unknown>> | undefined);
+    }
+  };
+  find(document.childNodes);
+  assert.ok(found, `elemento ${id} não encontrado`);
+  const units: UnitInfo[] = [];
+  let nowrap = 0;
+  const walk = (node: Record<string, unknown>): void => {
+    const attrs = attrsOf(node);
+    const index = attrs.find((a) => a.name === "data-ff-unit")?.value;
+    if (index !== undefined) {
+      const motion = attrs.find((a) => a.name === "data-ff-motion")?.value;
+      units.push({
+        index,
+        text: textContent(node),
+        style: attrs.find((a) => a.name === "style")?.value ?? "",
+        ...(motion !== undefined ? { motion: JSON.parse(motion) as MotionRuntimeSpec } : {}),
+      });
+    } else if (attrs.some((a) => a.name === "style" && a.value === "white-space:nowrap")) {
+      nowrap++;
+    }
+    for (const child of (node["childNodes"] as Array<Record<string, unknown>> | undefined) ?? []) walk(child);
+  };
+  for (const child of (found["childNodes"] as Array<Record<string, unknown>> | undefined) ?? []) walk(child);
+  return { text: textContent(found), units, nowrap };
+}
+
+test("data-split word: n spans data-ff-unit, texto igual ao original e data-ff-motion com atraso crescente", async () => {
+  const original = "Olá,  mundo ação";
+  const entryHtml = wrap(
+    `<h1 id="t" data-clip-id="t" data-start="1" data-duration="4" data-split="word stagger=0.1" data-enter="surgir">${original}</h1>`,
+  );
+  const compiled = await compileComposition({ entryHtml, entryDir: "." });
+  assert.equal(compiled.composition.ok, true, JSON.stringify(compiled.composition.diagnostics));
+  const { text, units, nowrap } = unitsOf(compiled.html, "t");
+  assert.equal(text, original, "o textContent não muda (acentos e espaços duplos)");
+  assert.deepEqual(units.map((u) => u.text), ["Olá,", "mundo", "ação"]);
+  assert.deepEqual(units.map((u) => u.index), ["0", "1", "2"]);
+  assert.equal(nowrap, 0, "o modo word não usa o span nowrap");
+  assert.ok(units.every((u) => u.style === "display:inline-block"));
+  const delays = units.map((u) => u.motion!.a[0]!.d);
+  assert.deepEqual(delays, [1000, 1100, 1200]);
+  assert.equal(specs(compiled.html)["t"], undefined, "o elemento em si não recebe data-ff-motion sem data-keyframes");
+});
+
+test("data-split letter: grafemas inteiros, uma span nowrap por palavra, texto intacto", async () => {
+  const original = "Coração, ação 👍🏽 é";
+  const entryHtml = wrap(
+    `<h1 id="t" data-clip-id="t" data-start="0" data-duration="4" data-split="letter" data-enter="subir">${original}</h1>`,
+  );
+  const compiled = await compileComposition({ entryHtml, entryDir: "." });
+  assert.equal(compiled.composition.ok, true, JSON.stringify(compiled.composition.diagnostics));
+  const { text, units, nowrap } = unitsOf(compiled.html, "t");
+  assert.equal(text, original);
+  assert.equal(nowrap, 4, "Coração, | ação | 👍🏽 | é");
+  assert.ok(units.some((u) => u.text === "👍🏽"), "emoji com modificador é uma unidade");
+  assert.ok(units.some((u) => u.text === "é"), "acento decomposto fica com a letra");
+  const delays = units.map((u) => u.motion!.a.find((a) => a.p === "opacity")!.d);
+  assert.deepEqual(delays, [...delays].sort((a, b) => a - b));
+  assert.equal(new Set(delays).size, delays.length, "cada unidade começa num instante próprio");
+});
+
+test("data-split: texto com < & é escapado pelo serializer", async () => {
+  const entryHtml = wrap(
+    `<p id="t" data-clip-id="t" data-start="0" data-duration="3" data-split="word" data-enter="surgir">a &lt;b&gt; &amp; c</p>`,
+  );
+  const compiled = await compileComposition({ entryHtml, entryDir: "." });
+  assert.equal(compiled.composition.ok, true, JSON.stringify(compiled.composition.diagnostics));
+  assert.equal(unitsOf(compiled.html, "t").text, "a <b> & c");
+  assert.match(compiled.html, /&lt;b&gt;/);
+  assert.doesNotMatch(compiled.html, /<b>/);
+});
+
+test("data-split explícito: data-unit ganha data-ff-unit, inline-block e a âncora", async () => {
+  const entryHtml = wrap(
+    `<p id="t" data-clip-id="t" data-start="0" data-duration="4" data-split="word stagger=0" data-enter="surgir">` +
+      `<span data-unit="0.5">um</span> <span data-unit="1.25" style="color:red">dois</span></p>`,
+  );
+  const compiled = await compileComposition({ entryHtml, entryDir: "." });
+  assert.equal(compiled.composition.ok, true, JSON.stringify(compiled.composition.diagnostics));
+  const { units } = unitsOf(compiled.html, "t");
+  assert.deepEqual(units.map((u) => u.text), ["um", "dois"]);
+  assert.deepEqual(units.map((u) => u.motion!.a[0]!.d), [500, 1250]);
+  assert.equal(units[0]!.style, "display:inline-block");
+  assert.equal(units[1]!.style, "color:red;display:inline-block");
+});
+
+test("data-split junto com data-keyframes: o elemento mantém o próprio data-ff-motion", async () => {
+  const entryHtml = wrap(
+    `<h1 id="t" data-clip-id="t" data-start="0" data-duration="4" data-split="word" data-enter="surgir" ` +
+      `data-keyframes='[{"time":0,"x":0},{"time":1,"x":20}]'>um dois</h1>`,
+  );
+  const compiled = await compileComposition({ entryHtml, entryDir: "." });
+  assert.equal(compiled.composition.ok, true, JSON.stringify(compiled.composition.diagnostics));
+  assert.deepEqual(specs(compiled.html)["t"]!.a.map((a) => a.p), ["--ff-x"]);
+  assert.equal(unitsOf(compiled.html, "t").units.length, 2);
+});

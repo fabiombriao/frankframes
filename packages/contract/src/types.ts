@@ -76,6 +76,23 @@ export interface VisualKeyframe {
   curve: string;
 }
 
+/** `data-split` já validado (§7b.8): como o texto vira unidades e o tempo entre elas. */
+export interface MotionSplit {
+  mode: "word" | "letter";
+  /** Segundos entre unidades consecutivas (de posto em posto). */
+  stagger: number;
+  order: "forward" | "reverse" | "center";
+  /** `true` quando o autor marcou as unidades com `data-unit` (não há segmentação). */
+  explicit: boolean;
+  /** Uma entrada por unidade, na ordem do documento. */
+  units: Array<{
+    /** `data-unit="<s>"`: início fixo da entrada, em segundos locais ao clip. */
+    anchor?: number;
+    /** `style` inline da unidade explícita, para detectar conflito de posse. */
+    style?: string;
+  }>;
+}
+
 /** Um elemento com atributos de motion, como o autor escreveu (ainda sem validar). */
 export interface MotionSource {
   /** Clip dono: o próprio elemento ou o clip temporizado mais próximo acima dele. */
@@ -91,6 +108,8 @@ export interface MotionSource {
   style?: string;
   /** Pontos visuais de `data-keyframes` (§7b.7), por ordem de `time`. Ausente quando não há. */
   keyframes?: VisualKeyframe[];
+  /** `data-split` (§7b.8): enter/exit/emphasis passam a valer por unidade. Ausente quando não há. */
+  split?: MotionSplit;
 }
 
 export interface MotionKey {
@@ -114,7 +133,12 @@ export interface MotionTrack {
 export interface MotionTarget {
   ordinal: number;
   tag: string;
+  /** Trilhas do próprio elemento. Com `data-split`, só o que não é por unidade (`data-keyframes`). */
   tracks: MotionTrack[];
+  /** Com `data-split`: as trilhas de cada unidade, na ordem do documento (§7b.8). */
+  units?: MotionTrack[][];
+  /** Com `data-split`: como o producer reescreve o texto. */
+  split?: { mode: "word" | "letter"; explicit: boolean };
 }
 
 export interface RawComposition {

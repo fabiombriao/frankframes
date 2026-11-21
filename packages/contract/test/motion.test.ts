@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { parse } from "parse5";
-import { CODES, emitEasing, evaluateCurve, listPresets, loadComposition, mergeSegments, motionElements, parseCurve, parseMotionValue, resolveCurve } from "../src/index.ts";
+import { CODES, emitEasing, evaluateCurve, listPresets, loadComposition, mergeSegments, motionElements, parseCurve, parseMotionValue, resolveCurve, splitText, unitRanks } from "../src/index.ts";
 import type { Composition } from "../src/index.ts";
 
 const SUAVE = "cubic-bezier(0.34, 0.1, 0.18, 1)";
@@ -778,4 +778,155 @@ test("presets: parâmetro de outro preset é rejeitado", () => {
   assert.ok(codes(c).includes("E_MOTION_PARAM"));
   assert.equal(clip('data-enter="subir amount=2"').ok, false);
   assert.equal(clip('data-enter="focar dir=left"').ok, false);
+});
+
+// ---- Tipografia cinética: data-split (§7b.8) ----
+
+const textOf = (pieces: Array<{ text: string }>): string => pieces.map((p) => p.text).join("");
+const unitsOf = (text: string, mode: "word" | "letter"): string[] => splitText(text, mode).filter((p) => p.unit).map((p) => p.text);
+
+test("splitText word: pontuação gruda, espaço fica solto e byte a byte", () => {
+  assert.deepEqual(splitText("Olá, mundo!", "word"), [
+    { text: "Olá,", unit: true },
+    { text: " ", unit: false },
+    { text: "mundo!", unit: true },
+  ]);
+  const spaced = splitText("ação  já", "word");
+  assert.deepEqual(spaced.map((p) => p.text), ["ação", "  ", "já"]);
+  assert.deepEqual(unitsOf("“Sim”", "word"), ["“Sim”"]);
+  assert.deepEqual(unitsOf("¿Qué tal?", "word"), ["¿Qué", "tal?"]);
+  // emoji isolado entre espaços anima com o resto
+  assert.deepEqual(unitsOf("ok 👍🏽 já", "word"), ["ok", "👍🏽", "já"]);
+});
+
+test("splitText letter: grafema por unidade e índice de palavra", () => {
+  const info = `Node ${process.versions.node}, ICU ${process.versions.icu}`;
+  const units = unitsOf("é 👍🏽 👨‍👩‍👧", "letter");
+  assert.equal(units.length, 3, `Intl.Segmenter("und") deu ${units.length} unidades (${info}): ${JSON.stringify(units)}`);
+  const pieces = splitText("ab c", "letter");
+  assert.deepEqual(pieces.map((p) => p.word), [0, 0, undefined, 1]);
+  assert.equal(textOf(pieces), "ab c");
+});
+
+test("splitText: a soma dos pedaços reconstrói a entrada (50 strings com seed fixa)", () => {
+  // xorshift32 determinístico: nada de Math.random
+  let state = 0x9e3779b9;
+  const next = (): number => {
+    state ^= state << 13;
+    state >>>= 0;
+    state ^= state >>> 17;
+    state ^= state << 5;
+    state >>>= 0;
+    return state;
+  };
+  const alphabet = ["a", "Z", "é", "é", "ç", "ã", " ", " ", "  ", "\t", "\n", ",", ".", "!", "“", "”", "¿", "-", "—", "1", "42", "👍🏽", "👨‍👩‍👧", "🇧🇷", "ا", "漢"];
+  for (let i = 0; i < 50; i++) {
+    const length = 1 + (next() % 24);
+    let text = "";
+    for (let j = 0; j < length; j++) text += alphabet[next() % alphabet.length]!;
+    for (const mode of ["word", "letter"] as const) {
+      assert.equal(textOf(splitText(text, mode)), text, `${mode}: ${JSON.stringify(text)} (Node ${process.versions.node}, ICU ${process.versions.icu})`);
+    }
+  }
+});
+
+test("unitRanks: forward, reverse e center", () => {
+  assert.deepEqual(unitRanks(3, "forward"), { ranks: [0, 1, 2], max: 2 });
+  assert.deepEqual(unitRanks(3, "reverse"), { ranks: [2, 1, 0], max: 2 });
+  assert.deepEqual(unitRanks(4, "center"), { ranks: [1, 0, 0, 1], max: 1 });
+  assert.deepEqual(unitRanks(0, "center"), { ranks: [], max: 0 });
+});
+
+const splitClip = (attrs: string, inner = "um dois três", duration = 5): Composition =>
+  loadComposition(root(`<h1 data-clip-id="c" data-start="0" data-duration="${duration}" ${attrs}>${inner}</h1>`));
+
+/** Início da trilha `prop` de cada unidade do primeiro alvo de `c`. */
+const unitStarts = (c: Composition, prop = "opacity"): number[] =>
+  (c.motion["c"]?.[0]?.units ?? []).map((tracks) => tracks.find((t) => t.prop === prop)!.start);
+
+test("split: 3 palavras com stagger=0.1 entram em 0, 0.1 e 0.2", () => {
+  const c = splitClip('data-split="word stagger=0.1" data-enter="surgir"');
+  assert.equal(c.ok, true, JSON.stringify(c.diagnostics));
+  assert.deepEqual(unitStarts(c), [0, 0.1, 0.2]);
+  const target = c.motion["c"]![0]!;
+  assert.deepEqual(target.tracks, []);
+  assert.deepEqual(target.split, { mode: "word", explicit: false });
+});
+
+test("split: order=reverse e center; padrão de stagger por modo", () => {
+  assert.deepEqual(unitStarts(splitClip('data-split="word stagger=0.1 order=reverse" data-enter="surgir"')), [0.2, 0.1, 0]);
+  assert.deepEqual(unitStarts(splitClip('data-split="word stagger=0.1 order=center" data-enter="surgir"', "a b c d")), [0.1, 0, 0, 0.1]);
+  assert.deepEqual(unitStarts(splitClip('data-split="word" data-enter="surgir"')), [0, 0.06, 0.12]);
+  assert.deepEqual(unitStarts(splitClip('data-split="letter" data-enter="surgir"', "abc")), [0, 0.03, 0.06]);
+});
+
+test("split: saída termina em D na última unidade e a ênfase começa depois da última entrada", () => {
+  const exit = splitClip('data-split="word stagger=0.1" data-exit="apagar"');
+  assert.equal(exit.ok, true, JSON.stringify(exit.diagnostics));
+  const ends = (exit.motion["c"]![0]!.units ?? []).map((tracks) => tracks[0]!.start + tracks[0]!.duration);
+  assert.deepEqual(ends.map((n) => Number(n.toFixed(6))), [4.8, 4.9, 5]);
+  const both = splitClip('data-split="word stagger=0.1" data-enter="surgir" data-emphasis="pulsar"');
+  assert.equal(both.ok, true, JSON.stringify(both.diagnostics));
+  // entrada termina em 0.5 + 0.2 na última unidade; a ênfase da unidade 0 começa aí
+  assert.equal(unitStarts(both, "--ff-sx")[0], 0.7);
+  assert.equal(unitStarts(both, "--ff-sx")[2], 0.9);
+});
+
+test("split: stagger que estoura a duração dá E_MOTION_OUT_OF_RANGE com a unidade", () => {
+  const c = splitClip('data-split="word stagger=1" data-enter="surgir at=4"', "um dois três", 5);
+  assert.equal(c.ok, false);
+  const error = c.diagnostics.find((d) => d.code === "E_MOTION_OUT_OF_RANGE");
+  assert.ok(error, JSON.stringify(c.diagnostics));
+  assert.match(error.message, /unidade 2 de 3/);
+  assert.match(error.hint ?? "", /stagger/);
+});
+
+test("split: unidades explícitas usam data-unit; vazio segue o stagger", () => {
+  const c = splitClip(
+    'data-split="word stagger=0.2" data-enter="surgir"',
+    '<span data-unit="1.5">a</span> <span data-unit>b</span> <span data-unit="0.25">c</span>',
+  );
+  assert.equal(c.ok, true, JSON.stringify(c.diagnostics));
+  // sem âncora: posto 1 × 0.2
+  assert.deepEqual(unitStarts(c), [1.5, 0.2, 0.25]);
+  assert.deepEqual(c.motion["c"]![0]!.split, { mode: "word", explicit: true });
+});
+
+test("split: erros de uso", () => {
+  const sem = splitClip('data-split="word"');
+  assert.equal(sem.ok, false);
+  assert.equal(sem.diagnostics.find((d) => d.code === "E_MOTION_TARGET")?.hint, "data-split precisa de data-enter, data-exit ou data-emphasis");
+
+  const vazio = splitClip('data-split="word" data-enter="surgir"', "  ");
+  assert.ok(vazio.diagnostics.some((d) => d.code === "E_MOTION_TARGET" && /data-split sem texto/.test(d.hint ?? "")));
+
+  const interno = splitClip('data-split="word" data-enter="surgir"', 'um <b data-enter="surgir">dois</b>');
+  assert.ok(interno.diagnostics.some((d) => d.code === "E_MOTION_TARGET" && /<b>/.test(d.message)));
+
+  const modo = splitClip('data-split="linha" data-enter="surgir"');
+  assert.ok(modo.diagnostics.some((d) => d.code === "E_MOTION_SYNTAX"));
+  assert.ok(splitClip('data-split="word stagger=x" data-enter="surgir"').diagnostics.some((d) => d.code === "E_MOTION_PARAM"));
+  assert.ok(splitClip('data-split="word order=meio" data-enter="surgir"').diagnostics.some((d) => d.code === "E_MOTION_PARAM"));
+  assert.ok(splitClip('data-split="word ritmo=1" data-enter="surgir"').diagnostics.some((d) => d.code === "E_MOTION_PARAM"));
+
+  const unit = splitClip('data-split="word" data-enter="surgir"', '<span data-unit="x">a</span>');
+  assert.ok(unit.diagnostics.some((d) => d.code === "E_MOTION_PARAM" && /data-unit/.test(d.message)));
+
+  const orfa = splitClip('data-enter="surgir"', '<span data-unit="1">a</span>');
+  assert.ok(orfa.diagnostics.some((d) => d.code === "E_MOTION_TARGET" && /fora de data-split/.test(d.message)));
+
+  const camera = splitClip('data-split="word" data-enter="surgir" data-transition="surgir"');
+  assert.equal(camera.ok, false);
+});
+
+test("split: data-keyframes no mesmo elemento fica no elemento; style inline de unidade explícita conflita", () => {
+  const c = splitClip('data-split="word" data-enter="surgir" data-keyframes=\'[{"time":0,"x":0},{"time":1,"x":10}]\'');
+  assert.equal(c.ok, true, JSON.stringify(c.diagnostics));
+  const target = c.motion["c"]![0]!;
+  assert.deepEqual(target.tracks.map((t) => t.prop), ["--ff-x"]);
+  assert.equal(target.units?.length, 3);
+
+  const conflito = splitClip('data-split="word" data-enter="subir"', '<span data-unit style="translate: 3px">a</span>');
+  assert.equal(conflito.ok, false);
+  assert.ok(conflito.diagnostics.some((d) => d.code === "E_MOTION_CONFLICT" && /unidade 1/.test(d.message)));
 });

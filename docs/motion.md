@@ -36,6 +36,15 @@ Outra curva em todos os trechos do preset (`curve=` vale também para as curvas 
 <div data-clip-id="aviso" data-start="0" data-duration="3" data-enter="chegar-esquerda curve=cubic-bezier(0.3,0,0.2,1)">!</div>
 ```
 
+Tipografia cinética. `data-split` aplica a entrada, a saída e a ênfase do mesmo elemento a cada palavra (ou
+letra), uma depois da outra; `stagger` é o intervalo entre unidades e `order` a ordem (§7b.8):
+
+```html
+<h1 data-clip-id="manchete" data-start="0" data-duration="4"
+    data-split="word stagger=0.08 order=center" data-enter="subir dur=0.5">Coração, ação e emoção</h1>
+<h2 data-clip-id="marca" data-start="0" data-duration="3" data-split="letter" data-enter="surgir">FrankFrames</h2>
+```
+
 Para o que o motion não cobre (cor, stroke, largura), `@keyframes` de CSS continua valendo. Para o que nenhum
 preset faz, use `data-keyframes` (§7b.7).
 
