@@ -83,3 +83,58 @@ export function renderTransitionSection(
   presets: MotionPresets,
   onChange: (change: TransitionChange) => void,
 ): void;
+
+export interface KeyframePointData {
+  time: number;
+  curve?: string;
+  [prop: string]: number | string | undefined;
+}
+
+export interface KeyframeClip {
+  id: string;
+  tag: string;
+  start: number | null;
+  duration: number | null;
+  hasAudio?: boolean;
+  editable?: boolean;
+  keyframes?: KeyframePointData[] | null;
+  descendantKeyframeTimes?: number[];
+}
+
+export interface KeyframeMark {
+  time: number;
+  x: number;
+  props: string[];
+  curve: string | null;
+  readOnly: boolean;
+}
+
+export interface KeyframeChange {
+  time: number;
+  prop?: string;
+  value?: number | string;
+  curve?: string | null;
+}
+
+export const KEYFRAME_PROPS: Array<{ prop: string; label: string; camera?: true }>;
+export const KEYFRAME_CURVES: string[];
+export function keyframePropsFor(clip: Pick<KeyframeClip, "tag" | "hasAudio">): Array<{ prop: string; label: string }>;
+export function parseKeyframeValue(prop: string, text: string): number | string | null;
+export function keyframeMarks(
+  clip: Pick<KeyframeClip, "keyframes" | "descendantKeyframeTimes">,
+  timeToX: (time: number) => number,
+): KeyframeMark[];
+export function renderKeyframeSection(
+  container: HTMLElement,
+  clip: KeyframeClip,
+  options: {
+    playhead: number;
+    selected: number | null;
+    prop: string;
+    onProp: (prop: string) => void;
+    onAdd: (prop: string) => void;
+    onSelect: (time: number | null) => void;
+    onEdit: (change: KeyframeChange) => void;
+    onRemove: (time: number) => void;
+  },
+): void;

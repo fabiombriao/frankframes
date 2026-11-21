@@ -25,6 +25,11 @@ export interface ClipPatch {
   attributes?: Record<string, string | null>;
   /** Substitui o texto do elemento — só quando ele tem um único nó de texto. */
   text?: string;
+  /**
+   * Atributos escritos entre aspas simples (JSON legível: `data-keyframes='[{"time":1}]'`). O valor
+   * guarda `"` sem escape; só `&` e `'` viram entidade.
+   */
+  singleQuoted?: string[];
 }
 
 export class EditError extends Error {
@@ -35,7 +40,11 @@ export class EditError extends Error {
     | "E_ATTRIBUTE_INVALID"
     | "E_SPLIT_UNSUPPORTED"
     | "E_SPLIT_OUT_OF_RANGE"
-    | "E_TRANSITION_GAP";
+    | "E_TRANSITION_GAP"
+    | "E_KEYFRAME_NOT_FOUND"
+    | "E_KEYFRAME_EXISTS"
+    | "E_KEYFRAME_PROP"
+    | "E_KEYFRAME_OUT_OF_RANGE";
 
   constructor(code: EditError["code"], message: string) {
     super(message);
@@ -91,6 +100,12 @@ function escapeAttribute(value: string): string {
   return value.replace(/&/g, "&amp;").replace(/"/g, "&quot;");
 }
 
+/** `nome="valor"`, ou `nome='valor'` quando o patch pede aspas simples para esse atributo. */
+function attributeText(patch: ClipPatch, name: string, value: string): string {
+  if (patch.singleQuoted?.includes(name) !== true) return `${name}="${escapeAttribute(value)}"`;
+  return `${name}='${value.replace(/&/g, "&amp;").replace(/'/g, "&#39;")}'`;
+}
+
 /**
  * Edita atributos e texto mantendo o arquivo original intacto fora dos trechos
  * alterados — usa a localização do parse5 em vez de re-serializar o documento.
@@ -116,10 +131,12 @@ export function applyPatches(source: string, patches: ClipPatch[]): string {
         const start = source[range.startOffset - 1] === " " ? range.startOffset - 1 : range.startOffset;
         replacements.push({ start, end: range.endOffset, text: "" });
       } else if (range) {
-        replacements.push({ start: range.startOffset, end: range.endOffset, text: `${name}="${escapeAttribute(value)}"` });
+        replacements.push({ start: range.startOffset, end: range.endOffset, text: attributeText(patch, name, value) });
       } else {
-        const at = location.startTag.endOffset - 1;
-        replacements.push({ start: at, end: at, text: ` ${name}="${escapeAttribute(value)}"` });
+        // Elemento vazio `<img ... />`: o atributo entra antes do espaço e da barra, não depois dela.
+        let at = location.startTag.endOffset - 1;
+        if (source[at - 1] === "/") at = source[at - 2] === " " ? at - 2 : at - 1;
+        replacements.push({ start: at, end: at, text: ` ${attributeText(patch, name, value)}` });
       }
     }
 

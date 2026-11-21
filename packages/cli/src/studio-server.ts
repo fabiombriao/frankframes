@@ -15,15 +15,17 @@ import type { PreviewAudioConfig } from "@frankframes/engine";
 import {
   applyPatches,
   applyTransition,
+  editKeyframes,
   EditError,
   explicitClipIds,
+  mergeKeyframePoints,
   prepare,
   PreviewAudioError,
   renderPreviewAudio,
   resolveFfmpeg,
   splitClip,
 } from "@frankframes/producer";
-import type { ClipPatch, PreparedComposition } from "@frankframes/producer";
+import type { ClipPatch, KeyframeRequest, PreparedComposition } from "@frankframes/producer";
 import { listBlocks, motionThumbPath } from "@frankframes/catalog";
 import { HistoryStaleError, StudioHistory } from "./studio-history.ts";
 import { IMAGE_SECONDS, MediaUploadError, mediaKind, mediaMarkup, storeMedia, supportedExtensions } from "./studio-media.ts";
@@ -480,8 +482,15 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
     const explicit = explicitClipIds(source);
     // Elemento próprio de cada clip (ordinal 0): é o que o inspetor edita.
     const ownMotion = new Map<string, MotionSource>();
+    // Tempos (locais ao clip) dos keyframes dos descendentes: o Studio os mostra, só leitura.
+    const descendantTimes = new Map<string, Set<number>>();
     for (const item of parseComposition(source).motion) {
       if (item.own && item.ordinal === 0) ownMotion.set(item.clipId, item);
+      if (item.ordinal > 0 && item.keyframes !== undefined) {
+        const times = descendantTimes.get(item.clipId) ?? new Set<number>();
+        for (const point of item.keyframes) times.add(point.time);
+        descendantTimes.set(item.clipId, times);
+      }
     }
     return {
       entry: entryPath,
@@ -510,7 +519,10 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
           motionOf(ownMotion.get(clip.id) ?? { clipId: clip.id, ordinal: 0, tag: clip.tag, own: true, attrs: {} }),
           clip,
         ),
-        keyframes: ownMotion.get(clip.id)?.keyframes ?? null,
+        // Um ponto por tempo, volume e propriedades visuais juntos (docs/contract.md §9d); o que a rota
+        // `/keyframes` edita. Os descendentes só aparecem como tempos, sem edição.
+        keyframes: mergeKeyframePoints(clip.keyframes ?? [], ownMotion.get(clip.id)?.keyframes ?? []),
+        descendantKeyframeTimes: [...(descendantTimes.get(clip.id) ?? [])].sort((a, b) => a - b),
         hasChildren: clip.children.length > 0 || clip.isSubComposition,
         parentId,
         // Só clip de topo com data-clip-id explícito aceita ferramentas de edição.
@@ -682,6 +694,51 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
     sendJson(res, 200, { ok: true, duration: durationOf(composition), diagnostics: composition.diagnostics, history: history.state() });
   };
 
+  /**
+   * `POST /api/clips/<id>/keyframes` com `{op, time, ...}`; ver `editKeyframes`. O resultado passa pelo contrato
+   * (faixa dos valores, curva, sobreposição com presets) antes de ir ao arquivo.
+   */
+  const keyframes = async (clipId: string, req: IncomingMessage, res: ServerResponse): Promise<void> => {
+    const body = objectBody(await bodyJson(req));
+    const op = body.op;
+    const time = numeric(body, "time");
+    const value = body.value;
+    if (value !== undefined && typeof value !== "number" && typeof value !== "string") {
+      throw new ReplyError(400, "E_BODY_INVALID", '"value" precisa ser número ou texto');
+    }
+    const curve = body.curve;
+    if (curve !== undefined && curve !== null && typeof curve !== "string") {
+      throw new ReplyError(400, "E_BODY_INVALID", '"curve" precisa ser texto ou null');
+    }
+    const prop = body.prop;
+    if (prop !== undefined && typeof prop !== "string") throw new ReplyError(400, "E_BODY_INVALID", '"prop" precisa ser texto');
+    let request: KeyframeRequest;
+    if (op === "add") {
+      if (prop === undefined) throw new ReplyError(400, "E_BODY_INVALID", '"prop" é obrigatório em "add"');
+      if (curve === null) throw new ReplyError(400, "E_BODY_INVALID", '"curve" null só vale em "edit"');
+      request = { clipId, op, time, prop: prop as never, value, curve };
+    } else if (op === "move") {
+      request = { clipId, op, time, to: numeric(body, "to") };
+    } else if (op === "remove") {
+      request = { clipId, op, time, prop: prop as never };
+    } else if (op === "edit") {
+      request = { clipId, op, time, prop: prop as never, value, curve };
+    } else {
+      throw new ReplyError(400, "E_BODY_INVALID", '"op" precisa ser add, move, remove ou edit');
+    }
+    const source = await readFile(entryPath, "utf8");
+    let next: string;
+    try {
+      next = editKeyframes(source, request);
+    } catch (error) {
+      if (error instanceof EditError) throw new ReplyError(400, error.code, error.message);
+      throw error;
+    }
+    const composition = validated(next, "o keyframe deixaria o contrato inválido");
+    if (next !== source) await commit(`keyframe ${clipId}`, source, next);
+    sendJson(res, 200, { ok: true, duration: durationOf(composition), diagnostics: composition.diagnostics, history: history.state() });
+  };
+
   const travel = async (direction: "undo" | "redo", res: ServerResponse): Promise<void> => {
     const current = await readFile(entryPath, "utf8");
     let target: string | undefined;
@@ -832,6 +889,11 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
         const transitionMatch = /^([^/]+)\/transition$/.exec(rest);
         if (transitionMatch !== null) {
           await serial(() => transition(transitionMatch[1]!, req, res));
+          return;
+        }
+        const keyframesMatch = /^([^/]+)\/keyframes$/.exec(rest);
+        if (keyframesMatch !== null) {
+          await serial(() => keyframes(keyframesMatch[1]!, req, res));
           return;
         }
         if (rest === "" || rest.includes("/")) {

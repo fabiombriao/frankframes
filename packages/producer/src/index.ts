@@ -11,6 +11,8 @@ export { annotateCompiled, annotateTiming, mergeSubCompositions, compileComposit
 export { annotateMotion, toRuntimeSpec } from "./motion.ts";
 export type { MotionRuntimeSpec } from "./motion.ts";
 export { applyPatches, applyTransition, EditError, splitClip, explicitClipIds, locateClip, topLevelClip, referrersOf, removeRange, refSuffix } from "./edit.ts";
+export { editKeyframes, mergeKeyframePoints } from "./keyframes-edit.ts";
+export type { KeyframePoint, KeyframeProp, KeyframeRequest } from "./keyframes-edit.ts";
 export type { ClipLocation, ClipPatch, SplitRequest, TransitionRequest } from "./edit.ts";
 export { buildCaptionComposition } from "./captions.ts";
 export type { CaptionOptions, CaptionSegment } from "./captions.ts";

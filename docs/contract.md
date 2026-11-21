@@ -713,8 +713,8 @@ Qualquer outra falha de medição continua falhando alto.
 
 - **Movimento** (§7b). `GET /api/composition` traz, por clip, `motion` com só as chaves presentes no HTML
   (`enter`, `exit`, `emphasis`, `camera`, `transition`), cada uma como `{raw, preset, params}` (`preset` é
-  `null` quando o texto não é válido), mais `split` quando há `data-split`, e `keyframes` (somente leitura;
-  `null` sem `data-keyframes`). Fontes passivas (filhos que só herdam) não aparecem. `transition` ganha
+  `null` quando o texto não é válido), mais `split` quando há `data-split`. Os keyframes saem em `keyframes`
+  no próprio clip (lista unificada, ver "Keyframes" abaixo). Fontes passivas (filhos que só herdam) não aparecem. `transition` ganha
   `dur` (a sobreposição: o deslocamento negativo de `data-start`, `null` se não for uma referência com
   deslocamento negativo) e `partner` (o id de A referenciado em `data-start`, ou `null`); ambos são só leitura
   e a escrita é `POST /api/clips/<id>/transition`.
@@ -746,6 +746,42 @@ Qualquer outra falha de medição continua falhando alto.
   O inspetor mostra a seção "Transição" só quando B já tem transição ou há um clip da raiz encostado nele, e a
   timeline desenha uma faixa hachurada de largura `dur` no começo da barra de B; clicar nela seleciona B e leva
   à seção.
+
+- **Keyframes** (`POST /api/clips/<id>/keyframes`, corpo `{op, time, ...}`). Edita o `data-keyframes` (§7b)
+  do próprio clip, nunca o de filhos. `time` é local ao clip (0 = início do clip), em segundos, arredondado
+  a milissegundos; dois pontos a menos de 0,0005 s são o mesmo ponto. Operações:
+  - `add` `{time, prop, value?, curve?}`: cria o ponto (ou acrescenta a propriedade a um ponto que já existe
+    naquele tempo). Sem `value`, o valor é o que a animação já produz naquele instante
+    (`sampleTracks`; volume: interpolação linear dos pontos de volume, senão o `data-volume` do clip, senão 1;
+    propriedade sem animação: o valor neutro, como `opacity` 1 e `x` 0). Propriedade já presente no tempo é
+    `E_KEYFRAME_EXISTS`.
+  - `move` `{time, to}`: leva o ponto inteiro (todas as propriedades) para `to`. `to` ocupado é
+    `E_KEYFRAME_EXISTS`; `to` igual a `time` não muda nada.
+  - `remove` `{time, prop?}`: sem `prop` apaga o ponto; com `prop` tira só essa propriedade (e a `curve`
+    quando não sobra propriedade visual). Ponto vazio some; lista vazia remove o atributo.
+  - `edit` `{time, prop?, value?, curve?}`: troca o `value` de `prop` e/ou a `curve` (`null` remove a curva).
+    Precisa de `value` ou `curve`, senão `E_ATTRIBUTE_INVALID`.
+  Falhas: ponto ou propriedade que não existe é `E_KEYFRAME_NOT_FOUND`; `prop` fora de
+  `opacity x y scale scaleX scaleY rotate blur clip volume zoom focusX focusY` é `E_KEYFRAME_PROP`; `time`
+  fora de `[0, duração]` é `E_KEYFRAME_OUT_OF_RANGE`; `data-keyframes` ilegível é `E_ATTRIBUTE_INVALID`; corpo
+  malformado é `E_BODY_INVALID`; o que o contrato recusa depois da escrita (valor fora da faixa, curva
+  desconhecida, sobreposição com `data-enter`/`data-exit`, `E_MOTION_OVERLAP`) é `E_CONTRACT_INVALID` com os
+  diagnósticos. Todas respondem 400 e deixam o arquivo intacto; sucesso devolve `{ok, duration, diagnostics,
+  history}` e entra no histórico com o rótulo `keyframe <id>` (Ctrl+Z desfaz, um passo por operação). Sem
+  mudança de conteúdo, nada entra no histórico.
+  O atributo é regravado em JSON canônico com aspas simples (`data-keyframes='[...]'`), um ponto por tempo e
+  chaves na ordem `time, volume, opacity, x, y, scale, scaleX, scaleY, rotate, blur, clip, zoom, focusX, focusY,
+  curve`; `scale` vale como `scaleX` + `scaleY`. Em `GET /api/composition`, `keyframes` é essa lista unificada
+  (`[{time, ...props, curve?}]`, com os pontos de volume e os visuais do próprio clip fundidos por tempo) e
+  `descendantKeyframeTimes` traz os tempos locais dos keyframes de elementos internos, só leitura.
+  `hasKeyframes` segue sendo "tem `data-keyframes` com volume" (compatibilidade). Valores entre dois pontos
+  com unidades diferentes (`clip`, `x` em `%` e `px`) ficam no valor inicial até o fim do segmento.
+  O inspetor tem a seção "Keyframes" (seletor de propriedade, "Adicionar no playhead", lista de pontos, campos
+  de valor e curva, "Remover keyframe"); a timeline desenha um losango por tempo no `lane` do clip (cinza e só
+  leitura para os de elementos internos). Atalhos: `K` adiciona no playhead (arredondado ao frame) a
+  propriedade escolhida; arrastar um losango é `op: "move"` ao soltar (arredondado ao frame); Delete/Backspace
+  com um losango selecionado é `op: "remove"` e nunca apaga o clip. A seleção é descartada ao trocar de clip e
+  após desfazer/refazer se o ponto deixou de existir.
 
 As escritas são serializadas: duas edições nunca intercalam leitura e gravação do mesmo arquivo.
 

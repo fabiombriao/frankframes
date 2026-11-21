@@ -122,3 +122,88 @@ test("preset desconhecido falha com E_MOTION_PRESET_UNKNOWN e não toca no arqui
     assert.equal(await readFile(entry, "utf8"), before);
   });
 });
+
+interface KeyframePointBody {
+  time: number;
+  [prop: string]: unknown;
+}
+
+async function keyframesOf(server: StudioServer, id: string): Promise<{ keyframes: KeyframePointBody[]; descendants: number[] }> {
+  const composition = (await (await fetch(`${server.url}api/composition`)).json()) as {
+    clips: Array<{ id: string; keyframes: KeyframePointBody[] | null; descendantKeyframeTimes: number[] }>;
+  };
+  const clip = composition.clips.find((item) => item.id === id);
+  assert.ok(clip, `clip ${id} no payload`);
+  return { keyframes: clip.keyframes ?? [], descendants: clip.descendantKeyframeTimes };
+}
+
+test("POST /api/clips/<id>/keyframes: add entra no payload, no histórico e o undo volta", async () => {
+  await withStudio(async (server, entry) => {
+    const before = await readFile(entry, "utf8");
+    const added = await post(server, "api/clips/a/keyframes", { op: "add", time: 0.5, prop: "opacity", value: 0.5 });
+    assert.equal(added.status, 200, await added.clone().text());
+    assert.match(await readFile(entry, "utf8"), /data-keyframes='\[\{"time":0\.5,"opacity":0\.5\}\]'/);
+    assert.deepEqual((await keyframesOf(server, "a")).keyframes, [{ time: 0.5, opacity: 0.5 }]);
+    assert.equal(((await added.json()) as { history: { undo: string } }).history.undo, "keyframe a");
+
+    const moved = await post(server, "api/clips/a/keyframes", { op: "move", time: 0.5, to: 0.75 });
+    assert.equal(moved.status, 200);
+    assert.deepEqual((await keyframesOf(server, "a")).keyframes, [{ time: 0.75, opacity: 0.5 }]);
+
+    const removed = await post(server, "api/clips/a/keyframes", { op: "remove", time: 0.75 });
+    assert.equal(removed.status, 200);
+    assert.ok(!(await readFile(entry, "utf8")).includes("data-keyframes"));
+    assert.deepEqual((await keyframesOf(server, "a")).keyframes, []);
+
+    for (let step = 0; step < 3; step += 1) assert.equal((await post(server, "api/undo", {})).status, 200);
+    assert.equal(await readFile(entry, "utf8"), before, "três undos devolvem o arquivo original");
+  });
+});
+
+test("keyframe que sobrepõe preset: 400 E_CONTRACT_INVALID com E_MOTION_OVERLAP, arquivo e histórico intactos", async () => {
+  await withStudio(async (server, entry) => {
+    assert.equal((await post(server, "api/clips/a", { attributes: { "data-enter": "surgir" } })).status, 200);
+    const before = await readFile(entry, "utf8");
+    const stateBefore = await (await fetch(`${server.url}api/history`)).json();
+
+    const response = await post(server, "api/clips/a/keyframes", { op: "add", time: 0.2, prop: "opacity", value: 0.7 });
+    assert.equal(response.status, 400);
+    const body = (await response.json()) as { code: string; diagnostics: Array<{ code: string }> };
+    assert.equal(body.code, "E_CONTRACT_INVALID");
+    assert.ok(body.diagnostics.some((item) => item.code === "E_MOTION_OVERLAP"), JSON.stringify(body));
+    assert.equal(await readFile(entry, "utf8"), before);
+    assert.deepEqual(await (await fetch(`${server.url}api/history`)).json(), stateBefore, "nenhuma versão nova");
+  });
+});
+
+test("keyframes: erros de edição viram 400 com o código e o corpo inválido é recusado", async () => {
+  await withStudio(async (server, entry) => {
+    const before = await readFile(entry, "utf8");
+    const cases: Array<[unknown, string]> = [
+      [{ op: "move", time: 0.5, to: 0.9 }, "E_KEYFRAME_NOT_FOUND"],
+      [{ op: "add", time: 5, prop: "opacity", value: 1 }, "E_KEYFRAME_OUT_OF_RANGE"],
+      [{ op: "add", time: 0.5, prop: "volume", value: 1 }, "E_KEYFRAME_PROP"],
+      [{ op: "add", time: 0.5, prop: "zoom", value: 1.2 }, "E_KEYFRAME_PROP"],
+      [{ op: "voar", time: 0.5 }, "E_BODY_INVALID"],
+      [{ op: "add", time: "0.5", prop: "opacity" }, "E_BODY_INVALID"],
+      [{ op: "add", time: 0.5 }, "E_BODY_INVALID"],
+    ];
+    for (const [body, code] of cases) {
+      const response = await post(server, "api/clips/a/keyframes", body);
+      assert.equal(response.status, 400, JSON.stringify(body));
+      assert.equal(((await response.json()) as { code: string }).code, code, JSON.stringify(body));
+    }
+    assert.equal((await post(server, "api/clips/zzz/keyframes", { op: "add", time: 0, prop: "opacity", value: 1 })).status, 400);
+    assert.equal(await readFile(entry, "utf8"), before);
+  });
+});
+
+test("keyframes: valor fora da faixa é recusado pelo contrato", async () => {
+  await withStudio(async (server, entry) => {
+    const before = await readFile(entry, "utf8");
+    const response = await post(server, "api/clips/a/keyframes", { op: "add", time: 0.5, prop: "opacity", value: 7 });
+    assert.equal(response.status, 400);
+    assert.equal(((await response.json()) as { code: string }).code, "E_CONTRACT_INVALID");
+    assert.equal(await readFile(entry, "utf8"), before);
+  });
+});

@@ -92,7 +92,8 @@ export const PREVIEW_UI_SOURCE = `(() => {
     const ms = clampMs(frameMs(frame));
     window.__ff.stopLive();
     window.__ff.seek(ms);
-    history.replaceState(null, "", "#f=" + frame);
+    // Caminho absoluto: um "#f=" relativo resolveria contra o <base href> do Studio e o reload cairia em /__ff_site/.
+    history.replaceState(null, "", location.pathname + location.search + "#f=" + frame);
     paint();
   };
 

@@ -1,7 +1,7 @@
 // FrankFrames — proprietário. Ver LICENSE na raiz.
 /** Propriedades CSS do motion e fusão de trechos em trilhas (docs/contract.md §7b.6, §7b.12). */
-import type { MotionKey, MotionProp, MotionTrack, VisualKeyframe } from "../types.ts";
-import { emitEasing, resolveCurve, springSettleSeconds } from "./curves.ts";
+import type { MotionKey, MotionProp, MotionTarget, MotionTrack, MotionValue, VisualKeyframe } from "../types.ts";
+import { emitEasing, evaluateCurve, resolveCurve, springSettleSeconds } from "./curves.ts";
 
 /** Propriedades personalizadas que o runtime registra (`inherits:false`). Fonte única: o engine lê esta lista. */
 export const MOTION_PROPERTIES: ReadonlyArray<{ name: string; syntax: string; initial: string }> = [
@@ -138,6 +138,90 @@ export function keyframeSegments(keyframes: VisualKeyframe[]): {
     segments.push({ prop: CSS_PROP_OF[prop], segment: { start: first.time, duration: total, keys } });
   }
   return { segments, failures };
+}
+
+const LINEAR_LIST = /^linear\((.*)\)$/;
+const NUMBER_PART = /^-?\d+(?:\.\d+)?$/;
+const UNIT_VALUE = /^(-?\d+(?:\.\d+)?)%$/;
+
+/** Progresso eased de `p` ∈ [0,1]: `linear(v0, ..., vN)` por partes (a mola emitida), bezier e nomes por `evaluateCurve`. */
+function easeProgress(easing: string | null, p: number): number {
+  if (easing === null) return p;
+  const list = LINEAR_LIST.exec(easing);
+  if (list === null) return evaluateCurve(easing, p);
+  const values = list[1]!.split(",").map((part) => part.trim());
+  if (values.length < 2 || !values.every((part) => NUMBER_PART.test(part))) {
+    throw new Error(`easing não amostrável: ${easing}`);
+  }
+  const numbers = values.map(Number);
+  const at = p * (numbers.length - 1);
+  const index = Math.min(Math.floor(at), numbers.length - 2);
+  return numbers[index]! + (numbers[index + 1]! - numbers[index]!) * (at - index);
+}
+
+const lerp = (a: number, b: number, p: number): number => a + (b - a) * p;
+const clean = (n: number): number => Number(n.toFixed(6));
+
+/** Texto `"10%"` ou `inset(...)`/`circle(...)` em lista de números, para interpolar; `null` se não casa. */
+function percentParts(text: string): { shape: string; numbers: number[] } | null {
+  const percent = UNIT_VALUE.exec(text);
+  if (percent !== null) return { shape: "%", numbers: [Number(percent[1])] };
+  const inset = /^inset\((-?\d+(?:\.\d+)?)% (-?\d+(?:\.\d+)?)% (-?\d+(?:\.\d+)?)% (-?\d+(?:\.\d+)?)%\)$/.exec(text);
+  if (inset !== null) return { shape: "inset", numbers: inset.slice(1, 5).map(Number) };
+  const circle = /^circle\((-?\d+(?:\.\d+)?)% at (-?\d+(?:\.\d+)?)% (-?\d+(?:\.\d+)?)%\)$/.exec(text);
+  if (circle !== null) return { shape: "circle", numbers: circle.slice(1, 4).map(Number) };
+  return null;
+}
+
+function formatParts(shape: string, numbers: number[]): string {
+  const n = numbers.map(clean);
+  if (shape === "%") return `${n[0]}%`;
+  if (shape === "inset") return `inset(${n[0]}% ${n[1]}% ${n[2]}% ${n[3]}%)`;
+  return `circle(${n[0]}% at ${n[1]}% ${n[2]}%)`;
+}
+
+/**
+ * Valor entre duas chaves. Números e porcentagens (`"10%"`, `inset(...)`, `circle(...)`) interpolam; unidades
+ * misturadas (número em px contra `"%"`) o navegador resolve por `calc()`, que aqui não existe: o valor de
+ * partida vale até o fim do trecho e o de chegada depois (o ponto exato do degrau só importa ao conferir a
+ * mistura; quem escreve `data-keyframes` pelo Studio usa a mesma unidade nos dois lados).
+ */
+function mix(a: MotionValue, b: MotionValue, p: number): MotionValue {
+  if (typeof a === "number" && typeof b === "number") return clean(lerp(a, b, p));
+  if (typeof a === "string" && typeof b === "string") {
+    const left = percentParts(a);
+    const right = percentParts(b);
+    if (left !== null && right !== null && left.shape === right.shape) {
+      return formatParts(left.shape, left.numbers.map((n, i) => lerp(n, right.numbers[i]!, p)));
+    }
+  }
+  return p < 1 ? a : b;
+}
+
+/**
+ * Valor de cada propriedade CSS do alvo em `time` (segundos locais ao clip dono), como o navegador o
+ * resolveria no seek: antes do começo da trilha vale a primeira chave, depois do fim a última (`fill: both`).
+ * Chaves no mesmo instante formam um degrau: no instante exato vale a última. Só trilhas do próprio elemento
+ * (`target.tracks`); trilhas por unidade (`data-split`) não entram. Puro; a mesma entrada dá o mesmo resultado.
+ */
+export function sampleTracks(target: Pick<MotionTarget, "tracks">, time: number): Record<string, MotionValue> {
+  const out: Record<string, MotionValue> = {};
+  for (const track of target.tracks) {
+    const keys = track.keys;
+    if (keys.length === 0) continue;
+    const x = track.duration <= 0 ? 0 : Math.min(1, Math.max(0, (time - track.start) / track.duration));
+    let index = 0;
+    for (const [i, key] of keys.entries()) if (key.offset <= x + 1e-12) index = i;
+    const from = keys[index]!;
+    const to = keys[index + 1];
+    if (to === undefined || to.offset <= from.offset) {
+      out[track.prop] = from.value;
+      continue;
+    }
+    const p = (x - from.offset) / (to.offset - from.offset);
+    out[track.prop] = mix(from.value, to.value, easeProgress(from.easing, p));
+  }
+  return out;
 }
 
 export type MergeResult = { ok: true; track: MotionTrack; jumps: number[] } | { ok: false; overlap: [number, number] };

@@ -451,3 +451,171 @@ export function renderTransitionSection(container, clip, clips, presets, onChang
   if (locked) container.append(element("p", "motion-note", "Clip sem data-clip-id explícito: edite a transição no HTML."));
   if (refocus !== undefined) container.querySelector(`[data-motion-picker="${refocus}"]`)?.focus();
 }
+
+/* ------------------------- Keyframes (EDT-47) ------------------------- */
+
+/** Propriedades que o inspetor deixa animar por keyframe, na ordem do seletor. */
+export const KEYFRAME_PROPS = [
+  { prop: "opacity", label: "Opacidade" },
+  { prop: "x", label: "Posição X" },
+  { prop: "y", label: "Posição Y" },
+  { prop: "scale", label: "Escala" },
+  { prop: "rotate", label: "Rotação" },
+  { prop: "blur", label: "Desfoque" },
+  { prop: "clip", label: "Recorte" },
+  { prop: "volume", label: "Volume" },
+  { prop: "zoom", label: "Zoom", camera: true },
+  { prop: "focusX", label: "Foco X", camera: true },
+  { prop: "focusY", label: "Foco Y", camera: true },
+];
+
+/** Sugestões do campo de curva (as mesmas que o contrato aceita por nome). */
+export const KEYFRAME_CURVES = ["linear", "suave", "freio", "arranque", "vaivem", "mola", "mola-firme"];
+
+const SAME_TIME = 0.0005;
+const POINT_META = new Set(["time", "curve"]);
+
+/** Propriedades que valem para `clip`: volume só com áudio; zoom e foco só em imagem e vídeo. */
+export function keyframePropsFor(clip) {
+  const camera = clip.tag === "img" || clip.tag === "video";
+  return KEYFRAME_PROPS.filter((item) => (item.prop === "volume" ? clip.hasAudio === true : item.camera === true ? camera : true));
+}
+
+/** Rótulo curto da propriedade para a lista de pontos. */
+function propLabel(prop) {
+  if (prop === "scaleX") return "Escala X";
+  if (prop === "scaleY") return "Escala Y";
+  return KEYFRAME_PROPS.find((item) => item.prop === prop)?.label ?? prop;
+}
+
+/**
+ * Valor digitado → valor do keyframe: `clip` fica texto, o resto vira número. `null` quando não é número
+ * (o campo volta ao valor anterior em vez de mandar lixo ao servidor).
+ */
+export function parseKeyframeValue(prop, text) {
+  if (prop === "clip") return text === "" ? null : text;
+  if (text === "" || !NUMBER.test(text)) return null;
+  return Number(text);
+}
+
+/**
+ * Marcas dos keyframes de um clip para a timeline: uma por tempo distinto, com as propriedades do ponto.
+ * `timeToX(tempoLocal)` é a régua da timeline (o chamador decide a unidade); só as marcas do próprio clip
+ * (`clip.keyframes`) são editáveis, as dos descendentes (`clip.descendantKeyframeTimes`) vêm `readOnly`.
+ * Ordem por tempo; descendente que cai no mesmo tempo de um ponto próprio não ganha marca extra.
+ */
+export function keyframeMarks(clip, timeToX) {
+  const marks = [];
+  for (const point of clip.keyframes ?? []) {
+    const props = Object.keys(point).filter((key) => !POINT_META.has(key) && point[key] !== undefined);
+    const same = marks.find((mark) => Math.abs(mark.time - point.time) <= SAME_TIME);
+    if (same !== undefined) {
+      for (const prop of props) if (!same.props.includes(prop)) same.props.push(prop);
+      if (same.curve === null && typeof point.curve === "string") same.curve = point.curve;
+      continue;
+    }
+    marks.push({ time: point.time, x: timeToX(point.time), props, curve: typeof point.curve === "string" ? point.curve : null, readOnly: false });
+  }
+  for (const time of clip.descendantKeyframeTimes ?? []) {
+    if (marks.some((mark) => Math.abs(mark.time - time) <= SAME_TIME)) continue;
+    marks.push({ time, x: timeToX(time), props: [], curve: null, readOnly: true });
+  }
+  return marks.sort((a, b) => a.time - b.time);
+}
+
+function formatTime(time) {
+  return `${Math.round(time * 1000) / 1000}s`;
+}
+
+/**
+ * Seção "Keyframes": seletor de propriedade, "Adicionar no playhead" e, com um ponto selecionado, os campos
+ * de valor e de curva e o botão Remover. Só o clip tem keyframes editáveis; os dos descendentes aparecem
+ * como marcas cinzas na timeline. `options`: `{ playhead, selected, prop, onProp, onAdd, onSelect, onEdit,
+ * onRemove }`. `playhead` é o tempo da composição (s); `selected` é o tempo local do ponto ou `null`.
+ */
+export function renderKeyframeSection(container, clip, options) {
+  container.hidden = clip.start === null;
+  if (container.hidden || editingIn(container)) return;
+  container.dataset.clipId = clip.id;
+  container.replaceChildren(element("h3", "motion-heading", "Keyframes"));
+  const locked = clip.editable !== true;
+  const props = keyframePropsFor(clip);
+  const chosen = props.some((item) => item.prop === options.prop) ? options.prop : props[0].prop;
+  const local = options.playhead - clip.start;
+  const inside = clip.duration !== null && local >= -SAME_TIME && local <= clip.duration + SAME_TIME;
+
+  const row = element("div", "kf-add");
+  const select = element("select", "kf-prop");
+  select.setAttribute("aria-label", "Propriedade do keyframe");
+  select.disabled = locked;
+  for (const item of props) {
+    const option = element("option", undefined, item.label);
+    option.value = item.prop;
+    option.selected = item.prop === chosen;
+    select.append(option);
+  }
+  select.addEventListener("change", () => options.onProp(select.value));
+  // O Studio usa Espaço e setas como atalhos globais; no seletor eles pertencem a ele.
+  select.addEventListener("keydown", (event) => event.stopPropagation());
+  const add = element("button", "kf-add-button", "Adicionar no playhead");
+  add.type = "button";
+  add.disabled = locked || !inside;
+  add.title = inside ? "Atalho: K" : "Posicione o playhead dentro do clip";
+  add.addEventListener("click", () => options.onAdd(chosen));
+  row.append(select, add);
+  container.append(row);
+
+  const points = clip.keyframes ?? [];
+  const list = element("div", "kf-list");
+  for (const point of points) {
+    const item = element("button", "kf-item");
+    item.type = "button";
+    item.dataset.time = String(point.time);
+    const selected = options.selected !== null && Math.abs(options.selected - point.time) <= SAME_TIME;
+    item.classList.toggle("is-selected", selected);
+    const names = Object.keys(point).filter((key) => !POINT_META.has(key) && point[key] !== undefined);
+    item.textContent = `${formatTime(point.time)} · ${names.map(propLabel).join(", ")}`;
+    item.addEventListener("click", () => options.onSelect(selected ? null : point.time));
+    list.append(item);
+  }
+  if (points.length === 0) list.append(element("p", "motion-note", "Nenhum keyframe. Posicione o playhead e use Adicionar."));
+  container.append(list);
+
+  const point = options.selected === null ? undefined : points.find((item) => Math.abs(item.time - options.selected) <= SAME_TIME);
+  if (point !== undefined) {
+    const detail = element("div", "kf-detail");
+    const fields = element("div", "motion-fields");
+    for (const key of Object.keys(point)) {
+      if (POINT_META.has(key) || point[key] === undefined) continue;
+      fields.append(
+        textField(propLabel(key), String(point[key]), "", locked, (text) => {
+          const value = parseKeyframeValue(key, text);
+          if (value !== null) options.onEdit({ time: point.time, prop: key, value });
+        }),
+      );
+    }
+    const curveField = textField("Curva", point.curve ?? "", "linear", locked, (text) =>
+      options.onEdit({ time: point.time, curve: text === "" ? null : text }), (text) => text.replace(/\s+/g, ""));
+    curveField.querySelector("input").setAttribute("list", "ffKeyframeCurves");
+    fields.append(curveField);
+    const curves = element("datalist");
+    curves.id = "ffKeyframeCurves";
+    for (const name of KEYFRAME_CURVES) {
+      const option = element("option");
+      option.value = name;
+      curves.append(option);
+    }
+    const remove = element("button", "kf-remove-button", "Remover keyframe");
+    remove.type = "button";
+    remove.disabled = locked;
+    remove.title = "Atalho: Delete";
+    remove.addEventListener("click", () => options.onRemove(point.time));
+    detail.append(fields, curves, remove);
+    container.append(detail);
+  }
+
+  if ((clip.descendantKeyframeTimes ?? []).length > 0) {
+    container.append(element("p", "motion-note", "Marcas cinzas na timeline: keyframes de elementos internos, só leitura."));
+  }
+  if (locked) container.append(element("p", "motion-note", "Clip sem data-clip-id explícito: edite os keyframes no HTML."));
+}

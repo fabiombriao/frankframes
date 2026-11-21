@@ -1,5 +1,5 @@
-import { lastFrameTime, percentSpan } from "/timeline-math.js";
-import { renderMotionSection, renderTransitionSection } from "/motion.js";
+import { lastFrameTime, percentSpan, roundToFrame } from "/timeline-math.js";
+import { keyframeMarks, keyframePropsFor, renderKeyframeSection, renderMotionSection, renderTransitionSection } from "/motion.js";
 
 (() => {
   "use strict";
@@ -32,6 +32,7 @@ import { renderMotionSection, renderTransitionSection } from "/motion.js";
   const inspectorDiagnostics = document.getElementById("inspectorDiagnostics");
   const motionSection = document.getElementById("motionSection");
   const transitionSection = document.getElementById("transitionSection");
+  const keyframeSection = document.getElementById("keyframeSection");
   const blocksStatus = document.getElementById("blocksStatus");
   const blocksList = document.getElementById("blocksList");
   const blocksDiagnostics = document.getElementById("blocksDiagnostics");
@@ -63,6 +64,9 @@ import { renderMotionSection, renderTransitionSection } from "/motion.js";
     history: { canUndo: false, canRedo: false, undo: null, redo: null },
     busy: false,
     motionPresets: null,
+    /* Keyframe selecionado: { clipId, time } com o tempo local ao clip, em segundos. */
+    selectedKeyframe: null,
+    keyframeProp: "opacity",
   };
 
   let drag = null;
@@ -131,7 +135,9 @@ import { renderMotionSection, renderTransitionSection } from "/motion.js";
       fadeOut: asNumber(raw.fadeOut),
       hasKeyframes: raw.hasKeyframes === true,
       motion: raw.motion !== null && typeof raw.motion === "object" ? raw.motion : {},
-      keyframes: Array.isArray(raw.keyframes) ? raw.keyframes : null,
+      /* Um ponto por tempo: { time, volume?, <propriedades visuais>, curve? } (docs/contract.md §9d). */
+      keyframes: Array.isArray(raw.keyframes) ? raw.keyframes : [],
+      descendantKeyframeTimes: Array.isArray(raw.descendantKeyframeTimes) ? raw.descendantKeyframeTimes : [],
       hasChildren: raw.hasChildren === true,
       parentId: typeof raw.parentId === "string" ? raw.parentId : null,
       editable: raw.editable === true,
@@ -217,6 +223,7 @@ import { renderMotionSection, renderTransitionSection } from "/motion.js";
     const maxEnd = state.clips.reduce((max, clip) => (clip.end !== null && clip.end > max ? clip.end : max), 0);
     state.total = Math.max(0, declared !== null ? declared : maxEnd);
     state.playhead = clamp(state.playhead, 0, maxPlayhead());
+    keepKeyframeSelection();
 
     renderTop();
     renderTimeline();
@@ -268,6 +275,8 @@ import { renderMotionSection, renderTransitionSection } from "/motion.js";
     inspector.hidden = true;
     motionSection.hidden = true;
     transitionSection.hidden = true;
+    keyframeSection.hidden = true;
+    state.selectedKeyframe = null;
     inspectorEmpty.hidden = false;
     renderDiagnostics(inspectorDiagnostics, []);
     updateSelectionStyles();
@@ -299,6 +308,109 @@ import { renderMotionSection, renderTransitionSection } from "/motion.js";
       renderMotionSection(motionSection, clip, state.motionPresets, ({ attribute, value }) => queuePatch(clip.id, { [attribute]: value }));
       renderTransitionSection(transitionSection, clip, state.clips, state.motionPresets, (change) => queueTransition(clip.id, change));
     }
+    renderKeyframes(clip);
+  }
+
+  /* Keyframes (EDT-47) */
+
+  function renderKeyframes(clip) {
+    renderKeyframeSection(keyframeSection, clip, {
+      playhead: state.playhead,
+      selected: state.selectedKeyframe === null ? null : state.selectedKeyframe.time,
+      prop: state.keyframeProp,
+      onProp: (prop) => {
+        state.keyframeProp = prop;
+      },
+      onAdd: (prop) => addKeyframe(prop),
+      onSelect: (time) => selectKeyframe(clip.id, time),
+      onEdit: (change) => queueKeyframe(clip.id, { op: "edit", ...change }),
+      onRemove: (time) => queueKeyframe(clip.id, { op: "remove", time }),
+    });
+  }
+
+  function sameKeyframeTime(a, b) {
+    return Math.abs(a - b) <= 0.0005;
+  }
+
+  function roundMs(value) {
+    return Math.round(value * 1000) / 1000;
+  }
+
+  /* Depois de recarregar (edição, undo, redo): a seleção só sobrevive se o ponto ainda existe. */
+  function keepKeyframeSelection() {
+    const selected = state.selectedKeyframe;
+    if (selected === null) return;
+    const clip = findClip(selected.clipId);
+    if (!clip || !clip.keyframes.some((point) => sameKeyframeTime(point.time, selected.time))) state.selectedKeyframe = null;
+  }
+
+  function selectKeyframe(clipId, time) {
+    state.selectedKeyframe = time === null ? null : { clipId, time };
+    paintKeyframeSelection();
+    const clip = findClip(clipId);
+    if (clip && clip.id === state.selectedId) renderKeyframes(clip);
+  }
+
+  function paintKeyframeSelection() {
+    const selected = state.selectedKeyframe;
+    for (const mark of timelineRows.querySelectorAll(".kf-mark")) {
+      const on = selected !== null && mark.dataset.clipId === selected.clipId && sameKeyframeTime(Number(mark.dataset.time), selected.time);
+      mark.classList.toggle("is-selected", on);
+    }
+  }
+
+  /* "Adicionar no playhead" só vale com o playhead dentro do clip. */
+  function refreshKeyframeAddState() {
+    const clip = state.selectedId === null ? null : findClip(state.selectedId);
+    const add = keyframeSection.querySelector(".kf-add-button");
+    if (!clip || !add || clip.start === null || clip.duration === null) return;
+    const local = state.playhead - clip.start;
+    const inside = local >= -0.0005 && local <= clip.duration + 0.0005;
+    add.disabled = clip.editable !== true || !inside;
+    add.title = inside ? "Atalho: K" : "Posicione o playhead dentro do clip";
+  }
+
+  function addKeyframe(requestedProp) {
+    const clip = state.selectedId === null ? null : findClip(state.selectedId);
+    if (!clip || clip.start === null || clip.duration === null) return mutationQueue;
+    const local = roundMs(roundToFrame(state.playhead, state.fps) - clip.start);
+    if (clip.editable !== true || local < -0.0005 || local > clip.duration + 0.0005) {
+      renderDiagnostics(inspectorDiagnostics, [
+        { severity: "info", message: "Selecione um clip editável e posicione o playhead dentro dele para adicionar um keyframe." },
+      ]);
+      return mutationQueue;
+    }
+    const allowed = keyframePropsFor(clip);
+    const prop = allowed.some((item) => item.prop === requestedProp) ? requestedProp : allowed[0].prop;
+    state.keyframeProp = prop;
+    return queueKeyframe(clip.id, { op: "add", time: clamp(local, 0, roundMs(clip.duration)), prop });
+  }
+
+  function removeSelectedKeyframe() {
+    const selected = state.selectedKeyframe;
+    if (selected === null) return mutationQueue;
+    return queueKeyframe(selected.clipId, { op: "remove", time: selected.time });
+  }
+
+  /* POST /api/clips/<id>/keyframes; a seleção acompanha o ponto (add/move) ou some (remove). */
+  function queueKeyframe(id, body) {
+    mutationQueue = mutationQueue
+      .then(async () => {
+        const result = await mutate("POST", "/api/clips/" + encodeURIComponent(id) + "/keyframes", body);
+        if (result.payload && result.payload.history) applyHistory(result.payload.history);
+        if (result.ok) {
+          if (body.op === "add") state.selectedKeyframe = { clipId: id, time: roundMs(body.time) };
+          else if (body.op === "move") state.selectedKeyframe = { clipId: id, time: roundMs(body.to) };
+          else if (body.op === "remove") state.selectedKeyframe = null;
+        }
+        state.inspectorDirty = false;
+        await refreshComposition();
+        if (!result.ok) renderDiagnostics(inspectorDiagnostics, result.diagnostics);
+      })
+      .catch((error) => {
+        renderDiagnostics(inspectorDiagnostics, [{ severity: "error", message: "Falha ao salvar o keyframe: " + error.message }]);
+      });
+    return mutationQueue;
   }
 
   async function loadMotionPresets() {
@@ -317,6 +429,7 @@ import { renderMotionSection, renderTransitionSection } from "/motion.js";
 
   function selectClip(id) {
     if (!findClip(id)) return;
+    if (state.selectedKeyframe !== null && state.selectedKeyframe.clipId !== id) state.selectedKeyframe = null;
     state.selectedId = id;
     state.inspectorDirty = false;
     updateSelectionStyles();
@@ -679,6 +792,7 @@ import { renderMotionSection, renderTransitionSection } from "/motion.js";
       lane.append(bar);
       const strip = transitionStrip(clip);
       if (strip !== null) lane.append(strip);
+      for (const mark of keyframeMarkElements(clip)) lane.append(mark);
       row.append(label, lane);
       timelineRows.append(row);
     }
@@ -703,6 +817,36 @@ import { renderMotionSection, renderTransitionSection } from "/motion.js";
       transitionSection.querySelector("[data-motion-picker]")?.focus();
     });
     return strip;
+  }
+
+  /* Losangos dos keyframes na faixa do clip: mesma régua da barra (% da largura da composição). */
+  function keyframeMarkElements(clip) {
+    if (clip.start === null || state.total <= 0) return [];
+    const marks = keyframeMarks(clip, (time) => percentSpan(clip.start + time, 0, state.total).left);
+    const selected = state.selectedKeyframe;
+    return marks.map((mark) => {
+      const node = document.createElement("span");
+      node.className = "kf-mark" + (mark.readOnly ? " is-readonly" : "");
+      if (!mark.readOnly && selected !== null && selected.clipId === clip.id && sameKeyframeTime(selected.time, mark.time)) {
+        node.classList.add("is-selected");
+      }
+      node.dataset.clipId = clip.id;
+      node.dataset.time = String(mark.time);
+      node.style.left = mark.x + "%";
+      node.title = mark.readOnly
+        ? "Keyframe de elemento interno, " + formatNumber(mark.time) + "s (só leitura)"
+        : "Keyframe em " + formatNumber(mark.time) + "s: " + mark.props.join(", ");
+      node.addEventListener("pointerdown", onKeyframePointerDown);
+      return node;
+    });
+  }
+
+  function positionKeyframeMarks(clip) {
+    if (clip.start === null || state.total <= 0) return;
+    for (const mark of timelineRows.querySelectorAll(".kf-mark")) {
+      if (mark.dataset.clipId !== clip.id) continue;
+      mark.style.left = percentSpan(clip.start + Number(mark.dataset.time), 0, state.total).left + "%";
+    }
   }
 
   function positionStrip(strip, clip) {
@@ -735,6 +879,7 @@ import { renderMotionSection, renderTransitionSection } from "/motion.js";
     if (target) positionBar(target, clip);
     const strip = timelineRows.querySelector('.ff-transition[data-clip-id="' + CSS.escape(clip.id) + '"]');
     if (strip) positionStrip(strip, clip);
+    positionKeyframeMarks(clip);
     if (!state.inspectorDirty) {
       if (clip.start !== null) fieldStart.value = formatNumber(clip.start);
       if (clip.duration !== null) fieldDuration.value = formatNumber(clip.duration);
@@ -753,6 +898,7 @@ import { renderMotionSection, renderTransitionSection } from "/motion.js";
     const ratio = state.total > 0 ? clamp(state.playhead / state.total, 0, 1) : 0;
     playheadEl.style.left = ratio * 100 + "%";
     playheadEl.hidden = state.total <= 0;
+    refreshKeyframeAddState();
   }
 
   /* Arrasto */
@@ -827,6 +973,64 @@ import { renderMotionSection, renderTransitionSection } from "/motion.js";
     } else if (finished.mode === "resize" && finished.clip.duration !== finished.originDuration) {
       queuePatch(finished.clip.id, { "data-duration": formatNumber(finished.clip.duration) });
     }
+  }
+
+  /* Arrasto de um keyframe: acompanha o frame mais próximo e grava (op "move") ao soltar. */
+  let keyframeDrag = null;
+
+  function onKeyframePointerDown(event) {
+    if (event.button !== 0) return;
+    event.stopPropagation();
+    const mark = event.currentTarget;
+    const clip = findClip(mark.dataset.clipId);
+    if (!clip) return;
+    selectClip(clip.id);
+    const time = Number(mark.dataset.time);
+    if (mark.classList.contains("is-readonly")) return;
+    selectKeyframe(clip.id, time);
+    const laneWidth = mark.parentElement.getBoundingClientRect().width;
+    if (clip.editable !== true || clip.start === null || clip.duration === null || laneWidth <= 0 || state.total <= 0) return;
+    keyframeDrag = { mark, clip, time, current: time, pointerId: event.pointerId, originX: event.clientX, laneWidth, moved: false };
+    event.preventDefault();
+    try {
+      mark.setPointerCapture(event.pointerId);
+    } catch (error) {
+      /* captura indisponível: listeners na window continuam o arrasto */
+    }
+    window.addEventListener("pointermove", onKeyframeDragMove);
+    window.addEventListener("pointerup", onKeyframeDragEnd);
+    window.addEventListener("pointercancel", onKeyframeDragEnd);
+  }
+
+  function onKeyframeDragMove(event) {
+    if (!keyframeDrag || event.pointerId !== keyframeDrag.pointerId) return;
+    const drag = keyframeDrag;
+    const deltaPx = event.clientX - drag.originX;
+    if (Math.abs(deltaPx) >= 2) drag.moved = true;
+    if (!drag.moved) return;
+    const absolute = drag.clip.start + drag.time + (deltaPx / drag.laneWidth) * state.total;
+    const local = roundMs(roundToFrame(absolute, state.fps) - drag.clip.start);
+    drag.current = clamp(local, 0, roundMs(drag.clip.duration));
+    drag.mark.style.left = percentSpan(drag.clip.start + drag.current, 0, state.total).left + "%";
+  }
+
+  function onKeyframeDragEnd(event) {
+    if (!keyframeDrag || event.pointerId !== keyframeDrag.pointerId) return;
+    const finished = keyframeDrag;
+    keyframeDrag = null;
+    window.removeEventListener("pointermove", onKeyframeDragMove);
+    window.removeEventListener("pointerup", onKeyframeDragEnd);
+    window.removeEventListener("pointercancel", onKeyframeDragEnd);
+    try {
+      finished.mark.releasePointerCapture(finished.pointerId);
+    } catch (error) {
+      /* o ponteiro já pode ter sido liberado */
+    }
+    if (!finished.moved || sameKeyframeTime(finished.current, finished.time)) {
+      positionKeyframeMarks(finished.clip);
+      return;
+    }
+    queueKeyframe(finished.clip.id, { op: "move", time: finished.time, to: finished.current });
   }
 
   function nudgeSelected(direction) {
@@ -1097,6 +1301,17 @@ import { renderMotionSection, renderTransitionSection } from "/motion.js";
     if (event.defaultPrevented || isTyping(event)) return;
     const mod = event.ctrlKey || event.metaKey;
     const key = event.key.toLowerCase();
+    // Com um keyframe selecionado, Delete apaga o keyframe; o clip nunca some por este atalho.
+    if (!mod && !event.altKey && (event.key === "Delete" || event.key === "Backspace") && state.selectedKeyframe !== null) {
+      event.preventDefault();
+      removeSelectedKeyframe();
+      return;
+    }
+    if (!mod && !event.altKey && key === "k") {
+      event.preventDefault();
+      addKeyframe(state.keyframeProp);
+      return;
+    }
     if (!mod && !event.altKey && key === "l") {
       event.preventDefault();
       clickPlayerControl("[data-ff-loop]");

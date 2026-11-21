@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { parse } from "parse5";
-import { CODES, emitEasing, evaluateCurve, listPresets, loadComposition, mergeSegments, motionElements, parseCurve, parseMotionValue, resolveCurve, splitText, unitRanks } from "../src/index.ts";
+import { CODES, emitEasing, evaluateCurve, listPresets, loadComposition, mergeSegments, motionElements, parseCurve, parseMotionValue, resolveCurve, sampleTracks, splitText, unitRanks } from "../src/index.ts";
 import type { Composition } from "../src/index.ts";
 
 const SUAVE = "cubic-bezier(0.34, 0.1, 0.18, 1)";
@@ -1217,4 +1217,21 @@ test("transição: preset desconhecido e sintaxe inválida mantêm os códigos d
 test("transição: a duração total encurta d (B e quem depende dele andam d antes)", () => {
   const c = pair('data-transition="dissolver"');
   assert.deepEqual(c.duration, { kind: "derived", seconds: 5.5 });
+});
+
+test("sampleTracks: valor por propriedade CSS em qualquer tempo do clip", () => {
+  const c = clip(`data-enter="surgir" data-keyframes='[{"time":2,"x":0},{"time":4,"x":100,"curve":"linear"}]'`);
+  assert.equal(c.ok, true, JSON.stringify(c.diagnostics));
+  const own = c.motion["c"]!.find((target) => target.ordinal === 0)!;
+  const at = (time: number) => sampleTracks(own, time);
+  // Entrada: opacidade com a curva suave; antes do começo vale a primeira chave, depois do fim a última.
+  assert.equal(at(0)["opacity"], 0);
+  assert.ok(Math.abs(Number(at(0.25)["opacity"]) - evaluateCurve(SUAVE, 0.5, 0.5)) < 1e-6);
+  assert.equal(at(3)["opacity"], 1);
+  // Keyframes lineares: 2 s → 4 s vai de 0 a 100; fora do trecho fica parado.
+  assert.equal(at(1)["--ff-x"], 0);
+  assert.equal(at(3)["--ff-x"], 50);
+  assert.equal(at(5)["--ff-x"], 100);
+  // Propriedade que nada anima não aparece.
+  assert.equal(at(1)["--ff-y"], undefined);
 });

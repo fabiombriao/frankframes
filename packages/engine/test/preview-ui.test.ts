@@ -106,6 +106,9 @@ test("barra do preview: pausa, scrub por frame e #f na URL", { timeout: 120_000 
     const afterPause = await session.evaluate<number>("window.__ff.now()");
     assert.ok(Math.abs(afterPause - atPause) < 60, `pausado, o relógio não pode andar (${Math.round(atPause)} → ${Math.round(afterPause)})`);
 
+    // Como no Studio, a página tem <base href>: o "#f=" não pode mudar o caminho do documento.
+    const pathBefore = await session.evaluate<string>("location.pathname");
+    await session.evaluate(`document.head.insertAdjacentHTML("afterbegin", '<base href="/__ff_site/">')`);
     await session.evaluate(`(() => {
       const range = document.querySelector("[data-ff-scrub]");
       range.value = "30";
@@ -114,6 +117,7 @@ test("barra do preview: pausa, scrub por frame e #f na URL", { timeout: 120_000 
     const seeked = await session.evaluate<number>("window.__ff.now()");
     assert.ok(Math.abs(seeked - 1000) < 50, `frame 30 a 30 fps = 1000 ms, obtido ${Math.round(seeked)}`);
     assert.equal(await session.evaluate<string>("location.hash"), "#f=30");
+    assert.equal(await session.evaluate<string>("location.pathname"), pathBefore, "o scrub não pode trocar o caminho do documento");
 
     await session.evaluate(`document.querySelector("[data-ff-play]").click()`);
     const playing = await session.evaluate<number>("window.__ff.now()");

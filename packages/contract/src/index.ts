@@ -16,6 +16,7 @@ export type {
   MotionSource,
   MotionTarget,
   MotionTrack,
+  MotionValue,
   RawClip,
   ResolvedClip,
   TimeExpr,

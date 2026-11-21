@@ -23,7 +23,7 @@ export { parseAnchor, parseMotionValue } from "./grammar.ts";
 export type { Anchor, ParsedValue } from "./grammar.ts";
 export { DIRECTIONS, PRESETS, describePreset, describePresets, listPresets, parseDistance, presetsOf } from "./presets.ts";
 export type { Direction, ParamSpec, PresetContext, PresetDef, PresetInfo, PresetKeyInfo, PresetKeyType } from "./presets.ts";
-export { CSS_PROP_OF, MOTION_PROPERTIES, OWNED_BY_PROP, bindingsFor, keyframeSegments, mergeSegments, ownedProperties } from "./tracks.ts";
+export { CSS_PROP_OF, MOTION_PROPERTIES, OWNED_BY_PROP, bindingsFor, keyframeSegments, mergeSegments, ownedProperties, sampleTracks } from "./tracks.ts";
 export type { MergeResult, Segment, SpringFailure } from "./tracks.ts";
 export { MOTION_ATTRS, hasKeyframes, hasMotion, hasSplit, isHost, isTimed, motionAttrsOf, motionElements } from "./targets.ts";
 export type { DomNode } from "./targets.ts";
