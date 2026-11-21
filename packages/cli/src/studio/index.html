@@ -12,6 +12,13 @@
       <span class="brand">FrankFrames</span>
       <h1 id="fileName" class="file-name">index.html</h1>
     </div>
+    <div class="toolbar" role="toolbar" aria-label="Edição">
+      <button id="importButton" type="button" class="tool-button" title="Importar vídeo, áudio ou imagem no playhead (ou arraste o arquivo para a janela)">Importar mídia</button>
+      <input id="importInput" type="file" multiple hidden accept="video/*,audio/*,image/*,.mov,.mkv,.m4a,.opus,.flac">
+      <button id="splitButton" type="button" class="tool-button" title="Dividir o clip selecionado no playhead (S)" disabled>Dividir</button>
+      <button id="undoButton" type="button" class="tool-button" title="Desfazer (Ctrl+Z)" disabled>Desfazer</button>
+      <button id="redoButton" type="button" class="tool-button" title="Refazer (Ctrl+Shift+Z ou Ctrl+Y)" disabled>Refazer</button>
+    </div>
     <dl class="composition-meta">
       <div>
         <dt>Duração</dt>
@@ -34,6 +41,7 @@
 
     <section class="panel inspector-panel" aria-label="Inspetor do clip">
       <h2>Inspetor</h2>
+      <div id="toolDiagnostics" class="diagnostics" role="status" aria-live="polite"></div>
       <div id="compositionDiagnostics" class="diagnostics" role="status" aria-live="polite"></div>
       <p id="inspectorEmpty" class="panel-status">Selecione um clip na timeline.</p>
 
@@ -107,6 +115,8 @@
       </div>
     </div>
   </footer>
+
+  <div id="dropOverlay" class="drop-overlay" hidden aria-hidden="true">Solte para importar no playhead</div>
 
   <script src="/app.js" defer></script>
 </body>

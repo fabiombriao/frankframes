@@ -309,6 +309,41 @@
         }
       ],
       "jiraKey": "EDT-30"
+    },
+    {
+      "name": "Studio",
+      "summary": "Editor visual (player + timeline) que grava no HTML validado pelo contrato",
+      "priority": "Highest",
+      "stories": [
+        {
+          "summary": "Importar mídia no Studio (arrastar ou escolher arquivo)",
+          "points": 5,
+          "labels": [
+            "studio"
+          ],
+          "acceptance": "Soltar ou escolher vídeo/áudio/imagem copia para assets/ do projeto (dedupe por SHA-256), mede a duração com ffprobe (imagem: 3 s), insere o clip no playhead validado pelo contrato e o preview mostra a mídia.",
+          "jiraKey": "EDT-36"
+        },
+        {
+          "summary": "Desfazer/refazer no Studio",
+          "points": 3,
+          "labels": [
+            "studio"
+          ],
+          "acceptance": "Toda escrita do Studio entra no histórico; Ctrl+Z/Ctrl+Shift+Z (e Ctrl+Y) desfazem/refazem; arquivo alterado fora do Studio invalida o histórico com E_HISTORY_STALE em vez de sobrescrever.",
+          "jiraKey": "EDT-37"
+        },
+        {
+          "summary": "Dividir clip no playhead",
+          "points": 3,
+          "labels": [
+            "studio"
+          ],
+          "acceptance": "Tecla S ou botão divide o clip selecionado no playhead em dois clips válidos; mídia ganha data-offset correto; referências de data-start ao clip original passam a apontar para a segunda metade; fora do intervalo falha com E_SPLIT_OUT_OF_RANGE.",
+          "jiraKey": "EDT-38"
+        }
+      ],
+      "jiraKey": "EDT-35"
     }
   ]
 }

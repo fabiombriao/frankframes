@@ -37,6 +37,15 @@
   const timelineEmpty = document.getElementById("timelineEmpty");
   const playheadEl = document.getElementById("playhead");
   const playheadTrack = document.querySelector(".playhead-track");
+  const importButton = document.getElementById("importButton");
+  const importInput = document.getElementById("importInput");
+  const splitButton = document.getElementById("splitButton");
+  const undoButton = document.getElementById("undoButton");
+  const redoButton = document.getElementById("redoButton");
+  const dropOverlay = document.getElementById("dropOverlay");
+  const toolDiagnostics = document.getElementById("toolDiagnostics");
+  /* Mesma folga do servidor: corte colado na borda geraria um pedaço vazio. */
+  const MIN_SPLIT_PIECE = 0.001;
 
   const state = {
     clips: [],
@@ -46,6 +55,8 @@
     selectedId: null,
     inspectorDirty: false,
     playhead: 0,
+    history: { canUndo: false, canRedo: false, undo: null, redo: null },
+    busy: false,
   };
 
   let drag = null;
@@ -270,6 +281,170 @@
     for (const bar of timelineRows.querySelectorAll(".clip-bar")) {
       bar.classList.toggle("is-selected", bar.dataset.clipId === state.selectedId);
     }
+    updateToolbar();
+  }
+
+  /* Ferramentas: importar, dividir, desfazer/refazer */
+
+  function splittable() {
+    const clip = state.selectedId === null ? null : findClip(state.selectedId);
+    if (!clip || clip.start === null || clip.end === null) return null;
+    const at = state.playhead;
+    if (at <= clip.start + MIN_SPLIT_PIECE || at >= clip.end - MIN_SPLIT_PIECE) return null;
+    return { clip, at };
+  }
+
+  function updateToolbar() {
+    const history = state.history;
+    undoButton.disabled = state.busy || !history.canUndo;
+    redoButton.disabled = state.busy || !history.canRedo;
+    undoButton.title = history.undo ? "Desfazer: " + history.undo + " (Ctrl+Z)" : "Nada para desfazer (Ctrl+Z)";
+    redoButton.title = history.redo ? "Refazer: " + history.redo + " (Ctrl+Shift+Z)" : "Nada para refazer (Ctrl+Shift+Z)";
+    splitButton.disabled = state.busy || splittable() === null;
+    importButton.disabled = state.busy;
+  }
+
+  function applyHistory(value) {
+    if (!value || typeof value !== "object") return;
+    state.history = {
+      canUndo: value.canUndo === true,
+      canRedo: value.canRedo === true,
+      undo: typeof value.undo === "string" ? value.undo : null,
+      redo: typeof value.redo === "string" ? value.redo : null,
+    };
+    updateToolbar();
+  }
+
+  async function refreshHistory() {
+    try {
+      const response = await fetch("/api/history", { cache: "no-store", headers: { accept: "application/json" } });
+      const payload = await readJson(response);
+      if (!response.ok) throw new Error(payload.message || "HTTP " + response.status);
+      applyHistory(payload);
+    } catch (error) {
+      renderDiagnostics(toolDiagnostics, [
+        { severity: "error", message: "Não foi possível ler o histórico: " + error.message },
+      ]);
+    }
+  }
+
+  /** Enfileira atrás das edições pendentes e trava as ferramentas enquanto roda. */
+  function runTool(task) {
+    mutationQueue = mutationQueue
+      .then(async () => {
+        state.busy = true;
+        updateToolbar();
+        try {
+          await task();
+        } finally {
+          state.busy = false;
+          updateToolbar();
+        }
+      })
+      .catch((error) => {
+        renderDiagnostics(toolDiagnostics, [{ severity: "error", message: "Falha na edição: " + error.message }]);
+      });
+    return mutationQueue;
+  }
+
+  function travel(direction) {
+    return runTool(async () => {
+      const result = await mutate("POST", "/api/" + direction, {});
+      if (result.payload && result.payload.history) applyHistory(result.payload.history);
+      if (!result.ok) {
+        renderDiagnostics(toolDiagnostics, result.diagnostics);
+        if (result.payload && result.payload.code === "E_HISTORY_STALE") await refreshHistory();
+        return;
+      }
+      if (result.payload.changed === false) return;
+      state.inspectorDirty = false;
+      await refreshComposition();
+    });
+  }
+
+  function splitSelected() {
+    const target = splittable();
+    if (target === null) {
+      renderDiagnostics(toolDiagnostics, [
+        {
+          severity: "info",
+          message: "Selecione um clip e posicione o playhead dentro dele para dividir.",
+        },
+      ]);
+      return mutationQueue;
+    }
+    return runTool(async () => {
+      const result = await mutate("POST", "/api/clips/" + encodeURIComponent(target.clip.id) + "/split", { at: target.at });
+      if (result.payload && result.payload.history) applyHistory(result.payload.history);
+      if (!result.ok) {
+        renderDiagnostics(toolDiagnostics, result.diagnostics);
+        return;
+      }
+      state.inspectorDirty = false;
+      await refreshComposition();
+      if (typeof result.payload.id === "string" && findClip(result.payload.id)) selectClip(result.payload.id);
+      renderDiagnostics(toolDiagnostics, [
+        { severity: "info", message: target.clip.id + " dividido em " + formatSeconds(target.at) + "." },
+      ]);
+    });
+  }
+
+  function importFiles(files) {
+    const list = Array.from(files);
+    if (!list.length) return mutationQueue;
+    return runTool(async () => {
+      let start = snap(Math.max(0, state.playhead));
+      const notes = [];
+      let lastId = null;
+      for (const file of list) {
+        notes.push({ severity: "info", message: "Enviando " + file.name + "…" });
+        renderDiagnostics(toolDiagnostics, notes);
+        let payload;
+        let response;
+        try {
+          response = await fetch(
+            "/api/media?name=" + encodeURIComponent(file.name) + "&start=" + encodeURIComponent(formatNumber(start)),
+            { method: "POST", cache: "no-store", body: file, headers: { accept: "application/json" } },
+          );
+          payload = await readJson(response);
+        } catch (error) {
+          notes[notes.length - 1] = { severity: "error", message: file.name + ": falha de rede: " + error.message };
+          break;
+        }
+        if (payload.history) applyHistory(payload.history);
+        if (!response.ok || payload.ok === false) {
+          const diagnostics = normalizeDiagnostics(payload);
+          notes[notes.length - 1] = diagnostics.length
+            ? { ...diagnostics[0], message: file.name + ": " + diagnostics[0].message }
+            : { severity: "error", message: file.name + ": " + (payload.message || "HTTP " + response.status) };
+          break;
+        }
+        const duration = asNumber(payload.duration) ?? 0;
+        notes[notes.length - 1] = {
+          severity: "info",
+          message:
+            file.name + " → " + payload.src + " em " + formatSeconds(start) + " (" + formatSeconds(duration) + ")" +
+            (payload.reused ? ", arquivo idêntico reaproveitado" : ""),
+        };
+        lastId = typeof payload.id === "string" ? payload.id : lastId;
+        // Vários arquivos de uma vez entram em sequência, um depois do outro.
+        start = Math.round((start + duration) * 1e6) / 1e6;
+      }
+      state.inspectorDirty = false;
+      await refreshComposition();
+      if (lastId && findClip(lastId)) selectClip(lastId);
+      renderDiagnostics(toolDiagnostics, notes);
+    });
+  }
+
+  function hasFiles(event) {
+    return Boolean(event.dataTransfer) && Array.from(event.dataTransfer.types).includes("Files");
+  }
+
+  let dragDepth = 0;
+
+  function setDropOverlay(visible) {
+    dropOverlay.hidden = !visible;
   }
 
   function originalFor(clip, key) {
@@ -589,6 +764,7 @@
     mutationQueue = mutationQueue
       .then(async () => {
         const result = await mutate("POST", "/api/clips/" + encodeURIComponent(id), { attributes });
+        if (result.payload && result.payload.history) applyHistory(result.payload.history);
         if (!result.ok) {
           renderDiagnostics(inspectorDiagnostics, result.diagnostics);
           await refreshComposition();
@@ -665,6 +841,7 @@
     button.disabled = true;
     try {
       const result = await mutate("POST", "/api/clips", { template, start, duration });
+      if (result.payload && result.payload.history) applyHistory(result.payload.history);
       if (!result.ok) {
         renderDiagnostics(blocksDiagnostics, result.diagnostics);
         return;
@@ -821,10 +998,76 @@
       return;
     }
     if (event.defaultPrevented || isEditing(event)) return;
+    const mod = event.ctrlKey || event.metaKey;
+    const key = event.key.toLowerCase();
+    if (mod && !event.altKey && key === "z") {
+      event.preventDefault();
+      travel(event.shiftKey ? "redo" : "undo");
+      return;
+    }
+    if (mod && !event.altKey && !event.shiftKey && key === "y") {
+      event.preventDefault();
+      travel("redo");
+      return;
+    }
+    if (!mod && !event.altKey && key === "s") {
+      event.preventDefault();
+      splitSelected();
+      return;
+    }
     if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
     if (state.selectedId === null) return;
     event.preventDefault();
     nudgeSelected(event.key === "ArrowRight" ? 1 : -1);
+  });
+
+  importButton.addEventListener("click", () => importInput.click());
+  importInput.addEventListener("change", () => {
+    const files = Array.from(importInput.files ?? []);
+    importInput.value = "";
+    importFiles(files);
+  });
+  splitButton.addEventListener("click", () => splitSelected());
+  undoButton.addEventListener("click", () => travel("undo"));
+  redoButton.addEventListener("click", () => travel("redo"));
+
+  /* Arrastar arquivo para qualquer ponto da janela importa no playhead. */
+  window.addEventListener("dragenter", (event) => {
+    if (!hasFiles(event)) return;
+    event.preventDefault();
+    dragDepth += 1;
+    setDropOverlay(true);
+  });
+  window.addEventListener("dragover", (event) => {
+    if (!hasFiles(event)) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "copy";
+  });
+  window.addEventListener("dragleave", (event) => {
+    if (!hasFiles(event)) return;
+    dragDepth = Math.max(0, dragDepth - 1);
+    if (dragDepth === 0) setDropOverlay(false);
+  });
+  /* O iframe do preview engole eventos de arraste; o overlay cobre a janela assim que ele percebe um arquivo. */
+  player.addEventListener("load", () => {
+    const doc = player.contentDocument;
+    if (!doc) return;
+    doc.addEventListener("dragenter", (event) => {
+      if (!hasFiles(event)) return;
+      event.preventDefault();
+      dragDepth = 1;
+      setDropOverlay(true);
+    });
+    doc.addEventListener("dragover", (event) => {
+      if (hasFiles(event)) event.preventDefault();
+    });
+  });
+  window.addEventListener("drop", (event) => {
+    if (!hasFiles(event)) return;
+    event.preventDefault();
+    dragDepth = 0;
+    setDropOverlay(false);
+    importFiles(event.dataTransfer.files);
   });
 
   inspector.addEventListener("submit", (event) => {
@@ -851,6 +1094,7 @@
     if (timeMs === null) return;
     state.playhead = state.total > 0 ? clamp(timeMs / 1000, 0, state.total) : Math.max(0, timeMs / 1000);
     paintPlayhead();
+    updateToolbar();
   }, FRAME_POLL_MS);
 
   renderTop();
@@ -858,6 +1102,7 @@
   fitPlayer();
   observePlayerSize();
   refreshComposition();
+  refreshHistory();
   loadBlocks();
   connectEvents();
 })();

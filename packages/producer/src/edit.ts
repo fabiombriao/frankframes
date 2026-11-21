@@ -1,5 +1,7 @@
 // FrankFrames — proprietário. Ver LICENSE na raiz.
 import { parse } from "parse5";
+import { loadComposition } from "@frankframes/contract";
+import type { ResolvedClip } from "@frankframes/contract";
 
 interface P5Location {
   startOffset: number;
@@ -26,7 +28,13 @@ export interface ClipPatch {
 }
 
 export class EditError extends Error {
-  readonly code: "E_CLIP_NOT_FOUND" | "E_AMBIGUOUS_CLIP" | "E_TEXT_NOT_EDITABLE" | "E_ATTRIBUTE_INVALID";
+  readonly code:
+    | "E_CLIP_NOT_FOUND"
+    | "E_AMBIGUOUS_CLIP"
+    | "E_TEXT_NOT_EDITABLE"
+    | "E_ATTRIBUTE_INVALID"
+    | "E_SPLIT_UNSUPPORTED"
+    | "E_SPLIT_OUT_OF_RANGE";
 
   constructor(code: EditError["code"], message: string) {
     super(message);
@@ -132,4 +140,107 @@ export function applyPatches(source: string, patches: ClipPatch[]): string {
   }
 
   return applyReplacements(source, replacements);
+}
+
+/** Menor pedaço que um split pode deixar de cada lado, em segundos. */
+const MIN_SPLIT_PIECE = 0.001;
+
+function seconds(value: number): string {
+  return String(Math.round(value * 1e6) / 1e6);
+}
+
+function flatten(clips: ResolvedClip[], into: ResolvedClip[] = []): ResolvedClip[] {
+  for (const clip of clips) {
+    into.push(clip);
+    flatten(clip.children, into);
+  }
+  return into;
+}
+
+export interface SplitRequest {
+  clipId: string;
+  /** Instante do corte, em segundos desde o início da composição. */
+  at: number;
+  /** Id da segunda metade; precisa ser livre. */
+  newId: string;
+}
+
+/**
+ * Divide um clip da raiz em dois no instante `at`. A primeira metade fica com o
+ * id original e perde o fade de saída; a segunda é uma cópia do elemento que
+ * começa no fim da primeira (`data-start="<id>"`), perde o fade de entrada e,
+ * se for mídia, avança `data-offset` pelo trecho já tocado. Quem referenciava o
+ * fim do clip original passa a referenciar o fim da segunda metade, então nada
+ * mais na timeline se move.
+ */
+export function splitClip(source: string, request: SplitRequest): string {
+  const { clipId, at, newId } = request;
+  if (!Number.isFinite(at)) throw new EditError("E_SPLIT_OUT_OF_RANGE", "instante do corte precisa ser número");
+  if (!/^[A-Za-z0-9_.:-]+$/.test(newId)) throw new EditError("E_ATTRIBUTE_INVALID", `id inválido: ${newId}`);
+
+  const composition = loadComposition(source);
+  const all = flatten(composition.clips);
+  if (all.some((clip) => clip.id === newId)) throw new EditError("E_AMBIGUOUS_CLIP", `id "${newId}" já existe`);
+  const clip = all.find((item) => item.id === clipId);
+  if (clip === undefined) throw new EditError("E_CLIP_NOT_FOUND", `clip "${clipId}" não existe`);
+  if (!composition.clips.includes(clip)) {
+    throw new EditError("E_SPLIT_UNSUPPORTED", `clip "${clipId}" está dentro de uma sub-composição; divida no arquivo dela`);
+  }
+  if (clip.isSubComposition || clip.children.length > 0) {
+    throw new EditError("E_SPLIT_UNSUPPORTED", `clip "${clipId}" contém outros clips; dividir copiaria a sub-timeline inteira`);
+  }
+  if (clip.keyframes !== undefined) {
+    throw new EditError("E_SPLIT_UNSUPPORTED", `clip "${clipId}" tem data-keyframes; remova a automação antes de dividir`);
+  }
+  if (clip.start === undefined || clip.end === undefined) {
+    throw new EditError("E_SPLIT_UNSUPPORTED", `clip "${clipId}" não tem início e fim resolvidos`);
+  }
+  if (at <= clip.start + MIN_SPLIT_PIECE || at >= clip.end - MIN_SPLIT_PIECE) {
+    throw new EditError(
+      "E_SPLIT_OUT_OF_RANGE",
+      `corte em ${seconds(at)}s fora do clip "${clipId}" (${seconds(clip.start)}s a ${seconds(clip.end)}s)`,
+    );
+  }
+
+  const document = parse(source, { sourceCodeLocationInfo: true }) as unknown as P5Node;
+  const nodes = [...walk(document.childNodes)].filter((node) => node.nodeName !== "#text" && attr(node, "data-clip-id") === clipId);
+  if (nodes.length !== 1) {
+    throw new EditError("E_CLIP_NOT_FOUND", `clip "${clipId}" precisa de data-clip-id explícito no arquivo para ser dividido`);
+  }
+  const location = nodes[0]!.sourceCodeLocation;
+  if (!location) throw new EditError("E_CLIP_NOT_FOUND", `clip "${clipId}" sem localização no arquivo`);
+
+  // Quem referencia o clip precisa ter id no arquivo para ser reescrito.
+  const referrers = all.filter((item) => item.id !== clipId && item.startExpr.kind === "reference" && item.startExpr.refId === clipId);
+  const referrerIds = new Set(
+    [...walk(document.childNodes)].map((node) => attr(node, "data-clip-id")).filter((id): id is string => id !== undefined),
+  );
+  for (const referrer of referrers) {
+    if (!referrerIds.has(referrer.id)) {
+      throw new EditError("E_SPLIT_UNSUPPORTED", `clip "${referrer.id}" referencia "${clipId}" mas não tem data-clip-id no arquivo`);
+    }
+  }
+
+  const first = at - clip.start;
+  const copyAttributes: Record<string, string | null> = {
+    "data-clip-id": newId,
+    "data-start": clipId,
+    "data-duration": seconds(clip.end - at),
+    "data-fade-in": null,
+  };
+  if (clip.tag === "video" || clip.tag === "audio") copyAttributes["data-offset"] = seconds(clip.offset + first * clip.playbackRate);
+  const copy = applyPatches(source.slice(location.startOffset, location.endOffset), [{ clipId, attributes: copyAttributes }]);
+
+  const lineStart = source.lastIndexOf("\n", location.startOffset - 1) + 1;
+  const lead = source.slice(lineStart, location.startOffset);
+  const separator = /^[ \t]*$/.test(lead) ? `\n${lead}` : "";
+  const inserted = source.slice(0, location.endOffset) + separator + copy + source.slice(location.endOffset);
+
+  const patches: ClipPatch[] = [{ clipId, attributes: { "data-duration": seconds(first), "data-fade-out": null } }];
+  for (const referrer of referrers) {
+    const offset = referrer.startExpr.kind === "reference" ? referrer.startExpr.offset : 0;
+    const suffix = offset > 0 ? ` + ${seconds(offset)}` : offset < 0 ? ` - ${seconds(-offset)}` : "";
+    patches.push({ clipId: referrer.id, attributes: { "data-start": `${newId}${suffix}` } });
+  }
+  return applyPatches(inserted, patches);
 }

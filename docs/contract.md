@@ -150,6 +150,34 @@ No preview o relógio roda em **tempo real** (`__ff.startLive`): animações e v
 sozinhas, sem seek. Salvar qualquer arquivo do diretório recompila (~4 ms medidos) e recarrega por SSE;
 o instante atual é guardado em `sessionStorage` e retomado após a recarga.
 
+## 9d. Studio
+
+`frankframes studio` edita o HTML da entrada; toda escrita passa pelo contrato antes de ir para o disco
+(contrato inválido não grava, `E_CONTRACT_INVALID` com os diagnósticos) e preserva formatação e comentários.
+
+- **Importar mídia** (`POST /api/media?name=&start=`, arquivo cru no corpo). Vídeo (`.mp4 .m4v .mov .webm
+  .mkv`), áudio (`.mp3 .wav .m4a .aac .ogg .opus .flac`) ou imagem (`.png .jpg .jpeg .webp .gif .svg`) é
+  copiado para `assets/` ao lado da entrada com nome seguro (sem acento, espaço ou caminho). Conteúdo
+  idêntico a um arquivo existente reaproveita o arquivo; nome igual com conteúdo diferente ganha sufixo
+  `-<sha256[0:8]>` — nada é sobrescrito. O clip entra no fim da raiz com `data-start` no playhead e
+  `data-duration` medida pelo ffprobe (imagem: 3 s). Arquivo ilegível falha com `E_MEDIA_PROBE` e é
+  apagado; extensão fora da lista é `E_MEDIA_UNSUPPORTED`; teto de 4 GiB (`E_MEDIA_TOO_LARGE`).
+- **Dividir** (`POST /api/clips/<id>/split {at}`). Só para clip de topo com `data-clip-id` explícito, sem
+  `data-keyframes` nem filhos (`E_SPLIT_UNSUPPORTED`), e com `at` a mais de 1 ms das bordas
+  (`E_SPLIT_OUT_OF_RANGE`). A primeira metade fica com `data-duration = at − início` e perde o
+  `data-fade-out`; a cópia entra logo depois com `data-start="<id>"` (começa onde a primeira termina),
+  o resto da duração, sem `data-fade-in` e, em vídeo/áudio, `data-offset` avançado em
+  `(at − início) × data-playback-rate`. Clips que referenciavam o fim do original passam a referenciar a
+  cópia, então nada mais na timeline se move.
+- **Desfazer/refazer** (`POST /api/undo`, `POST /api/redo`, `GET /api/history`). O histórico guarda até
+  200 versões completas do arquivo, só em memória, e some quando o Studio fecha. Se o arquivo mudou fora
+  do Studio, desfazer/refazer recusa com `409 E_HISTORY_STALE` e descarta o histórico em vez de
+  sobrescrever a mudança. Desfazer uma importação remove o clip, não o arquivo em `assets/`.
+- **Caminhos relativos** do preview resolvem contra o diretório da entrada via `<base href="/__ff_site/">`.
+  Nenhum caminho com segmento começando por `.` (`.env`, `.git`) é servido.
+
+As escritas são serializadas: duas edições nunca intercalam leitura e gravação do mesmo arquivo.
+
 ## 10. Compatibilidade
 
 Composições escritas para outro framework entram por um **importador separado** (`compat-*`), que traduz

@@ -10,10 +10,12 @@ import { basename, dirname, extname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadComposition } from "@frankframes/contract";
 import type { ResolvedClip } from "@frankframes/contract";
-import { assetPath, injectEngine } from "@frankframes/engine";
-import { applyPatches, EditError, prepare } from "@frankframes/producer";
+import { assetPath, injectEngine, probeDuration } from "@frankframes/engine";
+import { applyPatches, EditError, prepare, resolveFfmpeg, splitClip } from "@frankframes/producer";
 import type { ClipPatch, PreparedComposition } from "@frankframes/producer";
 import { listBlocks } from "@frankframes/catalog";
+import { HistoryStaleError, StudioHistory } from "./studio-history.ts";
+import { IMAGE_SECONDS, MediaUploadError, mediaKind, mediaMarkup, storeMedia, supportedExtensions } from "./studio-media.ts";
 
 export interface StudioServer {
   url: string;
@@ -34,6 +36,8 @@ const STUDIO_FILES: Record<string, string> = {
 };
 const MEDIA_PREFIX = "/__ff_media/";
 const FONTS_PREFIX = "/__ff_fonts/";
+/** Arquivos do projeto (ex.: `assets/`) vistos pelo preview via `<base>`. */
+const SITE_PREFIX = "/__ff_site/";
 const MAX_BODY_BYTES = 1024 * 1024;
 
 const MIME: Record<string, string> = {
@@ -243,6 +247,26 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
   let debounce: NodeJS.Timeout | undefined;
   let preview: { mtimeMs: number; prepared: PreparedComposition; html: string } | undefined;
   let tmpCounter = 0;
+  const history = new StudioHistory();
+  let mutations: Promise<unknown> = Promise.resolve();
+  let ffprobe: Promise<string> | undefined;
+
+  /** Uma escrita por vez: leitura-modificação-escrita do mesmo arquivo não pode intercalar. */
+  const serial = <T>(task: () => Promise<T>): Promise<T> => {
+    const run = mutations.then(task, task);
+    mutations = run.catch(() => undefined);
+    return run;
+  };
+
+  const ffprobePath = (): Promise<string> => {
+    const pending = ffprobe ?? resolveFfmpeg().then((pair) => pair.ffprobe);
+    // Falha não fica em cache: a próxima importação tenta resolver de novo.
+    ffprobe = pending;
+    pending.catch(() => {
+      if (ffprobe === pending) ffprobe = undefined;
+    });
+    return pending;
+  };
 
   const ensureWatcher = (): void => {
     if (watcher !== undefined) return;
@@ -271,6 +295,21 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
     }
   };
 
+  /** Grava uma versão nova e registra no histórico. */
+  const commit = async (label: string, before: string, after: string): Promise<void> => {
+    await writeAtomic(entryPath, after);
+    history.record(label, before, after);
+  };
+
+  const validated = (next: string, message: string): ReturnType<typeof loadComposition> => {
+    const composition = loadComposition(next);
+    if (!composition.ok) throw new ReplyError(400, "E_CONTRACT_INVALID", message, composition.diagnostics);
+    return composition;
+  };
+
+  const durationOf = (composition: ReturnType<typeof loadComposition>): number | null =>
+    composition.duration.kind === "unresolved" ? null : composition.duration.seconds;
+
   const loadPreview = async (): Promise<{ prepared: PreparedComposition; html: string }> => {
     const current = await stat(entryPath);
     if (preview !== undefined && preview.mtimeMs === current.mtimeMs) {
@@ -284,7 +323,7 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
       fontsBase: "/__ff_fonts",
       live: true,
       preview: { fps: prepared.fps, frames: prepared.totalFrames, id: prepared.composition.id },
-    });
+    }).replace(/<head[^>]*>/i, (head) => `${head}<base href="${SITE_PREFIX}">`);
     preview = { mtimeMs: current.mtimeMs, prepared, html };
     return { prepared, html };
   };
@@ -382,15 +421,13 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
       if (error instanceof EditError) throw new ReplyError(400, error.code, error.message);
       throw error;
     }
-    const composition = loadComposition(next);
-    if (!composition.ok) {
-      throw new ReplyError(400, "E_CONTRACT_INVALID", "a edição deixaria o contrato inválido", composition.diagnostics);
-    }
-    await writeAtomic(entryPath, next);
+    const composition = validated(next, "a edição deixaria o contrato inválido");
+    await commit(`editar ${clipId}`, source, next);
     sendJson(res, 200, {
       ok: true,
-      duration: composition.duration.kind === "unresolved" ? null : composition.duration.seconds,
+      duration: durationOf(composition),
       diagnostics: composition.diagnostics,
+      history: history.state(),
     });
   };
 
@@ -413,12 +450,102 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
     const markup = `\n  <div data-clip-id="${id}" data-start="${start}" data-duration="${duration}" class="clip">Texto</div>\n`;
     const next = source.slice(0, root.index) + markup + source.slice(root.index);
 
-    const composition = loadComposition(next);
-    if (!composition.ok) {
-      throw new ReplyError(400, "E_CONTRACT_INVALID", "o clip novo deixaria o contrato inválido", composition.diagnostics);
+    validated(next, "o clip novo deixaria o contrato inválido");
+    await commit(`inserir ${template}`, source, next);
+    sendJson(res, 200, { ok: true, id, history: history.state() });
+  };
+
+  /** `POST /api/media?name=<arquivo>&start=<s>` com o arquivo cru no corpo. */
+  const importMedia = async (url: URL, req: IncomingMessage, res: ServerResponse): Promise<void> => {
+    const name = url.searchParams.get("name") ?? "";
+    const kind = mediaKind(name);
+    if (kind === undefined) {
+      const message = `tipo de arquivo não suportado: ${name || "(sem nome)"}`;
+      throw new ReplyError(400, "E_MEDIA_UNSUPPORTED", message, [
+        { severity: "error", message, hint: `use ${supportedExtensions().join(", ")}` },
+      ]);
     }
-    await writeAtomic(entryPath, next);
-    sendJson(res, 200, { ok: true, id });
+    const start = Number(url.searchParams.get("start") ?? "0");
+    if (!Number.isFinite(start) || start < 0) throw new ReplyError(400, "E_BODY_INVALID", '"start" precisa ser número >= 0');
+
+    const source = await readFile(entryPath, "utf8");
+    const root = findRootClose(source);
+    if (root === null) throw new ReplyError(400, "E_ROOT_NOT_FOUND", "elemento com data-composition-id não encontrado");
+
+    let stored: Awaited<ReturnType<typeof storeMedia>>;
+    try {
+      stored = await storeMedia(req, entryDir, name);
+    } catch (error) {
+      if (error instanceof MediaUploadError) throw new ReplyError(error.status, error.code, error.message);
+      throw error;
+    }
+    const discard = async (): Promise<void> => {
+      if (stored.created) await unlink(stored.file);
+    };
+
+    let duration = IMAGE_SECONDS;
+    if (kind !== "img") {
+      try {
+        duration = Math.round((await probeDuration(await ffprobePath(), stored.file)) * 1e6) / 1e6;
+      } catch (error) {
+        await discard();
+        const message = `não foi possível medir ${name}: ${(error as Error).message}`;
+        throw new ReplyError(400, "E_MEDIA_PROBE", message, [
+          { severity: "error", message, hint: "confira se o arquivo abre num player; rode `frankframes doctor` se o ffprobe faltar" },
+        ]);
+      }
+    }
+
+    const id = nextClipId(source);
+    const markup = `\n  ${mediaMarkup(kind, id, stored.src, start, duration)}\n`;
+    const next = source.slice(0, root.index) + markup + source.slice(root.index);
+    try {
+      validated(next, "a mídia nova deixaria o contrato inválido");
+    } catch (error) {
+      await discard();
+      throw error;
+    }
+    await commit(`importar ${stored.src}`, source, next);
+    sendJson(res, 200, { ok: true, id, src: stored.src, kind, duration, reused: !stored.created, history: history.state() });
+  };
+
+  const split = async (clipId: string, req: IncomingMessage, res: ServerResponse): Promise<void> => {
+    const body = objectBody(await bodyJson(req));
+    const at = numeric(body, "at");
+    const source = await readFile(entryPath, "utf8");
+    const newId = nextClipId(source);
+    let next: string;
+    try {
+      next = splitClip(source, { clipId, at, newId });
+    } catch (error) {
+      if (error instanceof EditError) throw new ReplyError(400, error.code, error.message);
+      throw error;
+    }
+    const composition = validated(next, "o corte deixaria o contrato inválido");
+    await commit(`dividir ${clipId}`, source, next);
+    sendJson(res, 200, { ok: true, id: newId, duration: durationOf(composition), history: history.state() });
+  };
+
+  const travel = async (direction: "undo" | "redo", res: ServerResponse): Promise<void> => {
+    const current = await readFile(entryPath, "utf8");
+    let target: string | undefined;
+    try {
+      target = direction === "undo" ? history.undo(current) : history.redo(current);
+    } catch (error) {
+      if (error instanceof HistoryStaleError) throw new ReplyError(409, error.code, error.message);
+      throw error;
+    }
+    if (target === undefined) {
+      sendJson(res, 200, { ok: true, changed: false, history: history.state() });
+      return;
+    }
+    try {
+      await writeAtomic(entryPath, target);
+    } catch (error) {
+      history.revert(direction);
+      throw error;
+    }
+    sendJson(res, 200, { ok: true, changed: true, duration: durationOf(loadComposition(target)), history: history.state() });
   };
 
   const events = (req: IncomingMessage, res: ServerResponse): void => {
@@ -436,8 +563,10 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
   async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const method = req.method ?? "GET";
     let pathname: string;
+    let url: URL;
     try {
-      pathname = decodeURIComponent(new URL(req.url ?? "/", "http://127.0.0.1").pathname);
+      url = new URL(req.url ?? "/", "http://127.0.0.1");
+      pathname = decodeURIComponent(url.pathname);
     } catch {
       send(res, 400, "caminho inválido\n", "text/plain; charset=utf-8");
       return;
@@ -464,6 +593,10 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
         }
         return;
       }
+      if (pathname === "/api/history") {
+        sendJson(res, 200, history.state());
+        return;
+      }
       if (pathname === "/api/events") {
         events(req, res);
         return;
@@ -479,6 +612,16 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
       }
       if (pathname.startsWith(MEDIA_PREFIX)) {
         await serveAsset(res, preview === undefined ? undefined : preview.prepared.mediaDir, pathname.slice(MEDIA_PREFIX.length));
+        return;
+      }
+      if (pathname.startsWith(SITE_PREFIX)) {
+        const relative = pathname.slice(SITE_PREFIX.length);
+        // Arquivo oculto do projeto (.env, .git) nunca sai pelo preview.
+        if (relative.split(/[\\/]/).some((part) => part.startsWith("."))) {
+          send(res, 403, "arquivo oculto\n", "text/plain; charset=utf-8");
+          return;
+        }
+        await serveAsset(res, entryDir, relative);
         return;
       }
       if (pathname.startsWith(FONTS_PREFIX)) {
@@ -499,16 +642,30 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
 
     if (method === "POST") {
       if (pathname.startsWith("/api/clips/")) {
-        const clipId = pathname.slice("/api/clips/".length);
-        if (clipId === "" || clipId.includes("/")) {
+        const rest = pathname.slice("/api/clips/".length);
+        const splitMatch = /^([^/]+)\/split$/.exec(rest);
+        if (splitMatch !== null) {
+          await serial(() => split(splitMatch[1]!, req, res));
+          return;
+        }
+        if (rest === "" || rest.includes("/")) {
           send(res, 400, "clip inválido\n", "text/plain; charset=utf-8");
           return;
         }
-        await patchClip(clipId, req, res);
+        await serial(() => patchClip(rest, req, res));
         return;
       }
       if (pathname === "/api/clips") {
-        await insertClip(req, res);
+        await serial(() => insertClip(req, res));
+        return;
+      }
+      if (pathname === "/api/media") {
+        await serial(() => importMedia(url, req, res));
+        return;
+      }
+      if (pathname === "/api/undo" || pathname === "/api/redo") {
+        const direction = pathname === "/api/undo" ? "undo" : "redo";
+        await serial(() => travel(direction, res));
         return;
       }
       send(res, 404, "não encontrado\n", "text/plain; charset=utf-8");
