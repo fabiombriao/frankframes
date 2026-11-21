@@ -14,7 +14,16 @@ export interface Diagnostic {
 
 export type TimeExpr =
   | { kind: "absolute"; value: number }
-  | { kind: "reference"; refId: string; offset: number };
+  | {
+      kind: "reference";
+      refId: string;
+      offset: number;
+      /**
+       * Só no parse: o valor inteiro quando ele também é um identificador válido sem espaços
+       * (`clip-1` também lê como `clip` − 1). `resolveClips` decide e remove o campo (só sobra quando nenhum dos dois ids existe, para a mensagem de E_REF_UNKNOWN).
+       */
+      whole?: string;
+    };
 
 export interface Fps {
   num: number;

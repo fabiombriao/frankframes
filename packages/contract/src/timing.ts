@@ -12,6 +12,10 @@ const REFERENCE = /^([A-Za-z0-9_.:-]+)\s*([+-])\s*(\d+(?:\.\d+)?)$/;
  *   3. identificador  -> referência ao FIM do clip referenciado
  *   4. id + n / id - n -> FIM do clip referenciado, deslocado
  * Qualquer outra forma é `null` (erro de contrato, não fallback silencioso).
+ *
+ * Ambiguidade: ids podem ter hífen, então `clip-1` é o id inteiro ou `clip` − 1. Aqui só se sabe a
+ * sintaxe; quando o valor sem espaços também é um identificador, a leitura `id ± n` sai com `whole`
+ * preenchido e `resolveClips` escolhe: o id exato, se existir na composição, vence (offset 0).
  */
 export function parseTimeExpr(raw: string | undefined, defaultSeconds = 0): TimeExpr | null {
   const value = (raw ?? "").trim();
@@ -26,7 +30,9 @@ export function parseTimeExpr(raw: string | undefined, defaultSeconds = 0): Time
   const ref = REFERENCE.exec(value);
   if (ref) {
     const magnitude = Number(ref[3]);
-    return { kind: "reference", refId: ref[1]!, offset: ref[2] === "+" ? magnitude : -magnitude };
+    const expr: TimeExpr = { kind: "reference", refId: ref[1]!, offset: ref[2] === "+" ? magnitude : -magnitude };
+    if (IDENT.test(value)) expr.whole = value;
+    return expr;
   }
 
   if (IDENT.test(value)) return { kind: "reference", refId: value, offset: 0 };

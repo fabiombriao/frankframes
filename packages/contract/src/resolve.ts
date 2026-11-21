@@ -19,6 +19,21 @@ export function resolveClips(clips: RawClip[], diagnostics: Diagnostic[]): Resol
   };
   index(clips);
 
+  // `clip-1` lê como `clip` − 1 na sintaxe; se `clip-1` é um id existente, vale o id exato (offset 0).
+  // Corrigido aqui, uma vez, para todo consumidor de `startExpr` ver o valor certo.
+  const normalize = (list: RawClip[]): void => {
+    for (const c of list) {
+      const expr = c.startExpr;
+      if (expr.kind === "reference" && expr.whole !== undefined) {
+        if (byId.has(expr.whole)) c.startExpr = { kind: "reference", refId: expr.whole, offset: 0 };
+        else if (byId.has(expr.refId)) c.startExpr = { kind: "reference", refId: expr.refId, offset: expr.offset };
+        // Nenhum dos dois existe: `whole` fica só para a mensagem de E_REF_UNKNOWN citar o valor inteiro.
+      }
+      normalize(c.children);
+    }
+  };
+  normalize(clips);
+
   const starts = new Map<string, number | undefined>();
   const visiting = new Set<string>();
 
@@ -44,11 +59,17 @@ export function resolveClips(clips: RawClip[], diagnostics: Diagnostic[]): Resol
     } else {
       const target = byId.get(clip.startExpr.refId);
       if (!target) {
+        const { refId, offset, whole } = clip.startExpr;
         diagnostics.push(
-          diag(CODES.REF_UNKNOWN, "error", `data-start de "${id}" referencia id inexistente: "${clip.startExpr.refId}"`, {
-            clipId: id,
-            hint: "referências apontam para data-clip-id ou data-composition-id de outro clip",
-          }),
+          whole !== undefined
+            ? diag(CODES.REF_UNKNOWN, "error", `data-start de "${id}" referencia id inexistente: "${whole}"`, {
+                clipId: id,
+                hint: `nenhum clip "${whole}" nem "${refId}"; para deslocar, use espaços: "${refId} ${offset < 0 ? "-" : "+"} ${Math.abs(offset)}"`,
+              })
+            : diag(CODES.REF_UNKNOWN, "error", `data-start de "${id}" referencia id inexistente: "${refId}"`, {
+                clipId: id,
+                hint: "referências apontam para data-clip-id ou data-composition-id de outro clip",
+              }),
         );
       } else {
         const targetStart = startOf(target.id);

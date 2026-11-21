@@ -473,3 +473,33 @@ test("aparar clip com movimento próprio é permitido e não mexe nos atributos 
 test("aparar sem mudar nada devolve o arquivo idêntico", () => {
   assert.equal(trimClipStart(TRIM, { clipId: "v", start: 1 }), TRIM);
 });
+
+// ---- EDT-75: ids hifenizados (clip-N) nas edições que escrevem referência sem deslocamento ----
+
+test("split de clip-3 com referenciador de deslocamento 0 mantém a composição válida e o referenciador parado", () => {
+  const source = `<div data-composition-id="main" data-root="true" data-duration="8">
+  <div data-clip-id="clip-3" data-start="0" data-duration="4">x</div>
+  <div data-clip-id="clip-5" data-start="clip-3" data-duration="1">y</div>
+</div>
+`;
+  const before = startsOf(source);
+  assert.equal(before["clip-5"], 4);
+  const out = splitClip(source, { clipId: "clip-3", at: 2, newId: "clip-4" });
+  assert.match(out, /data-clip-id="clip-5" data-start="clip-4"/);
+  const after = startsOf(out);
+  assert.equal(after["clip-5"], 4, "o referenciador continua no mesmo instante");
+  assert.equal(after["clip-4"], 2);
+});
+
+test("aparar clip com data-start=\"clip-1 + 1\" até deslocamento 0 grava clip-1 e o fim fica parado", () => {
+  const source = `<div data-composition-id="main" data-root="true" data-duration="8">
+  <div data-clip-id="clip-1" data-start="0" data-duration="2">a</div>
+  <div data-clip-id="clip-2" data-start="clip-1 + 1" data-duration="2">b</div>
+</div>
+`;
+  const out = trimClipStart(source, { clipId: "clip-2", start: 2 });
+  assert.match(out, /data-clip-id="clip-2" data-start="clip-1" data-duration="3"/);
+  const clip = clipsOf(out).get("clip-2")!;
+  assert.equal(clip.start, 2);
+  assert.equal(clip.end, 5);
+});

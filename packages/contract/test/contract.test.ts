@@ -211,3 +211,70 @@ test("atributo numérico inválido é erro, não fallback", () => {
     assert.ok(c.diagnostics.some((d) => d.code === CODES.NUMBER_INVALID), `${attr} sem E_NUMBER_INVALID`);
   }
 });
+
+// ---- EDT-75: data-start com id hifenizado ----
+
+test("id hifenizado: clip-1 é o fim do clip clip-1, não clip − 1", () => {
+  const c = loadComposition(
+    root(`
+      <div data-clip-id="clip-1" data-start="0" data-duration="2"></div>
+      <div data-clip-id="b" data-start="clip-1" data-duration="1"></div>
+      <div data-clip-id="c" data-start="clip-1 + 0.5" data-duration="1"></div>
+      <div data-clip-id="d" data-start="clip-1-0.5" data-duration="1"></div>
+    `),
+  );
+  assert.equal(c.ok, true, JSON.stringify(c.diagnostics));
+  const byId = new Map(c.clips.map((x) => [x.id, x]));
+  assert.equal(byId.get("b")!.start, 2);
+  assert.deepEqual(byId.get("b")!.startExpr, { kind: "reference", refId: "clip-1", offset: 0 });
+  assert.equal(byId.get("c")!.start, 2.5);
+  // `clip-1-0.5` não é id existente: vale `clip-1` − 0,5.
+  assert.equal(byId.get("d")!.start, 1.5);
+  assert.deepEqual(byId.get("d")!.startExpr, { kind: "reference", refId: "clip-1", offset: -0.5 });
+});
+
+test("sem clip com o id inteiro, id-n continua sendo o fim de id menos n", () => {
+  const c = loadComposition(
+    root(`
+      <div data-clip-id="a" data-start="0" data-duration="2"></div>
+      <div data-clip-id="b" data-start="a-0.25" data-duration="1"></div>
+    `),
+  );
+  assert.equal(c.ok, true, JSON.stringify(c.diagnostics));
+  assert.equal(c.clips.find((x) => x.id === "b")!.start, 1.75);
+});
+
+test("clip e clip-1 existindo: clip-1 é o fim de clip-1 (id exato vence)", () => {
+  const c = loadComposition(
+    root(`
+      <div data-clip-id="clip" data-start="0" data-duration="5"></div>
+      <div data-clip-id="clip-1" data-start="0" data-duration="2"></div>
+      <div data-clip-id="b" data-start="clip-1" data-duration="1"></div>
+    `),
+  );
+  assert.equal(c.ok, true, JSON.stringify(c.diagnostics));
+  assert.equal(c.clips.find((x) => x.id === "b")!.start, 2);
+});
+
+test("id hifenizado dentro de sub-composição também resolve pelo id exato", () => {
+  const c = loadComposition(
+    root(`
+      <div data-clip-id="host" data-composition-id="card" data-start="0" data-duration="4">
+        <div data-clip-id="clip-1" data-start="0" data-duration="1"></div>
+        <div data-clip-id="clip-2" data-start="clip-1" data-duration="1"></div>
+      </div>
+    `),
+  );
+  assert.equal(c.ok, true, JSON.stringify(c.diagnostics));
+  const inner = c.clips[0]!.children.find((x) => x.id === "clip-2")!;
+  assert.equal(inner.start, 1);
+});
+
+test("id hifenizado inexistente continua sendo E_REF_UNKNOWN", () => {
+  const c = loadComposition(root(`<div data-clip-id="a" data-start="clip-9" data-duration="1"></div>`));
+  assert.equal(c.ok, false);
+  const unknown = c.diagnostics.find((d) => d.code === CODES.REF_UNKNOWN);
+  assert.ok(unknown);
+  assert.match(unknown.message, /"clip-9"/, "cita o valor inteiro, não o id da leitura id − n");
+  assert.match(unknown.hint ?? "", /nenhum clip "clip-9" nem "clip"; para deslocar, use espaços: "clip - 9"/);
+});

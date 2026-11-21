@@ -1235,3 +1235,15 @@ test("sampleTracks: valor por propriedade CSS em qualquer tempo do clip", () => 
   // Propriedade que nada anima não aparece.
   assert.equal(at(1)["--ff-y"], undefined);
 });
+
+test("transição com parceiro de id hifenizado (EDT-75) acha o clip clip-1", () => {
+  const c = loadComposition(
+    root(
+      `<div data-clip-id="clip-1" data-start="0" data-duration="3"></div>` +
+        `<div data-clip-id="clip-2" data-start="clip-1 - 0.5" data-duration="3" data-transition="dissolver"></div>`,
+    ),
+  );
+  assert.equal(c.ok, true, JSON.stringify(c.diagnostics));
+  assert.equal(c.clips.find((x) => x.id === "clip-2")!.start, 2.5);
+  assert.ok(c.motion["clip-2"], "B ganhou a trilha da transição");
+});

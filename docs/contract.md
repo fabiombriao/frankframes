@@ -40,6 +40,13 @@ Consequências que o contrato assume:
 Referência sempre aponta para o **fim** do alvo, nunca para o início. Um identificador que não existe
 é `E_REF_UNKNOWN`; uma forma que não é número nem identificador é `E_START_INVALID`. Não há fallback.
 
+Ids podem ter hífen, então `clip-1` também lê como `clip − 1`. **O id exato vence**: quando o valor inteiro,
+sem espaços, é o `data-clip-id` de um clip da composição, é referência a esse clip com deslocamento 0. Só
+se não houver clip com esse id vale `id ± n` (`a-0.25` sem clip `a-0.25` é o fim de `a` menos 0,25 s). Com
+os dois ids existindo (`clip` e `clip-1`), `clip-1` é o fim de `clip-1`. Com espaços (`clip - 1`) é sempre
+`id ± n`, sem ambiguidade. A escolha é feita uma vez, na resolução; todo consumidor de `startExpr` vê a
+referência já normalizada.
+
 `data-duration` é segundos ≥ 0. `data-end` não existe no vocabulário: o fim é sempre derivado.
 
 ## 4. O que é um clip
