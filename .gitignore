@@ -12,4 +12,4 @@ vendor/ffmpeg/bin/
 packages/*/LICENSE
 packages/*/THIRD-PARTY-NOTICES.md
 out/ci-suite.log
-vendor/cache/preview-audio/
+vendor/cache/
