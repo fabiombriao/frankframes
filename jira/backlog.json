@@ -405,6 +405,23 @@
             "teste que falharia hoje: mutação via API com o preview parado em t, depois do reload __ff.now() devolve t"
           ],
           "jiraKey": "EDT-76"
+        },
+        {
+          "summary": "Render em hardware com vários workers não reproduz na mesma máquina",
+          "points": 3,
+          "labels": [
+            "engine",
+            "determinismo",
+            "bug"
+          ],
+          "acceptance": [
+            "visto em 2026-11-23 (EDT-62/H1): examples/cena-dupla em --gpu auto (RTX 4060, D3D11) com 6 workers dá 2 variantes de hash em 95 de 240 frames em 5 rodadas; com 1 worker e em software é estável; contrato §9 promete 'igual nesta máquina' em hardware",
+            "causa diagnosticada e registrada no item (agendamento entre browsers, ordem dos frames por worker, compositor de GPU compartilhado, tempo entre seek e captura)",
+            "correção na causa, ou o render em hardware passa a garantir a promessa de outra forma medida (ex.: leituras consecutivas idênticas só em hardware), com custo de velocidade registrado em docs/perf.md",
+            "se a única saída for mudar a promessa do contrato ou o padrão de GPU do render, parar e levar a decisão ao titular",
+            "teste que falharia hoje: cena-dupla em auto com vários workers, 3 rodadas, hashes por frame iguais (skip explícito sem GPU)"
+          ],
+          "jiraKey": "EDT-77"
         }
       ],
       "jiraKey": "EDT-26"
