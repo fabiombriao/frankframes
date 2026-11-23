@@ -424,3 +424,51 @@ test("estúdio recusa colar clip que sumiu e início inválido, sem gravar", () 
     assert.equal(missingAt.status, 400);
     assert.equal(await readFile(entry, "utf8"), afterDelete, "falha não grava");
   }));
+
+// EDT-45: waveform pelo servidor.
+test("estúdio entrega a waveform de um clip com som e recusa o que não tem", async (t) => {
+  try {
+    await resolveFfmpeg();
+  } catch (error) {
+    t.skip(`ffmpeg indisponível: ${(error as Error).message}`);
+    return;
+  }
+  const dir = await mkdtemp(join(tmpdir(), "ff-studio-wave-"));
+  const entry = join(dir, "comp.html");
+  let server: StudioServer | undefined;
+  try {
+    await writeFile(entry, HTML, "utf8");
+    server = await startStudio({ entry, waveformCacheDir: join(dir, "cache-waveform") });
+    const imported = await upload(server, "trilha.wav", wav(1, 12000));
+    assert.equal(imported.status, 200, JSON.stringify(imported.json));
+
+    const ok = await fetch(`${server.url}api/waveform/${String(imported.json.id)}`);
+    assert.equal(ok.status, 200);
+    const body = (await ok.json()) as { digest: string; peaksPerSecond: number; peaks: number[]; duration: number };
+    assert.equal(body.peaksPerSecond, 100);
+    assert.equal(body.peaks.length, 100);
+    assert.ok(body.peaks.every((peak) => peak >= 0 && peak <= 255));
+    assert.ok(Math.max(...body.peaks) > 80, "o tom aparece nos picos (12000 de 32767 ≈ 93)");
+    assert.match(body.digest, /^[0-9a-f]{64}$/);
+
+    const div = await fetch(`${server.url}api/waveform/a`);
+    assert.equal(div.status, 400, "um <div> não tem waveform");
+    assert.equal(((await div.json()) as { code: string }).code, "E_WAVEFORM_UNSUPPORTED");
+
+    const missing = await fetch(`${server.url}api/waveform/nao-existe`);
+    assert.equal(missing.status, 404);
+    assert.equal(((await missing.json()) as { code: string }).code, "E_CLIP_NOT_FOUND");
+
+    // Caminho que sai da pasta da composição ou passa por segmento oculto nunca chega ao FFmpeg.
+    for (const src of ["../fora.wav", ".segredo/trilha.wav", "https://exemplo.com/a.wav"]) {
+      const audio = `  <audio data-clip-id="x" src="${src}" data-start="0" data-duration="1"></audio>\n`;
+      await writeFile(entry, HTML.replace("</div>\n</body>", `${audio}</div>\n</body>`), "utf8");
+      const response: Response = await fetch(`${server.url}api/waveform/x`);
+      assert.equal(response.status, 400, `${src} → ${response.status}`);
+      assert.equal(((await response.json()) as { code: string }).code, "E_WAVEFORM_UNSUPPORTED", src);
+    }
+  } finally {
+    await server?.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});

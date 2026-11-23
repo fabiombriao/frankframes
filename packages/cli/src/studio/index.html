@@ -109,15 +109,25 @@
   </main>
 
   <footer class="panel timeline-panel" aria-label="Timeline">
-    <div class="timeline-head">
-      <div class="timeline-gutter">Timeline</div>
-      <div id="ruler" class="ruler" aria-hidden="true"></div>
+    <div class="timeline-toolbar" role="group" aria-label="Zoom da timeline">
+      <button id="zoomOut" type="button" class="zoom-button" title="Diminuir o zoom (-, ou Ctrl+roda)" aria-label="Diminuir o zoom">−</button>
+      <button id="zoomIn" type="button" class="zoom-button" title="Aumentar o zoom (=, ou Ctrl+roda), até 1 frame = 48 px" aria-label="Aumentar o zoom">+</button>
+      <button id="zoomFit" type="button" class="zoom-button zoom-fit" title="Mostrar a composição inteira">Ajustar</button>
+      <output id="zoomLevel" class="zoom-level" aria-live="polite"></output>
     </div>
-    <div id="timelineBody" class="timeline-body">
-      <div id="timelineRows" class="timeline-rows"></div>
-      <p id="timelineEmpty" class="panel-status timeline-empty">Nenhum clip na composição.</p>
-      <div class="playhead-track" aria-hidden="true">
-        <div id="playhead" class="playhead"></div>
+    <div id="timelineScroll" class="timeline-scroll">
+      <div id="timelineCanvas" class="timeline-canvas">
+        <div class="timeline-head">
+          <div class="timeline-gutter">Timeline</div>
+          <div id="ruler" class="ruler" aria-hidden="true"></div>
+        </div>
+        <div id="timelineBody" class="timeline-body">
+          <div id="timelineRows" class="timeline-rows"></div>
+          <p id="timelineEmpty" class="panel-status timeline-empty">Nenhum clip na composição.</p>
+          <div class="playhead-track" aria-hidden="true">
+            <div id="playhead" class="playhead"></div>
+          </div>
+        </div>
       </div>
     </div>
   </footer>

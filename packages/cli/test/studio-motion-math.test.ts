@@ -12,7 +12,7 @@ import {
   transitionParams,
   transitionPartner,
 } from "../src/studio/motion.js";
-import { percentSpan } from "../src/studio/timeline-math.js";
+import { pxSpan } from "../src/studio/timeline-math.js";
 
 const enterPresets = describePresets("enter");
 
@@ -70,11 +70,12 @@ test("transitionParams larga o que o preset não aceita, o vazio e o padrão", (
   assert.deepEqual(transitionParams("cortina", { dir: "" }, transitionPresets), {});
 });
 
-test("percentSpan usa a mesma régua da barra e corta nas bordas", () => {
-  assert.deepEqual(percentSpan(1, 0.5, 10), { left: 10, width: 5 });
-  const edge = percentSpan(9.8, 1, 10);
-  assert.ok(Math.abs(edge.left - 98) < 1e-9 && Math.abs(edge.width - 2) < 1e-9, JSON.stringify(edge));
-  assert.deepEqual(percentSpan(1, 1, 0), { left: 0, width: 0 });
+test("pxSpan usa a mesma régua da barra (px) e corta nas bordas", () => {
+  assert.deepEqual(pxSpan(1, 0.5, 10, 100), { left: 100, width: 50 });
+  const edge = pxSpan(9.8, 1, 10, 100);
+  assert.ok(Math.abs(edge.left - 980) < 1e-9 && Math.abs(edge.width - 20) < 1e-9, JSON.stringify(edge));
+  assert.deepEqual(pxSpan(1, 1, 0, 100), { left: 0, width: 0 });
+  assert.deepEqual(pxSpan(1, 1, 10, 0), { left: 0, width: 0 });
 });
 
 test("keyframeMarks junta propriedades no mesmo tempo numa marca e usa a régua recebida", () => {

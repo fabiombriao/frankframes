@@ -30,6 +30,8 @@ body {
 
 body {
   display: grid;
+  /* Coluna minmax(0, 1fr): sem isso a pista larga da timeline esticaria a página em vez de rolar. */
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: auto minmax(0, 1fr) minmax(180px, 38vh);
   overflow: hidden;
   background: var(--bg);
@@ -584,16 +586,79 @@ textarea {
   border-top: 1px solid var(--border);
 }
 
+.timeline-toolbar {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel-raised);
+}
+
+.zoom-button {
+  min-width: 28px;
+  padding: 1px 8px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: transparent;
+  color: var(--text);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.zoom-button:hover:not(:disabled) {
+  border-color: var(--muted);
+}
+
+.zoom-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.zoom-level {
+  margin-left: 6px;
+  color: var(--muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Uma área rolável só (x e y): a régua gruda no topo e os rótulos na esquerda. A largura da pista é
+   --lane-width (= duração * px/s), definida pelo app.js. */
+.timeline-scroll {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.timeline-canvas {
+  --lane-width: 100%;
+  display: flex;
+  flex-direction: column;
+  width: calc(var(--gutter) + var(--lane-width));
+  min-width: 100%;
+  min-height: 100%;
+}
+
 .timeline-head {
+  position: sticky;
+  top: 0;
+  z-index: 6;
   display: grid;
-  grid-template-columns: var(--gutter) minmax(0, 1fr);
+  flex: none;
+  grid-template-columns: var(--gutter) var(--lane-width);
   border-bottom: 1px solid var(--border);
   background: var(--panel-raised);
 }
 
 .timeline-gutter {
+  position: sticky;
+  left: 0;
+  z-index: 7;
   padding: 6px 10px;
   border-right: 1px solid var(--border);
+  background: var(--panel-raised);
   color: var(--muted);
   font-size: 11px;
   font-weight: 600;
@@ -618,6 +683,12 @@ textarea {
   white-space: nowrap;
 }
 
+.tick.is-minor {
+  top: auto;
+  height: 7px;
+  border-left-color: #2b3745;
+}
+
 .tick span {
   position: absolute;
   top: 5px;
@@ -627,8 +698,6 @@ textarea {
 .timeline-body {
   position: relative;
   flex: 1;
-  min-height: 0;
-  overflow: auto;
 }
 
 .timeline-rows {
@@ -637,18 +706,23 @@ textarea {
 
 .timeline-row {
   display: grid;
-  grid-template-columns: var(--gutter) minmax(0, 1fr);
+  grid-template-columns: var(--gutter) var(--lane-width);
   min-height: 32px;
   border-bottom: 1px solid #202a35;
 }
 
 .row-label {
+  position: sticky;
+  left: 0;
+  z-index: 5;
   display: flex;
   align-items: center;
   gap: 6px;
   min-width: 0;
   padding: 4px 10px;
   overflow: hidden;
+  border-right: 1px solid #202a35;
+  background: var(--panel);
   color: var(--muted);
   font-family: ui-monospace, "Cascadia Mono", monospace;
   font-size: 11px;
@@ -669,7 +743,7 @@ textarea {
   position: relative;
   min-width: 0;
   background-image: linear-gradient(90deg, #202a35 1px, transparent 1px);
-  background-size: var(--tick-size, 10%) 100%;
+  background-size: var(--tick-size, 100px) 100%;
 }
 
 .clip-bar {
@@ -741,6 +815,23 @@ textarea {
 .clip-bar.is-selected .resize-handle {
   border-left-color: rgba(23, 10, 13, 0.4);
   background: rgba(0, 0, 0, 0.12);
+}
+
+/* Waveform (EDT-45): canvas só da parte visível da barra; erro vira faixa hachurada com o código no title. */
+.clip-bar .wave {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  pointer-events: none;
+}
+
+.clip-bar .wave-error {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  background: repeating-linear-gradient(135deg, rgba(255, 140, 140, 0.35) 0 4px, rgba(255, 140, 140, 0.08) 4px 8px);
 }
 
 /* Faixa de transição (EDT-54): sobreposição de B com A, hachurada no começo da barra de B. */
@@ -855,9 +946,12 @@ textarea {
 .playhead-track {
   position: absolute;
   top: 0;
-  right: 0;
+  bottom: 0;
   left: var(--gutter);
-  min-height: 100%;
+  width: var(--lane-width);
+  z-index: 3;
+  /* A cabeça do playhead passa da pista nas pontas; sem cortar ela alargaria a área rolável em "ajustar". */
+  overflow: hidden;
   pointer-events: none;
 }
 

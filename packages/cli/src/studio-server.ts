@@ -28,9 +28,10 @@ import {
   duplicateClip,
   trimClipStart,
 } from "@frankframes/producer";
-import type { ClipPatch, KeyframeRequest, PreparedComposition } from "@frankframes/producer";
+import type { ClipPatch, FfmpegPair, KeyframeRequest, PreparedComposition } from "@frankframes/producer";
 import { listBlocks, motionThumbPath } from "@frankframes/catalog";
 import { HistoryStaleError, StudioHistory } from "./studio-history.ts";
+import { WaveformError, waveformFor } from "./studio-waveform.ts";
 import { IMAGE_SECONDS, MediaUploadError, mediaKind, mediaMarkup, storeMedia, supportedExtensions } from "./studio-media.ts";
 
 export interface StudioServer {
@@ -43,6 +44,8 @@ export interface StudioOptions {
   port?: number;
   /** Cache dos mixes de preview; padrão `cache/preview-audio` do FRANKFRAMES_HOME. */
   audioCacheDir?: string;
+  /** Cache das waveforms; padrão `cache/waveform` do FRANKFRAMES_HOME. */
+  waveformCacheDir?: string;
 }
 
 const STUDIO_DIR = fileURLToPath(new URL("./studio/", import.meta.url));
@@ -317,6 +320,7 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
   const entryDir = dirname(entryPath);
   const entryName = basename(entryPath);
   const audioCacheDir = resolve(options.audioCacheDir ?? assetPath("cache", "preview-audio"));
+  const waveformCacheDir = options.waveformCacheDir === undefined ? undefined : resolve(options.waveformCacheDir);
   const port = options.port ?? 0;
   if (!Number.isInteger(port) || port < 0 || port > 65535) {
     throw new Error(`porta inválida: ${String(options.port)}`);
@@ -334,7 +338,7 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
   let tmpCounter = 0;
   const history = new StudioHistory();
   let mutations: Promise<unknown> = Promise.resolve();
-  let ffprobe: Promise<string> | undefined;
+  let ffmpegPending: Promise<FfmpegPair> | undefined;
 
   /** Uma escrita por vez: leitura-modificação-escrita do mesmo arquivo não pode intercalar. */
   const serial = <T>(task: () => Promise<T>): Promise<T> => {
@@ -343,15 +347,17 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
     return run;
   };
 
-  const ffprobePath = (): Promise<string> => {
-    const pending = ffprobe ?? resolveFfmpeg().then((pair) => pair.ffprobe);
-    // Falha não fica em cache: a próxima importação tenta resolver de novo.
-    ffprobe = pending;
+  const ffmpegPair = (): Promise<FfmpegPair> => {
+    const pending = ffmpegPending ?? resolveFfmpeg();
+    // Falha não fica em cache: a próxima importação ou waveform tenta resolver de novo.
+    ffmpegPending = pending;
     pending.catch(() => {
-      if (ffprobe === pending) ffprobe = undefined;
+      if (ffmpegPending === pending) ffmpegPending = undefined;
     });
     return pending;
   };
+
+  const ffprobePath = (): Promise<string> => ffmpegPair().then((pair) => pair.ffprobe);
 
   const ensureWatcher = (): void => {
     if (watcher !== undefined) return;
@@ -829,6 +835,37 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
     sendJson(res, 200, { ok: true, changed: true, duration: durationOf(loadComposition(target)), history: history.state() });
   };
 
+  /** Picos do arquivo-fonte de um clip com som. É leitura: não entra em `serial()`. */
+  const waveform = async (clipId: string, res: ServerResponse): Promise<void> => {
+    const composition = loadComposition(await readFile(entryPath, "utf8"));
+    const clip = flattenClips(composition.clips).find((item) => item.clip.id === clipId)?.clip;
+    if (clip === undefined) throw new ReplyError(404, "E_CLIP_NOT_FOUND", `clip "${clipId}" não existe`);
+
+    const unsupported = (message: string): ReplyError =>
+      new ReplyError(400, "E_WAVEFORM_UNSUPPORTED", message, [{ severity: "error", message, hint: "só áudio/vídeo com som" }]);
+    if (clip.mediaSrc === undefined || clip.hasAudio !== true) throw unsupported(`o clip "${clipId}" não é áudio nem vídeo com som`);
+    // Mesma regra do `/__ff_site/`: segmento oculto (`.`, `..`, `.env`) ou caminho fora da pasta da entrada não passa.
+    const relative = clip.mediaSrc;
+    const file =
+      /^[a-z][a-z0-9+.-]+:/i.test(relative) || relative.split(/[\\/]/).some((part) => part.startsWith("."))
+        ? undefined
+        : inside(entryDir, relative);
+    if (file === undefined) throw unsupported(`o arquivo de "${clipId}" fica fora da pasta da composição: ${relative}`);
+    if (!(await stat(file).then((info) => info.isFile(), () => false))) {
+      const message = `arquivo de mídia não encontrado: ${relative}`;
+      throw new ReplyError(500, "E_WAVEFORM_FAILED", message, [{ severity: "error", message, hint: "confira o caminho do arquivo no clip" }]);
+    }
+
+    try {
+      const { ffmpeg } = await ffmpegPair();
+      sendJson(res, 200, await waveformFor(ffmpeg, file, { cacheDir: waveformCacheDir }));
+    } catch (error) {
+      if (!(error instanceof WaveformError)) throw error;
+      const status = error.code === "E_WAVEFORM_NO_AUDIO" ? 422 : 500;
+      throw new ReplyError(status, error.code, error.message, [{ severity: "error", message: error.message, hint: error.hint }]);
+    }
+  };
+
   const events = (req: IncomingMessage, res: ServerResponse): void => {
     res.writeHead(200, {
       "content-type": "text/event-stream",
@@ -872,6 +909,11 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
         } catch (error) {
           throw new ReplyError(500, "E_CATALOG", (error as Error).message);
         }
+        return;
+      }
+      const waveformMatch = /^\/api\/waveform\/([^/]+)$/.exec(pathname);
+      if (waveformMatch !== null) {
+        await waveform(waveformMatch[1]!, res);
         return;
       }
       if (pathname === "/api/history") {

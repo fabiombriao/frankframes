@@ -1,4 +1,4 @@
-import { lastFrameTime, percentSpan, roundToFrame } from "/timeline-math.js";
+import { MAX_PX_PER_FRAME, chooseStep, clampZoom, isFrameLevel, lastFrameTime, peakSlice, pxSpan, roundToFrame, tickLabel, zoomAround } from "/timeline-math.js";
 import { keyframeMarks, keyframePropsFor, renderKeyframeSection, renderMotionSection, renderTransitionSection } from "/motion.js";
 
 (() => {
@@ -6,6 +6,8 @@ import { keyframeMarks, keyframePropsFor, renderKeyframeSection, renderMotionSec
 
   const SNAP = 0.05;
   const MIN_DURATION = 0.1;
+  /* Passo do zoom da timeline. */
+  const ZOOM_STEP = 1.15;
   const FRAME_POLL_MS = 100;
   const PLAYER_WIDTH = 1920;
   const PLAYER_HEIGHT = 1080;
@@ -37,12 +39,16 @@ import { keyframeMarks, keyframePropsFor, renderKeyframeSection, renderMotionSec
   const blocksList = document.getElementById("blocksList");
   const blocksDiagnostics = document.getElementById("blocksDiagnostics");
   const ruler = document.getElementById("ruler");
-  const timelinePanel = document.querySelector(".timeline-panel");
-  const timelineBody = document.getElementById("timelineBody");
+  const timelineScroll = document.getElementById("timelineScroll");
+  const timelineCanvas = document.getElementById("timelineCanvas");
+  const timelineGutter = document.querySelector(".timeline-gutter");
+  const zoomOutButton = document.getElementById("zoomOut");
+  const zoomInButton = document.getElementById("zoomIn");
+  const zoomFitButton = document.getElementById("zoomFit");
+  const zoomLevelEl = document.getElementById("zoomLevel");
   const timelineRows = document.getElementById("timelineRows");
   const timelineEmpty = document.getElementById("timelineEmpty");
   const playheadEl = document.getElementById("playhead");
-  const playheadTrack = document.querySelector(".playhead-track");
   const importButton = document.getElementById("importButton");
   const importInput = document.getElementById("importInput");
   const splitButton = document.getElementById("splitButton");
@@ -70,6 +76,12 @@ import { keyframeMarks, keyframePropsFor, renderKeyframeSection, renderMotionSec
     /* Keyframe selecionado: { clipId, time } com o tempo local ao clip, em segundos. */
     selectedKeyframe: null,
     keyframeProp: "opacity",
+    /* Escala da timeline (EDT-45): px por segundo. Em "ajustar" (zoomFit) o valor acompanha a largura visível. */
+    pxPerSecond: 1,
+    zoomFit: true,
+    /* Waveform por fonte (mediaSrc): a promessa é buscada uma vez; o resultado fica em waveformResults. */
+    waveforms: new Map(),
+    waveformResults: new Map(),
   };
 
   let drag = null;
@@ -87,6 +99,13 @@ import { keyframeMarks, keyframePropsFor, renderKeyframeSection, renderMotionSec
 
   function snap(value) {
     return Math.round(value / SNAP) * SNAP;
+  }
+
+  /* Alinhamento do arrasto: no nível de frame da régua (>= 8 px/frame) vai de frame em frame, senão de 0,05 s. */
+  function snapTime(value) {
+    if (!isFrameLevel(state.pxPerSecond, state.fps)) return snap(value);
+    /* Trunca em ms: 2/30 vira 0,066 e o frame 2 (0,0667 s) continua dentro do clip; arredondar para cima o cortaria. */
+    return Math.floor((Math.round(value * state.fps) / state.fps) * 1000 + 1e-6) / 1000;
   }
 
   function formatNumber(value) {
@@ -777,42 +796,251 @@ import { keyframeMarks, keyframePropsFor, renderKeyframeSection, renderMotionSec
 
   /* Timeline */
 
-  function chooseStep(total) {
-    if (total <= 10) return 1;
-    if (total <= 30) return 2;
-    if (total <= 60) return 5;
-    if (total <= 120) return 10;
-    return Math.ceil(total / 12);
+  /* Escala (EDT-45): tudo na timeline é px = segundos * state.pxPerSecond. */
+
+  function gutterWidth() {
+    return timelineGutter.offsetWidth;
   }
 
-  function renderRuler() {
-    ruler.replaceChildren();
-    if (state.total <= 0) {
-      timelinePanel.style.setProperty("--tick-size", "100%");
-      return;
+  /** Largura visível da pista (sem a coluna de rótulos), em px inteiros. */
+  function laneViewWidth() {
+    return Math.max(1, Math.floor(timelineScroll.clientWidth - gutterWidth()));
+  }
+
+  function fitPps() {
+    return state.total > 0 ? laneViewWidth() / state.total : 1;
+  }
+
+  function maxPps() {
+    return state.fps * MAX_PX_PER_FRAME;
+  }
+
+  function laneWidthPx() {
+    return state.total * state.pxPerSecond;
+  }
+
+  /** Recalcula o pps (em "ajustar" acompanha a largura visível), a largura da pista e os controles de zoom. */
+  function applyScale() {
+    const fit = fitPps();
+    state.pxPerSecond = state.zoomFit ? fit : clampZoom(state.pxPerSecond, { fitPps: fit, fps: state.fps });
+    if (state.pxPerSecond <= fit + 1e-9) state.zoomFit = true;
+    timelineCanvas.style.setProperty("--lane-width", laneWidthPx() + "px");
+    const { major } = state.total > 0 ? chooseStep(state.pxPerSecond, state.fps) : { major: 1 };
+    timelineCanvas.style.setProperty("--tick-size", Math.max(8, major * state.pxPerSecond) + "px");
+    paintZoomControls(fit);
+  }
+
+  function paintZoomControls(fit) {
+    const pps = state.pxPerSecond;
+    zoomLevelEl.textContent =
+      state.total <= 0
+        ? ""
+        : isFrameLevel(pps, state.fps)
+          ? "1 frame = " + Math.round((pps / state.fps) * 10) / 10 + " px"
+          : (pps < 10 ? Math.round(pps * 10) / 10 : Math.round(pps)) + " px/s";
+    zoomOutButton.disabled = state.total <= 0 || pps <= fit + 1e-9;
+    zoomInButton.disabled = state.total <= 0 || pps >= maxPps() - 1e-9;
+    zoomFitButton.disabled = state.total <= 0 || state.zoomFit;
+  }
+
+  /**
+   * Muda o zoom por `factor` mantendo parado o instante sob `pointerX` (px da pista a partir da borda
+   * esquerda da área visível; padrão: o centro).
+   */
+  function zoomBy(factor, pointerX) {
+    if (state.total <= 0) return;
+    const anchorX = clamp(pointerX ?? laneViewWidth() / 2, 0, laneViewWidth());
+    const fit = fitPps();
+    const current = state.pxPerSecond;
+    const target = clampZoom(current * factor, { fitPps: fit, fps: state.fps });
+    if (Math.abs(target - current) < 1e-9) return;
+    const anchorTime = (timelineScroll.scrollLeft + anchorX) / current;
+    const next = zoomAround(current, target / current, anchorTime, anchorX);
+    state.zoomFit = false;
+    state.pxPerSecond = next.pps;
+    applyScale();
+    timelineScroll.scrollLeft = next.scrollLeft;
+    redrawTimeline();
+  }
+
+  function zoomFitAll() {
+    state.zoomFit = true;
+    applyScale();
+    timelineScroll.scrollLeft = 0;
+    redrawTimeline();
+  }
+
+  /** Reposiciona tudo que depende da escala sem refazer as linhas. */
+  function redrawTimeline() {
+    for (const bar of timelineRows.querySelectorAll(".clip-bar")) {
+      const clip = findClip(bar.dataset.clipId);
+      if (!clip) continue;
+      positionBar(bar, clip);
+      const strip = timelineRows.querySelector('.ff-transition[data-clip-id="' + CSS.escape(clip.id) + '"]');
+      if (strip) positionStrip(strip, clip);
+      positionKeyframeMarks(clip);
     }
-    const step = chooseStep(state.total);
-    timelinePanel.style.setProperty("--tick-size", (step / state.total) * 100 + "%");
-    for (let time = 0; time <= state.total + 1e-9; time += step) {
+    paintPlayhead();
+    scheduleRuler();
+    scheduleWaveforms();
+  }
+
+  /* Régua: só os tiques da janela visível (mais uma tela de folga), redesenhados em rAF ao rolar ou dar zoom. */
+
+  let rulerFrame = 0;
+
+  function scheduleRuler() {
+    if (rulerFrame !== 0) return;
+    rulerFrame = requestAnimationFrame(() => {
+      rulerFrame = 0;
+      paintRuler();
+    });
+  }
+
+  function paintRuler() {
+    ruler.replaceChildren();
+    if (state.total <= 0) return;
+    const pps = state.pxPerSecond;
+    const { major, minor } = chooseStep(pps, state.fps);
+    const frameLevel = isFrameLevel(pps, state.fps);
+    const viewWidth = laneViewWidth();
+    const from = Math.max(0, (timelineScroll.scrollLeft - viewWidth) / pps);
+    const to = Math.min(state.total, (timelineScroll.scrollLeft + viewWidth * 2) / pps);
+    const first = Math.floor(from / minor + 1e-9);
+    const fragment = document.createDocumentFragment();
+    for (let index = first; index * minor <= to + 1e-9; index++) {
+      const time = index * minor;
+      const isMajor = Math.abs(time / major - Math.round(time / major)) < 1e-6;
       const tick = document.createElement("div");
-      tick.className = "tick";
-      tick.style.left = clamp((time / state.total) * 100, 0, 100) + "%";
-      const label = document.createElement("span");
-      label.textContent = formatSeconds(time);
-      tick.append(label);
-      ruler.append(tick);
+      tick.className = "tick" + (isMajor ? "" : " is-minor");
+      tick.style.left = time * pps + "px";
+      if (isMajor) {
+        const label = document.createElement("span");
+        label.textContent = tickLabel(time, state.fps, frameLevel);
+        tick.append(label);
+      }
+      fragment.append(tick);
+    }
+    ruler.append(fragment);
+  }
+
+  /* Waveform (EDT-45) */
+
+  /** Clips que mostram forma de onda: mídia com som e posição resolvida. */
+  function hasWave(clip) {
+    return (clip.kind === "audio" || clip.kind === "video") && clip.hasAudio && clip.mediaSrc !== null && clip.start !== null && clip.duration !== null;
+  }
+
+  /** Busca a waveform da fonte uma vez; falha vira resultado `{ error }` e fica visível na faixa. */
+  function ensureWaveform(clip) {
+    const key = clip.mediaSrc;
+    if (state.waveforms.has(key)) return;
+    const promise = fetch("/api/waveform/" + encodeURIComponent(clip.id), { headers: { accept: "application/json" } })
+      .then(async (response) => {
+        const payload = await readJson(response);
+        if (!response.ok) {
+          const code = typeof payload.code === "string" ? payload.code : "E_WAVEFORM_FAILED";
+          throw Object.assign(new Error(typeof payload.message === "string" ? payload.message : "HTTP " + response.status), { code });
+        }
+        if (!Array.isArray(payload.peaks) || !(payload.peaksPerSecond > 0)) {
+          throw Object.assign(new Error("resposta de waveform inválida"), { code: "E_WAVEFORM_FAILED" });
+        }
+        return payload;
+      });
+    state.waveforms.set(key, promise);
+    promise.then(
+      (waveform) => state.waveformResults.set(key, { waveform }),
+      (error) => state.waveformResults.set(key, { error: typeof error.code === "string" ? error : Object.assign(error, { code: "E_WAVEFORM_FAILED" }) }),
+    ).then(scheduleWaveforms);
+  }
+
+  let waveFrame = 0;
+
+  function scheduleWaveforms() {
+    if (waveFrame !== 0) return;
+    waveFrame = requestAnimationFrame(() => {
+      waveFrame = 0;
+      paintWaveforms();
+    });
+  }
+
+  function paintWaveforms() {
+    const scroll = timelineScroll.scrollLeft;
+    const viewWidth = laneViewWidth();
+    const pps = state.pxPerSecond;
+    const dpr = window.devicePixelRatio || 1;
+    for (const bar of timelineRows.querySelectorAll(".clip-bar")) {
+      const clip = findClip(bar.dataset.clipId);
+      const canvas = bar.querySelector(".wave");
+      const failed = bar.querySelector(".wave-error");
+      if (!clip || !canvas || !failed) continue;
+      const result = state.waveformResults.get(clip.mediaSrc ?? "");
+      failed.hidden = result === undefined || result.error === undefined;
+      if (result !== undefined && result.error !== undefined) {
+        failed.title = result.error.code;
+        failed.setAttribute("aria-label", "Waveform indisponível: " + result.error.code);
+      }
+      const span = pxSpan(clip.start ?? 0, clip.duration ?? 0, state.total, pps);
+      const left = Math.max(span.left, scroll);
+      const right = Math.min(span.left + span.width, scroll + viewWidth);
+      if (result === undefined || result.waveform === undefined || right - left < 1) {
+        canvas.hidden = true;
+        continue;
+      }
+      const width = Math.ceil(right - left);
+      const height = Math.max(1, bar.clientHeight);
+      /* O canvas fica dentro da borda da barra (1 px): o deslocamento desconta a borda. */
+      canvas.hidden = false;
+      canvas.style.left = left - span.left - 1 + "px";
+      canvas.style.width = width + "px";
+      canvas.style.height = height + "px";
+      if (canvas.width !== Math.round(width * dpr)) canvas.width = Math.round(width * dpr);
+      if (canvas.height !== Math.round(height * dpr)) canvas.height = Math.round(height * dpr);
+      drawWave(canvas, result.waveform, clip, left, width, height, dpr);
+    }
+  }
+
+  /** Desenha o máximo dos picos de cada coluna de px; a janela de picos sai de `peakSlice` (só a parte visível). */
+  function drawWave(canvas, waveform, clip, left, width, height, dpr) {
+    const context = canvas.getContext("2d");
+    context.setTransform(dpr, 0, 0, dpr, 0, 0);
+    context.clearRect(0, 0, width, height);
+    const pps = state.pxPerSecond;
+    const rate = clip.playbackRate > 0 ? clip.playbackRate : 1;
+    const perSecond = waveform.peaksPerSecond;
+    /* Tempo da fonte nas bordas da parte visível: offset + (tempo na timeline - início) * rate. */
+    const sourceFrom = clip.offset + Math.max(0, left / pps - clip.start) * rate;
+    const sourceSpan = (width / pps) * rate;
+    const slice = peakSlice(waveform, sourceFrom, sourceSpan, 1);
+    if (slice.length === 0) return;
+    const base = Math.floor(sourceFrom * perSecond);
+    context.fillStyle = clip.id === state.selectedId ? "rgba(23, 10, 13, 0.75)" : "rgba(142, 203, 255, 0.85)";
+    const middle = height / 2;
+    for (let column = 0; column < width; column++) {
+      const t0 = sourceFrom + (column / pps) * rate;
+      const t1 = sourceFrom + ((column + 1) / pps) * rate;
+      const i0 = Math.floor(t0 * perSecond) - base;
+      const i1 = Math.max(i0 + 1, Math.ceil(t1 * perSecond) - base);
+      let peak = 0;
+      for (let index = Math.max(0, i0); index < Math.min(slice.length, i1); index++) {
+        if (slice[index] > peak) peak = slice[index];
+      }
+      if (peak === 0) continue;
+      const half = Math.max(1, (peak / 255) * (middle - 1));
+      context.fillRect(column, middle - half, 1, half * 2);
     }
   }
 
   function renderTimeline() {
-    const scrollTop = timelineBody.scrollTop;
+    const scrollTop = timelineScroll.scrollTop;
+    const scrollLeft = timelineScroll.scrollLeft;
     timelineRows.replaceChildren();
-    renderRuler();
+    applyScale();
+    paintRuler();
 
     if (!state.clips.length) {
       timelineEmpty.hidden = false;
-      timelineBody.scrollTop = 0;
-      playheadTrack.style.height = "";
+      timelineScroll.scrollTop = 0;
       return;
     }
     timelineEmpty.hidden = true;
@@ -856,6 +1084,18 @@ import { keyframeMarks, keyframePropsFor, renderKeyframeSection, renderMotionSec
         }
       });
 
+      if (hasWave(clip)) {
+        ensureWaveform(clip);
+        const canvas = document.createElement("canvas");
+        canvas.className = "wave";
+        canvas.hidden = true;
+        canvas.setAttribute("aria-hidden", "true");
+        const failed = document.createElement("span");
+        failed.className = "wave-error";
+        failed.hidden = true;
+        bar.append(canvas, failed);
+      }
+
       if (trimmable(clip)) {
         const startHandle = document.createElement("span");
         startHandle.className = "resize-handle-start";
@@ -880,8 +1120,9 @@ import { keyframeMarks, keyframePropsFor, renderKeyframeSection, renderMotionSec
       timelineRows.append(row);
     }
 
-    timelineBody.scrollTop = scrollTop;
-    playheadTrack.style.height = Math.max(timelineBody.clientHeight, timelineRows.scrollHeight) + "px";
+    timelineScroll.scrollTop = scrollTop;
+    timelineScroll.scrollLeft = scrollLeft;
+    scheduleWaveforms();
   }
 
   /* Faixa hachurada da transição: largura = sobreposição (dur), no começo da barra de B. */
@@ -902,10 +1143,10 @@ import { keyframeMarks, keyframePropsFor, renderKeyframeSection, renderMotionSec
     return strip;
   }
 
-  /* Losangos dos keyframes na faixa do clip: mesma régua da barra (% da largura da composição). */
+  /* Losangos dos keyframes na faixa do clip: mesma régua da barra (px = segundos * pxPerSecond). */
   function keyframeMarkElements(clip) {
     if (clip.start === null || state.total <= 0) return [];
-    const marks = keyframeMarks(clip, (time) => percentSpan(clip.start + time, 0, state.total).left);
+    const marks = keyframeMarks(clip, (time) => pxSpan(clip.start + time, 0, state.total, state.pxPerSecond).left);
     const selected = state.selectedKeyframe;
     return marks.map((mark) => {
       const node = document.createElement("span");
@@ -915,7 +1156,7 @@ import { keyframeMarks, keyframePropsFor, renderKeyframeSection, renderMotionSec
       }
       node.dataset.clipId = clip.id;
       node.dataset.time = String(mark.time);
-      node.style.left = mark.x + "%";
+      node.style.left = mark.x + "px";
       node.title = mark.readOnly
         ? "Keyframe de elemento interno, " + formatNumber(mark.time) + "s (só leitura)"
         : "Keyframe em " + formatNumber(mark.time) + "s: " + mark.props.join(", ");
@@ -928,15 +1169,15 @@ import { keyframeMarks, keyframePropsFor, renderKeyframeSection, renderMotionSec
     if (clip.start === null || state.total <= 0) return;
     for (const mark of timelineRows.querySelectorAll(".kf-mark")) {
       if (mark.dataset.clipId !== clip.id) continue;
-      mark.style.left = percentSpan(clip.start + Number(mark.dataset.time), 0, state.total).left + "%";
+      mark.style.left = pxSpan(clip.start + Number(mark.dataset.time), 0, state.total, state.pxPerSecond).left + "px";
     }
   }
 
   function positionStrip(strip, clip) {
     const entry = clip.motion.transition;
-    const span = percentSpan(clip.start ?? 0, entry.dur, state.total);
-    strip.style.left = span.left + "%";
-    strip.style.width = span.width + "%";
+    const span = pxSpan(clip.start ?? 0, entry.dur, state.total, state.pxPerSecond);
+    strip.style.left = span.left + "px";
+    strip.style.width = span.width + "px";
     strip.title = "Transição " + (entry.preset ?? "") + " com " + (entry.partner ?? "?") + ", " + formatNumber(entry.dur) + "s";
     strip.setAttribute("aria-label", strip.title + ". Abre a seção Transição.");
   }
@@ -950,8 +1191,9 @@ import { keyframeMarks, keyframePropsFor, renderKeyframeSection, renderMotionSec
   function positionBar(bar, clip) {
     const start = clip.start ?? 0;
     const duration = clip.duration ?? 0;
-    bar.style.left = state.total > 0 ? clamp((start / state.total) * 100, 0, 100) + "%" : "0%";
-    bar.style.width = state.total > 0 ? clamp((duration / state.total) * 100, 0, 100) + "%" : "0%";
+    const span = pxSpan(start, duration, state.total, state.pxPerSecond);
+    bar.style.left = span.left + "px";
+    bar.style.width = span.width + "px";
     bar.dataset.start = formatNumber(clip.start);
     bar.dataset.duration = formatNumber(clip.duration);
     bar.setAttribute("aria-label", barLabel(clip));
@@ -963,6 +1205,7 @@ import { keyframeMarks, keyframePropsFor, renderKeyframeSection, renderMotionSec
     const strip = timelineRows.querySelector('.ff-transition[data-clip-id="' + CSS.escape(clip.id) + '"]');
     if (strip) positionStrip(strip, clip);
     positionKeyframeMarks(clip);
+    scheduleWaveforms();
     if (!state.inspectorDirty) {
       if (clip.start !== null) fieldStart.value = formatNumber(clip.start);
       if (clip.duration !== null) fieldDuration.value = formatNumber(clip.duration);
@@ -977,9 +1220,18 @@ import { keyframeMarks, keyframePropsFor, renderKeyframeSection, renderMotionSec
     return null;
   }
 
+  /** Com o playhead andando (tocando ou arrastado no player), a timeline rola para mantê-lo visível. */
+  function followPlayhead() {
+    if (state.total <= 0 || drag !== null || keyframeDrag !== null) return;
+    const x = state.playhead * state.pxPerSecond;
+    const viewWidth = laneViewWidth();
+    const left = timelineScroll.scrollLeft;
+    if (x >= left && x <= left + viewWidth) return;
+    timelineScroll.scrollLeft = Math.max(0, x - viewWidth * 0.1);
+  }
+
   function paintPlayhead() {
-    const ratio = state.total > 0 ? clamp(state.playhead / state.total, 0, 1) : 0;
-    playheadEl.style.left = ratio * 100 + "%";
+    playheadEl.style.left = (state.total > 0 ? clamp(state.playhead, 0, state.total) * state.pxPerSecond : 0) + "px";
     playheadEl.hidden = state.total <= 0;
     refreshKeyframeAddState();
   }
@@ -1007,10 +1259,6 @@ import { keyframeMarks, keyframePropsFor, renderKeyframeSection, renderMotionSec
     selectClip(clip.id);
     if (clip.start === null || state.total <= 0) return;
 
-    const lane = bar.parentElement;
-    const laneWidth = lane.getBoundingClientRect().width;
-    if (laneWidth <= 0) return;
-
     const handle = event.target instanceof Element ? event.target.closest(".resize-handle") : null;
     const startHandle = event.target instanceof Element ? event.target.closest(".resize-handle-start") : null;
     drag = {
@@ -1023,7 +1271,7 @@ import { keyframeMarks, keyframePropsFor, renderKeyframeSection, renderMotionSec
       originX: event.clientX,
       originStart: clip.start,
       originDuration: clip.duration ?? 0,
-      laneWidth,
+      pps: state.pxPerSecond,
       moved: false,
     };
     event.preventDefault();
@@ -1041,10 +1289,10 @@ import { keyframeMarks, keyframePropsFor, renderKeyframeSection, renderMotionSec
     if (!drag || event.pointerId !== drag.pointerId) return;
     const deltaPx = event.clientX - drag.originX;
     if (Math.abs(deltaPx) >= 2) drag.moved = true;
-    const deltaSeconds = (deltaPx / drag.laneWidth) * state.total;
+    const deltaSeconds = deltaPx / drag.pps;
 
     if (drag.mode === "move") {
-      drag.clip.start = snap(Math.max(0, drag.originStart + deltaSeconds));
+      drag.clip.start = snapTime(Math.max(0, drag.originStart + deltaSeconds));
       if (drag.clip.duration !== null) drag.clip.end = drag.clip.start + drag.clip.duration;
     } else if (drag.mode === "trim-start") {
       // O fim fica parado; o início para na borda da fonte (mídia), em 0 e a MIN_DURATION do fim.
@@ -1058,7 +1306,7 @@ import { keyframeMarks, keyframePropsFor, renderKeyframeSection, renderMotionSec
       drag.clip.end = drag.originEnd;
       if (media) drag.clip.offset = drag.originOffset + (start - drag.originStart) * rate;
     } else {
-      drag.clip.duration = snap(Math.max(MIN_DURATION, drag.originDuration + deltaSeconds));
+      drag.clip.duration = snapTime(Math.max(MIN_DURATION, drag.originDuration + deltaSeconds));
       drag.clip.end = drag.clip.start === null ? null : drag.clip.start + drag.clip.duration;
     }
     updateBarGeometry(drag.clip, drag.bar);
@@ -1100,9 +1348,8 @@ import { keyframeMarks, keyframePropsFor, renderKeyframeSection, renderMotionSec
     const time = Number(mark.dataset.time);
     if (mark.classList.contains("is-readonly")) return;
     selectKeyframe(clip.id, time);
-    const laneWidth = mark.parentElement.getBoundingClientRect().width;
-    if (clip.editable !== true || clip.start === null || clip.duration === null || laneWidth <= 0 || state.total <= 0) return;
-    keyframeDrag = { mark, clip, time, current: time, pointerId: event.pointerId, originX: event.clientX, laneWidth, moved: false };
+    if (clip.editable !== true || clip.start === null || clip.duration === null || state.total <= 0) return;
+    keyframeDrag = { mark, clip, time, current: time, pointerId: event.pointerId, originX: event.clientX, pps: state.pxPerSecond, moved: false };
     event.preventDefault();
     try {
       mark.setPointerCapture(event.pointerId);
@@ -1120,10 +1367,10 @@ import { keyframeMarks, keyframePropsFor, renderKeyframeSection, renderMotionSec
     const deltaPx = event.clientX - drag.originX;
     if (Math.abs(deltaPx) >= 2) drag.moved = true;
     if (!drag.moved) return;
-    const absolute = drag.clip.start + drag.time + (deltaPx / drag.laneWidth) * state.total;
+    const absolute = drag.clip.start + drag.time + deltaPx / drag.pps;
     const local = roundMs(roundToFrame(absolute, state.fps) - drag.clip.start);
     drag.current = clamp(local, 0, roundMs(drag.clip.duration));
-    drag.mark.style.left = percentSpan(drag.clip.start + drag.current, 0, state.total).left + "%";
+    drag.mark.style.left = pxSpan(drag.clip.start + drag.current, 0, state.total, drag.pps).left + "px";
   }
 
   function onKeyframeDragEnd(event) {
@@ -1481,6 +1728,16 @@ import { keyframeMarks, keyframePropsFor, renderKeyframeSection, renderMotionSec
       splitSelected();
       return;
     }
+    if (!mod && !event.altKey && (event.key === "=" || event.key === "+")) {
+      event.preventDefault();
+      zoomBy(ZOOM_STEP);
+      return;
+    }
+    if (!mod && !event.altKey && (event.key === "-" || event.key === "_")) {
+      event.preventDefault();
+      zoomBy(1 / ZOOM_STEP);
+      return;
+    }
     if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
     if (state.selectedId === null) return;
     event.preventDefault();
@@ -1552,15 +1809,47 @@ import { keyframeMarks, keyframePropsFor, renderKeyframeSection, renderMotionSec
 
   window.addEventListener("resize", () => {
     fitPlayer();
-    playheadTrack.style.height = Math.max(timelineBody.clientHeight, timelineRows.scrollHeight) + "px";
-    paintPlayhead();
   });
+
+  /* Zoom da timeline (EDT-45): Ctrl+roda ancorada no ponteiro, botões e teclas. */
+  timelineScroll.addEventListener(
+    "wheel",
+    (event) => {
+      if (!event.ctrlKey) return;
+      event.preventDefault();
+      /* 100 px de roda de mouse = 1 passo de x1,15; gestos de pinça (deltas pequenos) dão passos menores. */
+      const steps = clamp(-event.deltaY / (event.deltaMode === 1 ? 3 : 100), -3, 3);
+      if (steps === 0) return;
+      const rect = timelineScroll.getBoundingClientRect();
+      zoomBy(Math.pow(ZOOM_STEP, steps), event.clientX - rect.left - gutterWidth());
+    },
+    { passive: false },
+  );
+  timelineScroll.addEventListener(
+    "scroll",
+    () => {
+      scheduleRuler();
+      scheduleWaveforms();
+    },
+    { passive: true },
+  );
+  zoomInButton.addEventListener("click", () => zoomBy(ZOOM_STEP));
+  zoomOutButton.addEventListener("click", () => zoomBy(1 / ZOOM_STEP));
+  zoomFitButton.addEventListener("click", () => zoomFitAll());
+  if (typeof ResizeObserver === "function") {
+    new ResizeObserver(() => {
+      applyScale();
+      redrawTimeline();
+    }).observe(timelineScroll);
+  }
 
   setInterval(() => {
     const timeMs = readPlayerTime();
     if (timeMs === null) return;
+    const previous = state.playhead;
     state.playhead = state.total > 0 ? clamp(timeMs / 1000, 0, maxPlayhead()) : Math.max(0, timeMs / 1000);
     paintPlayhead();
+    if (state.playhead !== previous) followPlayhead();
     updateToolbar();
   }, FRAME_POLL_MS);
 

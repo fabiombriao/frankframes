@@ -849,6 +849,30 @@ Qualquer outra falha de medição continua falhando alto.
   se o original for excluído ou editado antes de colar, vale o que existir na hora de colar. Depois de colar ou
   duplicar a cópia fica selecionada e os avisos aparecem no painel de ferramentas.
 
+- **Zoom da timeline** (EDT-45; só cliente, nada é gravado no arquivo). A timeline é desenhada em px:
+  `px = segundos × state.pxPerSecond`. O zoom mínimo é "ajustar" (a composição inteira na largura visível,
+  sem rolagem horizontal) e acompanha o redimensionamento da janela; o máximo é `fps × 48` px/s, isto é,
+  1 frame = 48 px. Controles: botões `−`, `+` e "Ajustar" (`#zoomOut`, `#zoomIn`, `#zoomFit`), indicador
+  `#zoomLevel` ("N px/s" ou, no nível de frame, "1 frame = N px"), teclas `=`/`+` e `-` (só com o foco fora de
+  campos de edição) e Ctrl+roda, que dá passos de ×1,15 e mantém parado o instante sob o ponteiro. A régua
+  (cabeçalho fixo no topo) mostra só os tiques da janela visível e escolhe o passo pelo zoom: de 1 s ou mais
+  até frames; no nível de frame (≥ 8 px por frame) os rótulos são `s:ff`. Mover e redimensionar clips
+  alinham ao frame no nível de frame e a 0,05 s abaixo dele; o diamante de keyframe sempre alinha ao frame.
+  O playhead é desenhado em px e, com ele em movimento (tocando ou arrastado no player), a timeline rola
+  para mantê-lo visível.
+- **Waveform** (`GET /api/waveform/<id>`, EDT-45). Para clip `editable` de vídeo/áudio com som devolve
+  `{digest, peaksPerSecond: 100, duration, peaks}`: `digest` é o sha256 do arquivo de mídia, `duration` os
+  segundos de áudio decodificados e `peaks` um inteiro 0–255 por centésimo de segundo (máximo do módulo da
+  amostra; áudio mono a 8 kHz extraído pelo FFmpeg). O cache fica em `cache/waveform/<digest>.v1.json` sob o
+  `FRANKFRAMES_HOME` (ou `vendor/`); é gravado de forma atômica (arquivo temporário + rename) e um JSON
+  corrompido ou de formato inesperado falha alto com `E_WAVEFORM_FAILED` e a dica de apagar o arquivo, nunca
+  vira cache vazio. Erros: `404 E_CLIP_NOT_FOUND`, `400 E_WAVEFORM_UNSUPPORTED` (clip sem mídia de
+  vídeo/áudio), `422 E_WAVEFORM_NO_AUDIO` (arquivo sem faixa de áudio) e `500 E_WAVEFORM_FAILED`. No cliente,
+  uma busca por fonte de mídia (`state.waveforms`) alimenta um `<canvas>` por clip com som, que cobre só a
+  parte visível da barra e é redesenhado em `requestAnimationFrame` ao rolar ou dar zoom; a forma de onda
+  acompanha `data-offset` e `data-playback-rate`, então aparar o início a desloca junto com o clip. Falha vira
+  uma faixa hachurada na barra com o código no `title`.
+
 As escritas são serializadas: duas edições nunca intercalam leitura e gravação do mesmo arquivo.
 
 ## 10. Compatibilidade
