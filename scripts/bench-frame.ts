@@ -15,10 +15,13 @@
  *   seekOnly         só o `clock.seek`                                                           — frames ímpares
  *   settleAfterSeek  o settle logo depois do seek, em `evaluate` separada                        — frames ímpares
  *   settlePaint      o segundo settle, o que `Session.capture` repete antes do screenshot        — todos
- *   captureScreenshot  `Page.captureScreenshot` (PNG padrão do produto), incluindo trazer o base64 — todos
+ *   captureScreenshot  `Page.captureScreenshot` como o produto faz hoje (`optimizeForSpeed: true`, H4),
+ *                      incluindo trazer o base64                                                   — todos
  *   base64Decode / sha256  decodificar e hashear no Node                                          — todos
  * Variantes de screenshot, só medição, rodando em rodízio de ordem no mesmo frame já assentado:
- *   shotDefault (como o produto), shotSpeedTrue (`optimizeForSpeed: true`), shotSpeedFalse (`false`).
+ *   shotDefault (o PNG padrão do Chrome, o que o produto fazia antes do H4), shotSpeedTrue
+ *   (`optimizeForSpeed: true`), shotSpeedFalse (`false`, igual ao padrão).
+ * No baseline (anterior ao H4), `captureScreenshot` media o PNG padrão.
  */
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
@@ -48,6 +51,9 @@ const warmup = Math.floor(Number(values.warmup));
 if (!Number.isFinite(sampleCount) || sampleCount < 10) throw new Error("--frames precisa ser um inteiro >= 10");
 if (!Number.isFinite(warmup) || warmup < 0 || warmup >= sampleCount - 2) throw new Error("--warmup precisa ser >= 0 e menor que --frames - 2");
 const outDir = resolve(REPO_ROOT, values.out!);
+
+/** Mesmos parâmetros do `Session.capture` (packages/engine/src/capture.ts). Se o motor mudar, atualize aqui. */
+const PRODUCT_SHOT = { format: "png", captureBeyondViewport: false, optimizeForSpeed: true } as const;
 
 interface ClockPage {
   __ff?: { ready: Promise<boolean>; seek: (ms: number) => number | Promise<number>; settle: () => Promise<boolean> };
@@ -109,7 +115,7 @@ try {
   });
   const cdp: CDPSession = await page.createCDPSession();
   // Mesma descartada de aquecimento que o motor faz na abertura da sessão.
-  await cdp.send("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
+  await cdp.send("Page.captureScreenshot", PRODUCT_SHOT);
 
   const settle = (): Promise<unknown> =>
     page.evaluate(async () => {
@@ -162,7 +168,7 @@ try {
     }
 
     // O screenshot "do produto": PNG padrão, depois decodificação e hash, como em `Session.capture`.
-    const base = await timed(() => cdp.send("Page.captureScreenshot", { format: "png", captureBeyondViewport: false }));
+    const base = await timed(() => cdp.send("Page.captureScreenshot", PRODUCT_SHOT));
     push("captureScreenshot", base.ms);
     const decoded = await timed(async () => Buffer.from(base.value.data, "base64"));
     push("base64Decode", decoded.ms);

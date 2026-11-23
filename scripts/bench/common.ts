@@ -4,7 +4,7 @@
  * Só API pública de `@frankframes/*`; nada aqui altera o produto.
  */
 import { execFile } from "node:child_process";
-import { access, mkdir, readFile, writeFile } from "node:fs/promises";
+import { access, mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { availableParallelism, cpus, platform, release, totalmem } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -33,6 +33,16 @@ export async function exists(path: string): Promise<boolean> {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
     throw error;
   }
+}
+
+/** Soma dos bytes de todos os arquivos sob `dir` (recursivo). */
+export async function dirSize(dir: string): Promise<number> {
+  let total = 0;
+  for (const entry of await readdir(dir, { withFileTypes: true })) {
+    const path = join(dir, entry.name);
+    total += entry.isDirectory() ? await dirSize(path) : (await stat(path)).size;
+  }
+  return total;
 }
 
 export function median(values: number[]): number {

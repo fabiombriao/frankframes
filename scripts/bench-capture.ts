@@ -18,7 +18,7 @@ import type { Preset } from "@frankframes/encode";
 import { assetPath, fileDigest, frameCacheKey, resolveGpuMode, resolveChrome } from "@frankframes/engine";
 import { renderComposition, resolveFfmpeg } from "@frankframes/producer";
 import type { RenderStage } from "@frankframes/producer";
-import { FPS, REPO_ROOT, SCENARIOS, SOURCE_NAME, ensureVideoSource, machineInfo, median, stageScenario, stamp } from "./bench/common.ts";
+import { FPS, REPO_ROOT, SCENARIOS, SOURCE_NAME, dirSize, ensureVideoSource, machineInfo, median, stageScenario, stamp } from "./bench/common.ts";
 import type { MachineInfo, Scenario } from "./bench/common.ts";
 
 const STAGES: readonly RenderStage[] = ["compile", "probe", "extract", "capture", "audio", "encode", "assemble"];
@@ -97,6 +97,8 @@ interface RunRecord {
   captureFps: number;
   sPerMinute: number;
   outputBytes: number;
+  /** Tamanho do workDir ao fim do render (frames PNG + vídeo + áudio): o pico de disco. */
+  peakWorkDirBytes: number;
   warnings: string[];
 }
 
@@ -175,9 +177,15 @@ for (const scenario of scenarios) {
             ffmpeg: pair.ffmpeg,
             ffprobe: pair.ffprobe,
             ...(workers === "default" ? {} : { workers }),
+            // O workDir fica até eu medi-lo (depois do relógio parar) e só então é removido.
+            keepWorkDir: true,
             onProgress: (stage) => marks.push({ stage, t: performance.now() - started }),
           });
           const end = performance.now() - started;
+          // Os frames só saem do disco no fim do render, e o vídeo codificado entra por último: o tamanho final do
+          // workDir (frames + vídeo + áudio) é o pico de disco do render.
+          const peakWorkDirBytes = await dirSize(result.workDir);
+          await rm(result.workDir, { recursive: true, force: true });
 
           if (scenario === "video") {
             // Confere que a chave de cache calculada aqui é a do render: sem isso "frio/quente" seria chute.
@@ -208,6 +216,7 @@ for (const scenario of scenarios) {
             captureFps: result.frames / sCapture,
             sPerMinute: sTotal / (videoSeconds / 60),
             outputBytes: (await stat(outPath)).size,
+            peakWorkDirBytes,
             warnings: result.warnings,
           };
           records.push(record);
@@ -254,13 +263,13 @@ const lines = [
   "",
   "Mediana (mín–máx) das execuções. `captureFps` e `s_capture` incluem abrir o Chrome e a prontidão da página.",
   "",
-  "| cenário | GPU efetiva | workers | preset | cache | n | s_total | s_capture | captureFps | s/min | s_encode |",
-  "|---|---|---|---|---|---|---|---|---|---|---|",
+  "| cenário | GPU efetiva | workers | preset | cache | n | s_total | s_capture | captureFps | s/min | s_encode | pico workDir (MB) |",
+  "|---|---|---|---|---|---|---|---|---|---|---|---|",
 ];
 for (const group of groups.values()) {
   const pick = (selector: (record: RunRecord) => number, digits?: number): string => stat3(group.items.map(selector), digits);
   lines.push(
-    `| ${group.scenario} | ${group.gpu} | ${group.workers} | ${group.preset} | ${group.cache} | ${group.items.length} | ${pick((r) => r.sTotal)} | ${pick((r) => r.sCapture)} | ${pick((r) => r.captureFps)} | ${pick((r) => r.sPerMinute)} | ${pick((r) => r.sEncode)} |`,
+    `| ${group.scenario} | ${group.gpu} | ${group.workers} | ${group.preset} | ${group.cache} | ${group.items.length} | ${pick((r) => r.sTotal)} | ${pick((r) => r.sCapture)} | ${pick((r) => r.captureFps)} | ${pick((r) => r.sPerMinute)} | ${pick((r) => r.sEncode)} | ${pick((r) => r.peakWorkDirBytes / 1_000_000, 0)} |`,
   );
 }
 process.stdout.write(`${lines.join("\n")}\n\nJSON: ${jsonPath}\n`);

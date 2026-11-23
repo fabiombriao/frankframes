@@ -57,6 +57,13 @@ export const DEFAULT_SESSION_TIMEOUTS: Required<SessionTimeouts> = {
 /** Quanto o `close` espera o Chrome sair antes de matar o processo. */
 const CLOSE_GRACE_MS = 15_000;
 
+/**
+ * Parâmetros do `Page.captureScreenshot` de todo frame. `optimizeForSpeed: true` pede ao Chrome um PNG com
+ * compressão mais barata: os pixels são os mesmos (conferido contra os goldens), os bytes são outros e
+ * o arquivo fica ~2× maior. O hash por frame é do PNG, então muda junto com este parâmetro.
+ */
+const SCREENSHOT_PARAMS = { format: "png", captureBeyondViewport: false, optimizeForSpeed: true } as const;
+
 export interface SessionOptions {
   url: string;
   viewport: Viewport;
@@ -322,7 +329,7 @@ async function startSession(
       await (clock as unknown as { settle?: () => Promise<boolean> })?.settle?.();
     });
     // Primeira captura descartada: força um frame completo antes de qualquer medição.
-    await session.send("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
+    await session.send("Page.captureScreenshot", SCREENSHOT_PARAMS);
     return session;
   }, readyLimit);
 
@@ -348,7 +355,7 @@ async function startSession(
       watch.guard(
         async () => {
           const shot = async (): Promise<Buffer> => {
-            const { data } = await cdp.send("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
+            const { data } = await cdp.send("Page.captureScreenshot", SCREENSHOT_PARAMS);
             return Buffer.from(data, "base64");
           };
           const settlePaint = async (): Promise<void> => {

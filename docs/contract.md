@@ -615,6 +615,10 @@ O contrato promete isto ao autor, e o engine tem que cumprir:
    de cada seek, `__ff.settle` espera dois frames de compositor e um `setTimeout` (que cai **depois** do
    paint) antes do screenshot. Com software + `--disable-gpu-compositing`, uma leitura já é estável —
    medido em 3 comparações dos 24 blocos e 2 renders de vídeo real.
+   O screenshot é PNG pedido com `optimizeForSpeed: true` (EDT-62/H4): o Chrome usa compressão mais barata,
+   os **pixels decodificados são idênticos** aos do PNG padrão (conferido nos 240 frames dos goldens, diferença
+   zero em todos os canais), mas os bytes são outros e o arquivo fica ~2× maior. O hash por frame é o SHA-256 do
+   PNG e, por isso, depende deste parâmetro: mudá-lo exige regenerar `catalog/goldens.json`.
    Existe um modo conservador por variável de ambiente: `FRANKFRAMES_CAPTURE_SHOTS=3` exige três
    screenshots consecutivos idênticos (para hardware ou máquina sob carga).
    - em software, `--disable-gpu-compositing`: o compositor SwiftShader re-apresenta raster parcial em

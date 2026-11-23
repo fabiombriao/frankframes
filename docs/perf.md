@@ -120,14 +120,69 @@ Ordem a priori do plano: H0, H1, H2, H3, H4, H5, H6.
 | **H5** workers | **Não medido** (só `default` = 6). Precisa de varredura 2/4/6/8/12 por modo de GPU. Como a captura é CPU/GPU-bound no screenshot, a curva pode mudar depois de H4. | a medir |
 | **H6** BeginFrame | Fora de escopo: o settle não é o gargalo (H0 falsa). | — |
 
-Ordem sugerida pelos números (o planejador decide): **H4 → H2 (+H3) → H1 → H5 (re-medir depois de H4) → H6 fora**.
-H1 fica depois porque, com `optimizeForSpeed: true`, o 2º settle (~33 ms) passa a pesar ~25% do frame e sobe de
-prioridade; reavaliar com `bench-frame` após H4.
+Ordem fixada pelo planejador: **H4 → H1 → (EDT-61) → H2 + H3 → H5**; H6 fica fora da 1.0.
+
+## H4 — `optimizeForSpeed: true` (entregue)
+
+Mudança: `packages/engine/src/capture.ts` (`SCREENSHOT_PARAMS`, usado na captura descartada de abertura e em todo frame).
+Medido com `--label h4` (mesmos parâmetros do baseline, `--out` fora do Sync, máquina parada) e `bench-frame`.
+
+**Pixels e determinismo**
+- Os 240 frames dos goldens (48 blocos × 5), decodificados, têm **diferença zero** contra os PNG antigos (RGBA, todos os
+  canais); nenhum é igual byte a byte (esperado). Goldens regenerados com `scripts/generate-goldens.ts`.
+- `determinism.test.ts` verde em `auto` (→ hardware) e `software`: 2 execuções + ordem invertida, 60 frames,
+  mesmo SHA-256 por frame.
+- `meta.json` dos blocos: o `sha256` é do `index.html` (instalação remota), não do PNG; não muda. `thumb.png` só é exigido como PNG
+  real (> 10 KB); não foi regenerado.
+
+**Velocidade** (3 execuções, workers = 6, mediana; `motion` 300 frames)
+
+| GPU | preset | captureFps antes → depois | s_total antes → depois | s/min antes → depois |
+|---|---|---|---|---|
+| hardware | draft | 13,3 → 21,7 (1,63×) | 26,6 → 17,6 s | 159 → 106 |
+| hardware | standard | 13,2 → 21,6 | 27,3 → 18,8 s | 164 → 113 |
+| hardware | high | 13,4 → 22,6 | 27,9 → 19,4 s | 167 → 116 |
+| software | draft | 9,6 → 16,8 (1,75×) | 35,2 → 22,1 s | 211 → 132 |
+| software | standard | 9,5 → 16,6 | 36,5 → 22,8 s | 219 → 137 |
+| software | high | 9,3 → 15,8 | 38,0 → 25,4 s | 228 → 153 |
+| video (software), quente | draft | 18,6 → 23,8 | 20,4 → 16,4 s | 122 → 98 |
+| video (software), quente | standard | 19,1 → 22,7 | 21,4 → 18,3 s | 128 → 110 |
+| video (software), quente | high | 19,5 → 24,1 | 23,7 → 19,7 s | 142 → 119 |
+| video (software), frio | draft / standard / high | 19,4 / 19,4 / 19,5 → 23,1 / 24,0 / 24,2 | 21,4 / 22,9 / 25,4 → 18,5 / 19,2 / 21,4 s | 128 / 138 / 152 → 111 / 115 / 128 |
+
+`s_encode` não mudou (3,6–7,3 s): o encode lê PNG maior, mas continua limitado pelo AV1.
+
+**`bench-frame`** (ms por frame, mediana; `captureScreenshot` agora é o screenshot do produto)
+
+| fase | software antes → depois | hardware antes → depois |
+|---|---|---|
+| `captureScreenshot` | 362,7 → 108,2 | 257,4 → 93,6 |
+| `seekFrame` | 12,4 → 13,0 | 9,7 → 10,0 |
+| `settlePaint` (2º settle) | 33,3 → 33,2 | 33,3 → 33,2 |
+| base64 + SHA-256 | 0,7 → 1,3 | 0,6 → 1,1 |
+
+Custo por frame ≈ 155 ms (software) e ≈ 138 ms (hardware); o 2º settle passou a ~21–24% do frame (era 8–11%) e o
+screenshot caiu de 85–90% para ~70%. O decode base64 + hash ficou ~2× maior (PNG ~2× maior), ainda ~1 ms.
+
+**Disco** (pico do `workDir` no fim do render: frames PNG + vídeo + áudio; `motion` 1080p, 300 frames, draft)
+
+| GPU | antes | depois | por frame depois |
+|---|---|---|---|
+| hardware | 162 MB | 382 MB (2,36×) | ~1,27 MB |
+| software | 230 MB | 453 MB (1,97×) | ~1,51 MB |
+
+Os frames ficam no disco até o fim do encode, então o pico é o total. Extrapolação linear para ~2000 frames 1080p
+(aceite do EDT-64): **~2,5 GB (hardware) a ~3 GB (software)** com este conteúdo; conteúdo com mais detalhe fotográfico
+pesa mais por frame. H2/H3 (pipe em ordem, sem PNG em disco) reduzem isso.
 
 ## Tabela por hipótese (antes/depois)
 
 | hipótese | rótulo | captureFps motion (hw / sw) | s/min draft/standard/high | observação |
 |---|---|---|---|---|
 | baseline | `baseline` | 13,3 / 9,6 | 159 / 164 / 167 (hw); 211 / 219 / 228 (sw) | este documento |
+| H4 | `h4` | 21,7 / 16,8 | 106 / 113 / 116 (hw); 132 / 137 / 153 (sw) | pixels idênticos; PNG ~2× maior |
+
+Comandos do `h4`: os mesmos do baseline com `--label h4` e `bench-frame` nos dois modos (JSON
+`h4-20261123-1855.json`, `frame-software-20261123-1906.json`, `frame-hardware-20261123-1907.json`).
 
 Número final: a preencher ao fim do EDT-62 (passos 4–5).
