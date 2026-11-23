@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>bench-motion-1080p</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: #000; }
+  .scene { position: absolute; inset: 0; width: 1920px; height: 1080px; overflow: hidden; color: #fff; }
+  .scene .t { position: absolute; left: 120px; top: 380px; font-size: 180px; line-height: 1; letter-spacing: -0.01em; white-space: nowrap; }
+  .scene .u { position: absolute; left: 124px; top: 620px; font: 400 40px/1.2 "Inter", sans-serif; opacity: 0.85; }
+  .scene .blob { position: absolute; left: 1100px; top: 140px; width: 620px; height: 620px; border-radius: 50%; background: radial-gradient(circle at 30% 30%, rgba(255,255,255,0.55), rgba(255,255,255,0.05)); filter: blur(24px); }
+  .scene .ring { position: absolute; left: 1250px; top: 520px; width: 380px; height: 380px; border: 14px solid rgba(255,255,255,0.7); border-radius: 50%; border-top-color: transparent; }
+  .scene .reveal { position: absolute; left: 120px; top: 740px; width: 1100px; height: 140px; background: rgba(255,255,255,0.18); }
+
+  .s0 { background: linear-gradient(120deg, #0f2027, #2c5364); }
+  .s0 .t { font-family: "Inter", sans-serif; font-weight: 700; animation: rise 0.7s cubic-bezier(0.22, 0.8, 0.2, 1) 0.1s both; }
+  .s0 .u { animation: fade 0.8s ease-out 0.4s both; }
+  .s0 .reveal { animation: wipe 0.9s cubic-bezier(0.65, 0, 0.35, 1) 0.2s both; }
+  .s0 .blob { animation: drift 1.7s ease-in-out 0s both, soft 1.7s ease-in-out 0s both; }
+  .s0 .ring { animation: spin 1.7s linear 0s both; }
+  .s1 { background: linear-gradient(140deg, #42275a, #734b6d); }
+  .s1 .t { font-family: "Poppins", sans-serif; font-weight: 700; animation: rise 0.7s cubic-bezier(0.22, 0.8, 0.2, 1) 1.7000000000000002s both; }
+  .s1 .u { animation: fade 0.8s ease-out 2s both; }
+  .s1 .reveal { animation: wipe 0.9s cubic-bezier(0.65, 0, 0.35, 1) 1.8s both; }
+  .s1 .blob { animation: drift 1.7s ease-in-out 1.6s both, soft 1.7s ease-in-out 1.6s both; }
+  .s1 .ring { animation: spin 1.7s linear 1.6s both; }
+  .s2 { background: linear-gradient(160deg, #093028, #237a57); }
+  .s2 .t { font-family: "Space Grotesk", sans-serif; font-weight: 700; animation: rise 0.7s cubic-bezier(0.22, 0.8, 0.2, 1) 3.4s both; }
+  .s2 .u { animation: fade 0.8s ease-out 3.6999999999999997s both; }
+  .s2 .reveal { animation: wipe 0.9s cubic-bezier(0.65, 0, 0.35, 1) 3.5s both; }
+  .s2 .blob { animation: drift 1.7s ease-in-out 3.3s both, soft 1.7s ease-in-out 3.3s both; }
+  .s2 .ring { animation: spin 1.7s linear 3.3s both; }
+  .s3 { background: linear-gradient(180deg, #232526, #414345); }
+  .s3 .t { font-family: "Oswald", sans-serif; font-weight: 700; animation: rise 0.7s cubic-bezier(0.22, 0.8, 0.2, 1) 5.1s both; }
+  .s3 .u { animation: fade 0.8s ease-out 5.4s both; }
+  .s3 .reveal { animation: wipe 0.9s cubic-bezier(0.65, 0, 0.35, 1) 5.2s both; }
+  .s3 .blob { animation: drift 1.7s ease-in-out 5s both, soft 1.7s ease-in-out 5s both; }
+  .s3 .ring { animation: spin 1.7s linear 5s both; }
+  .s4 { background: linear-gradient(200deg, #1d2b64, #f8cdda); }
+  .s4 .t { font-family: "Bebas Neue", sans-serif; font-weight: 400; animation: rise 0.7s cubic-bezier(0.22, 0.8, 0.2, 1) 6.699999999999999s both; }
+  .s4 .u { animation: fade 0.8s ease-out 7s both; }
+  .s4 .reveal { animation: wipe 0.9s cubic-bezier(0.65, 0, 0.35, 1) 6.8s both; }
+  .s4 .blob { animation: drift 1.7s ease-in-out 6.6s both, soft 1.7s ease-in-out 6.6s both; }
+  .s4 .ring { animation: spin 1.7s linear 6.6s both; }
+  .s5 { background: linear-gradient(220deg, #3a1c71, #d76d77); }
+  .s5 .t { font-family: "Raleway", sans-serif; font-weight: 700; animation: rise 0.7s cubic-bezier(0.22, 0.8, 0.2, 1) 8.4s both; }
+  .s5 .u { animation: fade 0.8s ease-out 8.700000000000001s both; }
+  .s5 .reveal { animation: wipe 0.9s cubic-bezier(0.65, 0, 0.35, 1) 8.5s both; }
+  .s5 .blob { animation: drift 1.7s ease-in-out 8.3s both, soft 1.7s ease-in-out 8.3s both; }
+  .s5 .ring { animation: spin 1.7s linear 8.3s both; }
+  @keyframes rise { from { transform: translateY(90px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+  @keyframes fade { from { opacity: 0; } to { opacity: 0.85; } }
+  @keyframes wipe { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }
+  @keyframes drift { from { transform: translate(120px, 60px) scale(0.8); } to { transform: translate(-80px, -30px) scale(1.15); } }
+  @keyframes soft { from { filter: blur(48px); } to { filter: blur(12px); } }
+  @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+  <div data-composition-id="bench-motion" data-root="true" data-width="1920" data-height="1080" data-fps="30" data-duration="10">
+    <div class="scene s0" data-clip-id="scene-0" data-start="0" data-duration="1.7">
+      <div class="blob"></div>
+      <div class="ring"></div>
+      <div class="reveal"></div>
+      <div class="t">Movimento</div>
+      <div class="u">Cena 1 de 6 · benchmark de captura 1080p</div>
+    </div>
+    <div class="scene s1" data-clip-id="scene-1" data-start="1.6" data-duration="1.7">
+      <div class="blob"></div>
+      <div class="ring"></div>
+      <div class="reveal"></div>
+      <div class="t">Composição</div>
+      <div class="u">Cena 2 de 6 · benchmark de captura 1080p</div>
+    </div>
+    <div class="scene s2" data-clip-id="scene-2" data-start="3.3" data-duration="1.7">
+      <div class="blob"></div>
+      <div class="ring"></div>
+      <div class="reveal"></div>
+      <div class="t">Quadro a quadro</div>
+      <div class="u">Cena 3 de 6 · benchmark de captura 1080p</div>
+    </div>
+    <div class="scene s3" data-clip-id="scene-3" data-start="5" data-duration="1.7">
+      <div class="blob"></div>
+      <div class="ring"></div>
+      <div class="reveal"></div>
+      <div class="t">Determinismo</div>
+      <div class="u">Cena 4 de 6 · benchmark de captura 1080p</div>
+    </div>
+    <div class="scene s4" data-clip-id="scene-4" data-start="6.6" data-duration="1.7">
+      <div class="blob"></div>
+      <div class="ring"></div>
+      <div class="reveal"></div>
+      <div class="t">Tipografia viva</div>
+      <div class="u">Cena 5 de 6 · benchmark de captura 1080p</div>
+    </div>
+    <div class="scene s5" data-clip-id="scene-5" data-start="8.3" data-duration="1.7">
+      <div class="blob"></div>
+      <div class="ring"></div>
+      <div class="reveal"></div>
+      <div class="t">Fim do teste</div>
+      <div class="u">Cena 6 de 6 · benchmark de captura 1080p</div>
+    </div>
+  </div>
+</body>
+</html>

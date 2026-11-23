@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>bench-video-1080p</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: #000; }
+  /* O arquivo de origem é gerado por scripts/bench-capture.ts em out/bench/ (nunca versionado). */
+  .src { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; object-fit: cover; }
+  .title { position: absolute; left: 96px; top: 820px; padding: 18px 36px; background: rgba(0,0,0,0.55); color: #fff; font: 700 96px/1 "Inter", sans-serif; animation: rise 0.7s cubic-bezier(0.22, 0.8, 0.2, 1) 0.2s both; }
+  @keyframes rise { from { transform: translateY(60px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+</style>
+</head>
+<body>
+  <div data-composition-id="bench-video" data-root="true" data-width="1920" data-height="1080" data-fps="30" data-duration="10">
+    <video class="src" data-clip-id="src" data-start="0" data-duration="10" data-has-audio="false" src="../../out/bench/src-1080p.mkv" muted></video>
+    <div class="title" data-clip-id="title" data-start="0" data-duration="10">Vídeo 1080p + título</div>
+  </div>
+</body>
+</html>
