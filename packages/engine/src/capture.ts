@@ -79,7 +79,7 @@ export interface SessionOptions {
 export interface Session {
   /** Leva a composição ao tempo exato do frame. Idempotente e fora de ordem. */
   seekFrame: (frame: number, fps: { num: number; den: number }) => Promise<void>;
-  /** PNG do frame atual + hash. */
+  /** PNG do frame atual + hash. Em software depende do `seekFrame` anterior ter assentado o paint (uma espera por frame); em hardware espera de novo. */
   capture: () => Promise<{ png: Buffer; sha256: string }>;
   /** Erros de script na página: qualquer um derruba o render. */
   pageErrors: () => string[];
@@ -322,6 +322,23 @@ async function startSession(
       if (scope.__ffMediaReady) await scope.__ffMediaReady;
     });
 
+    // Só com FRANKFRAMES_CAPTURE_PROFILE=1: conta cada espera de paint em `__ff.settleCount`
+    // (seek e captura passam por `__ff.settle`). Sem a variável, a página não muda.
+    if (process.env.FRANKFRAMES_CAPTURE_PROFILE === "1") {
+      const installed = await page.evaluate(() => {
+        const clock = (globalThis as unknown as { __ff?: { settle?: () => Promise<boolean>; settleCount?: number } }).__ff;
+        if (!clock?.settle) return false;
+        const original = clock.settle.bind(clock);
+        clock.settleCount = 0;
+        clock.settle = () => {
+          clock.settleCount = (clock.settleCount ?? 0) + 1;
+          return original();
+        };
+        return true;
+      });
+      if (!installed) throw new Error("FRANKFRAMES_CAPTURE_PROFILE=1: o relógio da página não expõe settle()");
+    }
+
     const session = await page.createCDPSession();
     // Estado inicial totalmente pintado (fontes, layout) antes de qualquer medição.
     await page.evaluate(async () => {
@@ -380,7 +397,9 @@ async function startSession(
           );
           const required = first ? 3 : conservative;
           if (required === 1) {
-            await settlePaint();
+            // Software: o seek já assentou o paint (`seekFrame` espera `__ff.settle`), uma espera por frame.
+            // Hardware mantém a segunda espera: sem ela os hashes com vários workers pioram (EDT-77).
+            if (gpu === "hardware") await settlePaint();
             const single = await shot();
             return { png: single, sha256: createHash("sha256").update(single).digest("hex") };
           }

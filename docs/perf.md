@@ -175,12 +175,48 @@ Os frames ficam no disco até o fim do encode, então o pico é o total. Extrapo
 (aceite do EDT-64): **~2,5 GB (hardware) a ~3 GB (software)** com este conteúdo; conteúdo com mais detalhe fotográfico
 pesa mais por frame. H2/H3 (pipe em ordem, sem PNG em disco) reduzem isso.
 
+## H1 — uma espera de paint por frame, só em software (entregue)
+
+Mudança: `packages/engine/src/capture.ts`. Em software, `capture()` não repete o `settle` que o `seekFrame` já fez; em
+**hardware as duas esperas continuam** (decisão do planejador: o H1 vale só para software por causa do EDT-77 —
+hardware com vários workers já não reproduz hash na mesma máquina, e tirar a espera piorou). Contador de teste:
+`FRANKFRAMES_CAPTURE_PROFILE=1` expõe `__ff.settleCount`; `determinism.test.ts` exige 1 espera por frame não-primeiro
+em software e 2 em hardware.
+
+**Pixels e determinismo** (`examples/cena-dupla`, 240 frames, `render` com hashes por frame)
+- Software: **240/240 hashes iguais** antes e depois (e estável entre rodadas).
+- Hardware (`auto`, 6 workers): comportamento já instável antes do H1 (95 frames com 2 variantes em 5 rodadas);
+  a primeira versão do H1 (sem espera em hardware) subiu para 207 frames instáveis, por isso hardware manteve as duas
+  esperas. Versão final: 37 frames instáveis em 5 rodadas (≤ baseline; ruído do EDT-77, caminho de código idêntico ao antigo).
+  Com `--workers 1` hardware é estável e idêntico antes/depois.
+- `determinism.test.ts` verde em `auto` e `software` (várias execuções).
+
+**Velocidade** (3 execuções, workers = 6, mediana; `motion` 300 frames; só as linhas de software mudam)
+
+| GPU | preset | captureFps h4 → h1 | s_total h4 → h1 | s/min h4 → h1 |
+|---|---|---|---|---|
+| software | draft | 16,8 → 18,8 (1,12×) | 22,1 → 19,9 s | 132 → 119,5 |
+| software | standard | 16,6 → 18,8 | 22,8 → 20,4 s | 137 → 122 |
+| software | high | 15,8 → 18,9 | 25,4 → 21,7 s | 153 → 130 |
+| video (software), quente | draft | 23,8 → 25,1 | 16,4 → 15,9 s | 98 → 95,5 |
+| video (software), quente | standard | 22,7 → 24,8 | 18,3 → 16,9 s | 110 → 102 |
+| video (software), quente | high | 24,1 → 25,5 | 19,7 → 19,3 s | 119 → 116 |
+| hardware | draft / standard / high | 21,7 / 21,6 / 22,6 → 22,1 / 22,4 / 22,8 | — | 106 / 113 / 116 → 104 / 106 / 112 (ruído, caminho igual) |
+
+`bench-frame` mede as fases isoladas (não o produto): em software o `settlePaint` de ~33 ms (mediana 33,0) deixou de
+fazer parte do frame; o resto não mudou (seekFrame 17,1 incl. settle, captureScreenshot 122, base64 0,5, sha256 0,8).
+O ganho medido no render (~12% em captureFps) é menor que os ~21% do frame porque o frame inclui custo fora dessas fases
+(abrir Chrome, prontidão, workers disputando CPU).
+
+JSON: `h1-20261123-1938.json`, `frame-software-20261123-1949.json`, `frame-hardware-20261123-1950.json`.
+
 ## Tabela por hipótese (antes/depois)
 
 | hipótese | rótulo | captureFps motion (hw / sw) | s/min draft/standard/high | observação |
 |---|---|---|---|---|
 | baseline | `baseline` | 13,3 / 9,6 | 159 / 164 / 167 (hw); 211 / 219 / 228 (sw) | este documento |
 | H4 | `h4` | 21,7 / 16,8 | 106 / 113 / 116 (hw); 132 / 137 / 153 (sw) | pixels idênticos; PNG ~2× maior |
+| H1 | `h1` | 22,1 / 18,8 | 104 / 106 / 112 (hw, igual); 119,5 / 122 / 130 (sw) | só software (EDT-77: hardware mantém 2 esperas) |
 
 Comandos do `h4`: os mesmos do baseline com `--label h4` e `bench-frame` nos dois modos (JSON
 `h4-20261123-1855.json`, `frame-software-20261123-1906.json`, `frame-hardware-20261123-1907.json`).

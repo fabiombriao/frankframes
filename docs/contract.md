@@ -613,7 +613,9 @@ O contrato promete isto ao autor, e o engine tem que cumprir:
    uma execução para outra (visto nos goldens `vertical-toc` e `vertical-callout` com 4 capturas paralelas).
 6. **Uma captura por frame, depois do paint.** A primeira captura de cada sessão é descartada; depois
    de cada seek, `__ff.settle` espera dois frames de compositor e um `setTimeout` (que cai **depois** do
-   paint) antes do screenshot. Com software + `--disable-gpu-compositing`, uma leitura já é estável —
+   paint) antes do screenshot. Em **software** a captura usa essa espera do seek: **uma espera de paint por
+   frame** (EDT-62/H1). Em **hardware** há uma espera a mais, dentro da captura, porque o hardware com vários
+   workers já não reproduz hash na mesma máquina (EDT-77) e tirar a espera o piorou. Com software + `--disable-gpu-compositing`, uma leitura já é estável —
    medido em 3 comparações dos 24 blocos e 2 renders de vídeo real.
    O screenshot é PNG pedido com `optimizeForSpeed: true` (EDT-62/H4): o Chrome usa compressão mais barata,
    os **pixels decodificados são idênticos** aos do PNG padrão (conferido nos 240 frames dos goldens, diferença

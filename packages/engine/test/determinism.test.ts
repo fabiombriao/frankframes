@@ -81,3 +81,59 @@ test("determinismo em hardware forçado", { timeout: 900_000, skip: process.env.
   }
   await gate("hardware");
 });
+
+/** Esperas de paint por frame, frames 1..5, com o contador de `FRANKFRAMES_CAPTURE_PROFILE=1`. */
+async function settlesPerFrame(gpu: GpuMode): Promise<{ settles: number[]; resolved: string }> {
+  // O contador em `__ff.settleCount` só existe com FRANKFRAMES_CAPTURE_PROFILE=1.
+  const previous = process.env.FRANKFRAMES_CAPTURE_PROFILE;
+  process.env.FRANKFRAMES_CAPTURE_PROFILE = "1";
+  const server = await startServer(FIXTURES);
+  try {
+    const session = await openSessionFor(server, { url: server.url, viewport: { width: 640, height: 360 }, gpu });
+    try {
+      const settles: number[] = [];
+      for (let frame = 0; frame < 6; frame += 1) {
+        const before = await session.evaluate<number>("globalThis.__ff.settleCount");
+        await session.seekFrame(frame, FPS);
+        await session.capture();
+        settles.push((await session.evaluate<number>("globalThis.__ff.settleCount")) - before);
+      }
+      // Frame 0 é a primeira captura da sessão (aquece e exige 3 leituras iguais): fica fora da regra.
+      return { settles: settles.slice(1), resolved: session.gpu };
+    } finally {
+      await session.close();
+    }
+  } finally {
+    if (previous === undefined) delete process.env.FRANKFRAMES_CAPTURE_PROFILE;
+    else process.env.FRANKFRAMES_CAPTURE_PROFILE = previous;
+    await server.close();
+  }
+}
+
+test("captura em software: uma espera de paint por frame (o seek assenta; capture não repete)", { timeout: 120_000 }, async (t) => {
+  try {
+    await resolveChrome();
+  } catch {
+    t.skip("Chrome não encontrado");
+    return;
+  }
+  const { settles, resolved } = await settlesPerFrame("software");
+  assert.equal(resolved, "software");
+  assert.deepEqual(settles, [1, 1, 1, 1, 1], `esperas de paint por frame (frames 1..5): ${settles.join(",")}`);
+});
+
+test("captura em hardware: duas esperas de paint por frame (EDT-77)", { timeout: 120_000 }, async (t) => {
+  try {
+    await resolveChrome();
+  } catch {
+    t.skip("Chrome não encontrado");
+    return;
+  }
+  // `auto` resolve para hardware quando existe GPU utilizável; sem ela o teste não tem o que provar.
+  const result = await settlesPerFrame("auto");
+  if (result.resolved !== "hardware") {
+    t.skip(`GPU resolvida como ${result.resolved}: não há hardware nesta máquina`);
+    return;
+  }
+  assert.deepEqual(result.settles, [2, 2, 2, 2, 2], `esperas de paint por frame (frames 1..5): ${result.settles.join(",")}`);
+});
