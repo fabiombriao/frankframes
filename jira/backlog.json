@@ -390,6 +390,21 @@
             "testes que falhariam hoje: data-start=\"clip-1\" resolve no fim de clip-1; dividir um clip clip-N com referenciador de deslocamento 0 e aparar até deslocamento 0 deixam a composição válida e no tempo certo"
           ],
           "jiraKey": "EDT-75"
+        },
+        {
+          "summary": "Studio: preview volta ao fim da composição depois de mutação que recarrega",
+          "points": 2,
+          "labels": [
+            "studio",
+            "bug"
+          ],
+          "acceptance": [
+            "depois de dividir, colar, duplicar, apagar, aparar ou mover keyframe, o preview recarregado fica no mesmo instante de antes (tolerância de 1 frame), não no fim da composição",
+            "instante anterior além do novo fim cai no último frame; instante válido nunca é trocado por 0 nem pelo fim",
+            "falha ao ler ou gravar __ffTime aparece (liveErrors ou aviso do Studio), sem catch silencioso em reloadPreview/readPlayerTime de studio/app.js",
+            "teste que falharia hoje: mutação via API com o preview parado em t, depois do reload __ff.now() devolve t"
+          ],
+          "jiraKey": "EDT-76"
         }
       ],
       "jiraKey": "EDT-26"
