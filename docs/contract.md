@@ -584,6 +584,16 @@ Todo diagnóstico tem `code` estável, `severity` e `message`; os erros têm `hi
 `severity: "error"` bloqueia; `"warning"` só informa. A lista canônica está em
 `packages/contract/src/errors.ts`.
 
+**Saída do render.** O render grava o arquivo em `<nome>.partial<ext>` ao lado do destino (o sufixo vem antes da
+extensão, para o FFmpeg continuar inferindo o contêiner) e só o `rename` final lhe dá o nome definitivo; falha ou
+cancelamento apagam o `.partial`, então um arquivo que já existia no destino nunca é corrompido nem
+truncado. Se o `rename` falha porque o destino está aberto em outro programa (Windows: `EBUSY`/`EPERM`/`EACCES`),
+o render falha com `E_INTERNAL` (`stage: "assemble"`) e uma mensagem que diz qual arquivo está em uso; nunca
+termina "com sucesso" sem o arquivo. **Cancelamento:** `RenderOptions.signal` (um `AbortSignal`) mata o FFmpeg em
+andamento, derruba os workers de captura (as sessões do Chrome fecham), apaga temporários e `.partial` e rejeita com
+`E_CANCELED` no estágio em que estava; qualquer falha depois do abort vira `E_CANCELED`. `E_CANCELED` é código de
+render e não é repetido.
+
 ## 9. Determinismo esperado do runtime
 
 O contrato promete isto ao autor, e o engine tem que cumprir:
@@ -898,6 +908,25 @@ Qualquer outra falha de medição continua falhando alto.
   parte visível da barra e é redesenhado em `requestAnimationFrame` ao rolar ou dar zoom; a forma de onda
   acompanha `data-offset` e `data-playback-rate`, então aparar o início a desloca junto com o clip. Falha vira
   uma faixa hachurada na barra com o código no `title`.
+
+- **Exportar** (EDT-46; `GET /api/export` → `{job, defaults}`, `POST /api/export {preset, codec, output,
+  overwrite}`; botão Exportar). Renderiza o arquivo **salvo** com o mesmo pipeline e as mesmas guardas de licença do
+  `frankframes render` (`render-guard.ts`: build LGPL, H.264 só com `FRANKFRAMES_ALLOW_H264=1`). `preset` é `draft`,
+  `standard` ou `high`; `codec` é `av1` (padrão), `vp9` ou `h264`; `output` é relativo à pasta da entrada ou
+  absoluto e termina em `.mp4` (av1/h264) ou `.webm` (vp9), senão `400 E_EXPORT_OUTPUT_INVALID`; o padrão
+  (`defaults.output`) é `out/<nome>.mp4` do diretório atual. Contrato inválido bloqueia com `400 E_CONTRACT_INVALID`
+  e os diagnósticos, sem criar job; erro da guarda de licença sai com o código dela (`400`). Destino existente sem
+  `overwrite: true` é `409 E_EXPORT_EXISTS`. Um export por vez: outro pedido é `409 E_EXPORT_BUSY`. A resposta é
+  `202 {id, output}`; o estado (`running|done|failed|canceled`, `stage`, `percent`, `message`, `output`, `warnings`,
+  `error` com o payload de `render --json`, `result`) chega por `/api/events` como `event: export` e em
+  `GET /api/export`. **Cancelar** (`POST /api/export/cancel`) interrompe FFmpeg e captura, apaga temporários e a saída
+  parcial e responde só depois da limpeza (`409 E_EXPORT_IDLE` se não há export rodando); o job termina `canceled`.
+  **Abrir pasta** (`POST /api/export/reveal`) mostra o arquivo no gerenciador do sistema (`explorer.exe /select,` no
+  Windows, cujo código de saída 1 não é erro; `open -R` no macOS; `xdg-open` da pasta no Linux) e só vale com o job
+  `done` (`409 E_EXPORT_NOT_DONE`; falha ao abrir é `500 E_REVEAL_FAILED`). As rotas de export não entram na fila
+  de escrita (não tocam o arquivo da composição); fechar o Studio cancela o export em andamento. No cliente o botão
+  fica desabilitado com edição pendente ou inspetor sujo ("aplique as alterações antes de exportar"); com export
+  rodando mostra o percentual e reabre o progresso. Substituir um arquivo pede confirmação no diálogo.
 
 As escritas são serializadas: duas edições nunca intercalam leitura e gravação do mesmo arquivo.
 

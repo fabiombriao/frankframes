@@ -30,6 +30,7 @@ import {
 } from "@frankframes/producer";
 import type { ClipPatch, FfmpegPair, KeyframeRequest, PreparedComposition } from "@frankframes/producer";
 import { listBlocks, motionThumbPath } from "@frankframes/catalog";
+import { ExportError, createExporter } from "./studio-export.ts";
 import { HistoryStaleError, StudioHistory } from "./studio-history.ts";
 import { WaveformError, waveformFor } from "./studio-waveform.ts";
 import { IMAGE_SECONDS, MediaUploadError, mediaKind, mediaMarkup, storeMedia, supportedExtensions } from "./studio-media.ts";
@@ -358,6 +359,17 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
   };
 
   const ffprobePath = (): Promise<string> => ffmpegPair().then((pair) => pair.ffprobe);
+
+  /** Export do arquivo salvo (EDT-46). O progresso chega aos navegadores como `event: export`. */
+  const exporter = createExporter({
+    entry: entryPath,
+    onEvent: (job) => {
+      for (const client of clients) client.write(`event: export
+data: ${JSON.stringify(job)}
+
+`);
+    },
+  });
 
   const ensureWatcher = (): void => {
     if (watcher !== undefined) return;
@@ -946,6 +958,10 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
         events(req, res);
         return;
       }
+      if (pathname === "/api/export") {
+        sendJson(res, 200, { job: exporter.job(), defaults: exporter.defaults() });
+        return;
+      }
       if (pathname === "/preview") {
         try {
           const loaded = await loadPreview();
@@ -1043,6 +1059,22 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
         await serial(() => importMedia(url, req, res));
         return;
       }
+      // Export fora de `serial()`: o pipeline lê o arquivo uma vez no `prepare`; edições depois não o afetam.
+      if (pathname === "/api/export") {
+        const { id, output } = await exporter.start(objectBody(await bodyJson(req)));
+        sendJson(res, 202, { id, output });
+        return;
+      }
+      if (pathname === "/api/export/cancel") {
+        await exporter.cancel();
+        sendJson(res, 200, { ok: true });
+        return;
+      }
+      if (pathname === "/api/export/reveal") {
+        await exporter.reveal();
+        sendJson(res, 200, { ok: true });
+        return;
+      }
       if (pathname === "/api/undo" || pathname === "/api/redo") {
         const direction = pathname === "/api/undo" ? "undo" : "redo";
         await serial(() => travel(direction, res));
@@ -1061,7 +1093,7 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
         res.destroy();
         return;
       }
-      if (error instanceof ReplyError) {
+      if (error instanceof ReplyError || error instanceof ExportError) {
         sendJson(res, error.status, {
           code: error.code,
           message: error.message,
@@ -1090,6 +1122,8 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
       debounce = undefined;
       watcher?.close();
       watcher = undefined;
+      // Fechar o Studio com export rodando aborta o render e espera a limpeza.
+      await exporter.close();
       for (const client of clients) client.end();
       clients.clear();
       const closed = Promise.withResolvers<void>();

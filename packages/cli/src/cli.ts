@@ -5,10 +5,9 @@ import { readFileSync } from "node:fs";
 import { cp, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { watch } from "node:fs";
 import { tmpdir } from "node:os";
-import { basename, dirname, extname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { loadComposition } from "@frankframes/contract";
 import { PINNED_BROWSER, assetPath, checkPinnedBrowser, startServer } from "@frankframes/engine";
-import { assertCodecAllowed, assertFfmpegAllowed, containerFor, detectFfmpeg } from "@frankframes/encode";
 import type { Preset, VideoCodec } from "@frankframes/encode";
 import {
   PreviewAudioError,
@@ -26,6 +25,7 @@ import { installBlockFromUrl, listBlocks, readBlock } from "@frankframes/catalog
 import { buildCatalogIndex, publishCatalog, serveCatalog } from "./catalog-server.ts";
 import { startGallery } from "./gallery.ts";
 import { runDoctor, runInit, runSkillInstall } from "./onboarding.ts";
+import { defaultOutput, guardEncoder } from "./render-guard.ts";
 import { runSetup } from "./setup.ts";
 import { runUpgrade } from "./upgrade.ts";
 import { startStudio } from "./studio-server.ts";
@@ -116,10 +116,6 @@ function parseCli(argv: string[]): Cli {
   if (positional.length > 0) cli.command = positional[0]!;
   if (positional.length > 1) cli.file = positional[1]!;
   return cli;
-}
-
-function defaultOutput(entry: string, codec: VideoCodec): string {
-  return resolve("out", `${basename(entry, extname(entry))}.${containerFor(codec)}`);
 }
 
 // Devolve o código de saída; quem chama grava em `process.exitCode` e deixa o loop drenar
@@ -581,18 +577,14 @@ async function main(): Promise<void> {
   for (const warning of pair.warnings) process.stderr.write(`aviso: ${warning}\n`);
   const ffmpeg = pair.ffmpeg;
   const ffprobe = pair.ffprobe;
-  const mode =
-    process.env.FRANKFRAMES_FFMPEG_MODE === "distribution" || process.env.FRANKFRAMES_FFMPEG_MODE === "user-provided"
-      ? (process.env.FRANKFRAMES_FFMPEG_MODE as "distribution" | "user-provided")
-      : pair.source === "vendor"
-        ? "distribution"
-        : "user-provided";
   const outPath = cli.out !== undefined ? resolve(cli.out) : defaultOutput(entry, cli.codec);
 
   try {
-    const facts = await detectFfmpeg(ffmpeg);
-    for (const warning of assertFfmpegAllowed(facts, mode)) process.stderr.write(`aviso licença: ${warning}\n`);
-    assertCodecAllowed(facts, { codec: cli.codec, allowH264: process.env.FRANKFRAMES_ALLOW_H264 === "1" });
+    await guardEncoder({
+      pair,
+      codec: cli.codec,
+      onWarning: (warning) => process.stderr.write(`aviso licença: ${warning}\n`),
+    });
 
     const result = await renderComposition({
       entry,

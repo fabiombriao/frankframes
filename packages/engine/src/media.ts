@@ -32,10 +32,12 @@ export interface ExtractOptions {
   fps: { num: number; den: number };
   offset?: number;
   duration?: number;
+  /** Cancela o FFmpeg em andamento. */
+  signal?: AbortSignal;
 }
 
 /** Duração real da fonte, em segundos. */
-export async function probeDuration(ffprobe: string, file: string): Promise<number> {
+export async function probeDuration(ffprobe: string, file: string, signal?: AbortSignal): Promise<number> {
   const { stdout } = await run(ffprobe, [
     "-v",
     "error",
@@ -45,7 +47,7 @@ export async function probeDuration(ffprobe: string, file: string): Promise<numb
     "default=nw=1:nk=1",
     "--",
     file,
-  ]);
+  ], signal !== undefined ? { signal } : {});
   const seconds = Number(stdout.trim());
   if (!Number.isFinite(seconds) || seconds <= 0) throw new Error(`duração inválida em ${file}: ${stdout.trim()}`);
   return seconds;
@@ -76,7 +78,7 @@ export async function extractFrames(options: ExtractOptions): Promise<{ frameCou
     "-y",
     `${options.outDir}/%06d.jpg`,
   ];
-  await run(options.ffmpeg, args, { maxBuffer: 16 << 20 });
+  await run(options.ffmpeg, args, { maxBuffer: 16 << 20, ...(options.signal !== undefined ? { signal: options.signal } : {}) });
   const files = (await readdir(options.outDir)).filter((name) => name.endsWith(".jpg"));
   if (files.length === 0) throw new Error(`nenhum frame extraído de ${options.input}`);
   return { frameCount: files.length, pattern: `${options.outDir}/%06d.jpg` };

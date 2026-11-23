@@ -6,6 +6,7 @@ Gerado por `node scripts/generate-reference.ts` a partir do código. Não edite 
 |---|---|---|
 | `E_BROWSER_CLOSED` | erro | render |
 | `E_BROWSER_TIMEOUT` | erro | render |
+| `E_CANCELED` | erro | render |
 | `E_CODEC_UNSUPPORTED` | erro | licença/encode |
 | `E_CONTRACT` | erro | render |
 | `E_CURVE_INVALID` | erro | contrato |

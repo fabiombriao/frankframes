@@ -517,3 +517,27 @@ test("duplicar e colar mantêm a faixa do original (EDT-44)", () =>
     assert.equal(clips.find((item) => item.id === duplicated.json.id)!.track, 1);
     assert.equal(clips.find((item) => item.id === pasted.json.id)!.track, 1);
   }));
+
+test("exportar (EDT-46): GET /api/export traz os padrões; contrato quebrado à mão bloqueia sem job", () =>
+  withStudio(async (server, _dir, entry) => {
+    const state = (await (await fetch(`${server.url}api/export`)).json()) as {
+      job: unknown;
+      defaults: { output: string; codecs: string[]; presets: string[] };
+    };
+    assert.equal(state.job, null);
+    assert.match(state.defaults.output, /\.mp4$/);
+    assert.deepEqual(state.defaults.presets, ["draft", "standard", "high"]);
+    assert.ok(state.defaults.codecs.includes("av1") && state.defaults.codecs.includes("vp9"));
+
+    await writeFile(entry, HTML.replace('data-start="0"', 'data-start="abc"'), "utf8");
+    const blocked = await post(`${server.url}api/export`, { preset: "draft", output: "saida.mp4" });
+    assert.equal(blocked.status, 400, JSON.stringify(blocked.json));
+    assert.equal(blocked.json.code, "E_CONTRACT_INVALID");
+    assert.ok(Array.isArray(blocked.json.diagnostics) && blocked.json.diagnostics.length > 0);
+    const after = (await (await fetch(`${server.url}api/export`)).json()) as { job: unknown };
+    assert.equal(after.job, null, "nenhum job nasce de um pedido recusado");
+
+    const idle = await post(`${server.url}api/export/cancel`, {});
+    assert.equal(idle.status, 409);
+    assert.equal(idle.json.code, "E_EXPORT_IDLE");
+  }));

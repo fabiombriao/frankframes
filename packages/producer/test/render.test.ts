@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -146,4 +146,89 @@ test("faixa em silêncio digital: o render termina com áudio e avisa que o loud
   assert.equal(result.frames, 45);
   assert.equal(result.hasAudio, true, "o MP4 mantém a trilha, mesmo muda");
   assert.ok(result.warnings.some((warning) => /áudio silencioso: loudnorm não aplicado/.test(warning)), JSON.stringify(result.warnings));
+});
+
+async function renderDirs(): Promise<string[]> {
+  return (await readdir(tmpdir())).filter((name) => name.startsWith("ff-render-")).sort();
+}
+
+async function cancelWorkspace(prefix: string): Promise<{ workspace: string; entry: string }> {
+  const workspace = await mkdtemp(join(tmpdir(), prefix));
+  const entry = join(workspace, "index.html");
+  await writeFile(entry, COMPOSITION);
+  await run(FFMPEG, [
+    "-hide_banner", "-loglevel", "error",
+    "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000:duration=2",
+    "-ac", "2", "-y", join(workspace, "beep.wav"),
+  ]);
+  return { workspace, entry };
+}
+
+test("cancelar no começo da captura: E_CANCELED, sem temporários, sem .partial e arquivo antigo intacto", { timeout: 300_000 }, async (t) => {
+  if (!(await ffmpegAvailable())) return t.skip("ffmpeg/ffprobe não encontrados");
+
+  const { workspace, entry } = await cancelWorkspace("ff-e2e-cancel-");
+  const outPath = join(workspace, "saida.mp4");
+  await writeFile(outPath, "x");
+  const before = await renderDirs();
+
+  const controller = new AbortController();
+  await assert.rejects(
+    renderComposition({
+      entry,
+      outPath,
+      ffmpeg: FFMPEG,
+      ffprobe: FFPROBE,
+      codec: "av1",
+      preset: "draft",
+      workers: 2,
+      signal: controller.signal,
+      onProgress: (stage) => {
+        if (stage === "capture") controller.abort();
+      },
+    }),
+    (error: unknown) => {
+      const failure = error as { code?: string; stage?: string };
+      assert.equal(failure.code, "E_CANCELED");
+      assert.equal(failure.stage, "capture");
+      return true;
+    },
+  );
+
+  assert.deepEqual(await renderDirs(), before, "os diretórios ff-render-* voltam ao de antes");
+  assert.equal(await readFile(outPath, "utf8"), "x", "o destino antigo não foi tocado");
+  const leftovers = (await readdir(workspace)).filter((name) => name.includes(".partial"));
+  assert.deepEqual(leftovers, [], "nenhum .partial sobra");
+});
+
+test("cancelar no meio da captura (workers abertos): E_CANCELED e nada sobra", { timeout: 300_000 }, async (t) => {
+  if (!(await ffmpegAvailable())) return t.skip("ffmpeg/ffprobe não encontrados");
+
+  const { workspace, entry } = await cancelWorkspace("ff-e2e-cancel-mid-");
+  const outPath = join(workspace, "saida.mp4");
+  const before = await renderDirs();
+
+  const controller = new AbortController();
+  await assert.rejects(
+    renderComposition({
+      entry,
+      outPath,
+      ffmpeg: FFMPEG,
+      ffprobe: FFPROBE,
+      codec: "av1",
+      preset: "draft",
+      workers: 2,
+      signal: controller.signal,
+      onProgress: (stage) => {
+        // O Chrome precisa estar aberto e capturando quando o abort chega.
+        if (stage === "capture") setTimeout(() => controller.abort(), 700);
+      },
+    }),
+    (error: unknown) => (error as { code?: string }).code === "E_CANCELED",
+  );
+
+  assert.deepEqual(await renderDirs(), before, "os diretórios ff-render-* voltam ao de antes");
+  await assert.rejects(stat(outPath), { code: "ENOENT" });
+  const leftovers = (await readdir(workspace)).filter((name) => name.includes(".partial"));
+  assert.deepEqual(leftovers, []);
 });

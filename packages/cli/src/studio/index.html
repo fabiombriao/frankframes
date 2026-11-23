@@ -19,6 +19,7 @@
       <button id="deleteButton" type="button" class="tool-button" title="Excluir o clip selecionado, sem mover o resto (Delete)" disabled>Excluir</button>
       <button id="undoButton" type="button" class="tool-button" title="Desfazer (Ctrl+Z)" disabled>Desfazer</button>
       <button id="redoButton" type="button" class="tool-button" title="Refazer (Ctrl+Shift+Z ou Ctrl+Y)" disabled>Refazer</button>
+      <button id="exportButton" type="button" class="tool-button export-button" title="Exportar o vídeo (renderiza o arquivo salvo)" disabled>Exportar</button>
     </div>
     <dl class="composition-meta">
       <div>
@@ -132,6 +133,46 @@
       </div>
     </div>
   </footer>
+
+  <dialog id="exportDialog" class="export-dialog" aria-labelledby="exportTitle">
+    <form id="exportForm" novalidate>
+      <h2 id="exportTitle">Exportar vídeo</h2>
+
+      <div id="exportSetup" class="export-setup">
+        <div class="field-grid">
+          <label>
+            <span>Qualidade (preset)</span>
+            <select id="exportPreset" name="preset"></select>
+          </label>
+          <label>
+            <span>Codec</span>
+            <select id="exportCodec" name="codec"></select>
+          </label>
+        </div>
+        <label class="text-field">
+          <span>Destino (relativo à pasta da composição ou caminho absoluto)</span>
+          <input id="exportOutput" name="output" type="text" spellcheck="false" autocomplete="off">
+        </label>
+        <p class="field-note">Exporta o arquivo salvo, com o mesmo pipeline e as mesmas guardas de licença do <code>frankframes render</code>.</p>
+      </div>
+
+      <div id="exportProgress" class="export-progress" hidden>
+        <ol id="exportStages" class="export-stages" aria-label="Estágios do export"></ol>
+        <progress id="exportBar" max="100" value="0"></progress>
+        <p id="exportMessage" class="export-message" role="status" aria-live="polite"></p>
+      </div>
+
+      <div id="exportDiagnostics" class="diagnostics" role="status" aria-live="polite"></div>
+
+      <div class="export-actions">
+        <button id="exportClose" type="button" class="tool-button">Fechar</button>
+        <button id="exportCancel" type="button" class="tool-button" hidden>Cancelar export</button>
+        <button id="exportReveal" type="button" class="tool-button" hidden>Abrir pasta</button>
+        <button id="exportAgain" type="button" class="tool-button" hidden>Novo export</button>
+        <button id="exportStart" type="submit" class="primary-button">Exportar</button>
+      </div>
+    </form>
+  </dialog>
 
   <div id="dropOverlay" class="drop-overlay" hidden aria-hidden="true">Solte para importar no playhead</div>
 

@@ -1,10 +1,10 @@
 // FrankFrames — proprietário. Ver LICENSE na raiz.
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { basename, dirname, join, resolve } from "node:path";
+import { basename, dirname, extname, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { loadComposition } from "@frankframes/contract";
 import type { Composition, Diagnostic, RawClip, ResolvedClip } from "@frankframes/contract";
@@ -33,6 +33,26 @@ export function timedClips(composition: Composition): Array<{ clip: ResolvedClip
   return out;
 }
 
+/**
+ * Dá o nome final à saída. No Windows o `rename` falha quando o destino está aberto num player
+ * (EBUSY/EPERM/EACCES): vira erro claro, nunca um export "concluído" sem arquivo.
+ */
+async function publishOutput(partialPath: string, outPath: string): Promise<void> {
+  try {
+    await rename(partialPath, outPath);
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === "EBUSY" || code === "EPERM" || code === "EACCES") {
+      throw new RenderError(
+        "E_INTERNAL",
+        "assemble",
+        `não foi possível gravar ${basename(outPath)}: o arquivo está em uso (feche o player ou o editor que o abriu) e tente de novo`,
+      );
+    }
+    throw error;
+  }
+}
+
 /** Quantos frames cobrem a duração: o frame parcial do fim conta. */
 export function frameCountFor(seconds: number, fps: { num: number; den: number }): number {
   return Math.max(1, Math.ceil((seconds * fps.num) / fps.den - 1e-9));
@@ -52,6 +72,11 @@ export class RenderError extends Error {
     this.stage = stage;
     this.diagnostics = diagnostics;
   }
+}
+
+/** Lança `E_CANCELED` no estágio atual quando o chamador abortou o render. */
+function throwIfCanceled(signal: AbortSignal | undefined, stage: RenderStage): void {
+  if (signal?.aborted === true) throw new RenderError("E_CANCELED", stage, "render cancelado");
 }
 
 /**
@@ -90,6 +115,8 @@ export interface PrepareOptions {
   /** Diretório de trabalho; criado e devolvido ao chamador. */
   workDir?: string;
   onProgress?: (stage: RenderStage, percent: number, message?: string) => void;
+  /** Aborta entre as etapas e mata o FFmpeg de probe/extração em andamento (`E_CANCELED`). */
+  signal?: AbortSignal;
 }
 
 export interface PreparedComposition {
@@ -129,8 +156,10 @@ export async function prepare(options: PrepareOptions): Promise<PreparedComposit
   const ffmpeg = options.ffmpeg ?? pair!.ffmpeg;
   const ffprobe = options.ffprobe ?? pair!.ffprobe;
   const progress = options.onProgress ?? (() => {});
+  const signal = options.signal;
   const warnings: string[] = [];
 
+  throwIfCanceled(signal, "compile");
   progress("compile", 5, entry);
   const source = await readFile(entry, "utf8");
   const merged = await mergeSubCompositions(source, entryDir, entry);
@@ -147,6 +176,7 @@ export async function prepare(options: PrepareOptions): Promise<PreparedComposit
     );
   }
 
+  throwIfCanceled(signal, "probe");
   progress("probe", 10);
   const flat: RawClip[] = [];
   probeRaw(parsed.clips, flat);
@@ -156,9 +186,12 @@ export async function prepare(options: PrepareOptions): Promise<PreparedComposit
     if (clip.tag !== "video" && clip.tag !== "audio") continue;
     if (clip.authoredDuration !== undefined) continue;
     const file = resolve(entryDir, clip.mediaSrc);
+    throwIfCanceled(signal, "probe");
     try {
-      mediaDurations[clip.id] = await probeDuration(ffprobe, file);
+      mediaDurations[clip.id] = await probeDuration(ffprobe, file, signal);
     } catch (error) {
+      // Abortar o ffprobe não é mídia ilegível: sobe como cancelamento.
+      throwIfCanceled(signal, "probe");
       throw new RenderError("E_MEDIA_PROBE", "probe", `não foi possível ler ${file}: ${(error as Error).message}`);
     }
   }
@@ -189,6 +222,7 @@ export async function prepare(options: PrepareOptions): Promise<PreparedComposit
     mediaDir = assetPath("cache", "frames");
     manifest = { fps, clips: [] };
     for (const { clip, start } of videos) {
+      throwIfCanceled(signal, "extract");
       const dir = `${clip.id.replace(/[^A-Za-z0-9_-]/g, "_")}_${createHash("sha256").update(clip.id).digest("hex").slice(0, 6)}`;
       const clipDuration = clip.authoredDuration ?? Math.max(0, seconds - start);
       const { frameCount, dir: cacheDir } = await extractFramesCached({
@@ -198,6 +232,7 @@ export async function prepare(options: PrepareOptions): Promise<PreparedComposit
         fps,
         offset: clip.offset,
         duration: clipDuration * clip.playbackRate,
+        ...(signal !== undefined ? { signal } : {}),
       });
       const cacheName = cacheDir.slice(mediaDir.length + 1);
       manifest.clips.push({
@@ -248,6 +283,11 @@ export interface RenderOptions {
   workers?: number;
   keepWorkDir?: boolean;
   onProgress?: (stage: RenderStage, percent: number, message?: string) => void;
+  /**
+   * Cancela o render: mata o FFmpeg, para os workers de captura e apaga os temporários e a saída
+   * parcial. Rejeita com `RenderError("E_CANCELED", <estágio atual>, …)`.
+   */
+  signal?: AbortSignal;
 }
 
 export interface RenderResult {
@@ -267,15 +307,39 @@ export interface RenderResult {
  * (compile 5, probe 10, extract 20, capture 25→75, audio, encode 75→90, assemble 100).
  */
 export async function renderComposition(options: RenderOptions): Promise<RenderResult> {
+  let stage: RenderStage = "compile";
+  const onProgress = options.onProgress;
+  const tracked = (next: RenderStage, percent: number, message?: string): void => {
+    stage = next;
+    onProgress?.(next, percent, message);
+  };
+  try {
+    return await renderPipeline(options, tracked);
+  } catch (error) {
+    // Cancelar mata o FFmpeg (AbortError) e derruba a captura com erros colaterais: o chamador pediu
+    // cancelar, então qualquer falha depois do abort é cancelamento, no estágio em que estávamos.
+    if (options.signal?.aborted === true && !(error instanceof RenderError && error.code === "E_CANCELED")) {
+      throw new RenderError("E_CANCELED", stage, "render cancelado", error instanceof RenderError ? error.diagnostics : []);
+    }
+    throw error;
+  }
+}
+
+async function renderPipeline(
+  options: RenderOptions,
+  progress: (stage: RenderStage, percent: number, message?: string) => void,
+): Promise<RenderResult> {
   const codec: VideoCodec = options.codec ?? "av1";
   const preset: Preset = options.preset ?? "standard";
-  const progress = options.onProgress ?? (() => {});
+  const signal = options.signal;
+  const signalOption = signal !== undefined ? { signal } : {};
 
   const prepared = await prepare({
     entry: options.entry,
     ...(options.ffmpeg !== undefined ? { ffmpeg: options.ffmpeg } : {}),
     ...(options.ffprobe !== undefined ? { ffprobe: options.ffprobe } : {}),
     onProgress: progress,
+    ...signalOption,
   });
   const pair = await resolveFfmpeg();
   const ffmpeg = options.ffmpeg ?? pair.ffmpeg;
@@ -290,10 +354,16 @@ export async function renderComposition(options: RenderOptions): Promise<RenderR
     warnings.push("composição com vídeo: render forçado em software para manter o frame determinístico");
   }
 
-  // Ctrl+C não executa `finally`: o handler de exit remove o diretório de frames.
+  const outPath = resolve(options.outPath);
+  // Saída atômica: o FFmpeg grava em `<nome>.partial<ext>` e só o `rename` final dá o nome ao arquivo.
+  // O sufixo `.partial` vem antes da extensão para o FFmpeg continuar inferindo o contêiner pela ponta.
+  const partialPath = join(dirname(outPath), `${basename(outPath, extname(outPath))}.partial${extname(outPath)}`);
+
+  // Ctrl+C não executa `finally`: o handler de exit remove o diretório de frames e a saída parcial.
   const cleanup = (): void => {
     try {
       rmSync(workDir, { recursive: true, force: true });
+      rmSync(partialPath, { force: true });
     } catch {
       /* já removido */
     }
@@ -301,6 +371,7 @@ export async function renderComposition(options: RenderOptions): Promise<RenderR
   process.once("exit", cleanup);
 
   try {
+    throwIfCanceled(signal, "capture");
     progress("capture", 25);
     const server = await startServer(entryDir, {
       ...(prepared.mediaDir !== undefined ? { mediaRoot: prepared.mediaDir } : {}),
@@ -313,8 +384,10 @@ export async function renderComposition(options: RenderOptions): Promise<RenderR
     const frames = [...Array(totalFrames).keys()];
     let hashes: Map<number, string>;
     try {
-      hashes = await retryOnceIfTransient(() =>
-        captureFramesInParallel({
+      hashes = await retryOnceIfTransient(() => {
+        // O retry de falha transitória nunca recomeça uma captura já cancelada.
+        throwIfCanceled(signal, "capture");
+        return captureFramesInParallel({
           url: `${server.url}${basename(prepared.entry)}`,
           viewport,
           gpu,
@@ -323,21 +396,25 @@ export async function renderComposition(options: RenderOptions): Promise<RenderR
           serverFailures: server.failures,
           ...(options.workers !== undefined ? { workers: options.workers } : {}),
           onFrame: async (frame, png) => {
+            // Lançar aqui derruba o worker; o `finally` do captureFramesInParallel fecha as sessões do Chrome.
+            throwIfCanceled(signal, "capture");
             await writeFile(join(framesDir, `frame_${String(frame + 1).padStart(6, "0")}.png`), png);
           },
-        }),
-      );
+        });
+      });
     } catch (error) {
       throw motionFailure(error) ?? fontFailure(error) ?? browserFailure(error) ?? error;
     } finally {
       await server.close();
     }
+    throwIfCanceled(signal, "capture");
     progress("capture", 75, `${totalFrames} frames`);
 
     const audioInputs = audioClipsFor({ composition, entryDir, seconds });
 
     let audioPath: string | undefined;
     if (audioInputs.length > 0) {
+      throwIfCanceled(signal, "audio");
       progress("audio", 78, `${audioInputs.length} faixa(s)`);
       audioPath = join(workDir, "audio.m4a");
       const mixed = await mixAudio({
@@ -346,27 +423,38 @@ export async function renderComposition(options: RenderOptions): Promise<RenderR
         totalSeconds: seconds,
         outPath: audioPath,
         ...(options.loudness === false ? { loudness: false } : {}),
+        ...signalOption,
       });
       warnings.push(...mixed.warnings);
     }
 
+    throwIfCanceled(signal, "encode");
     progress("encode", 80);
     const container = containerFor(codec);
     const videoPath = join(workDir, container === "webm" ? "video.webm" : "video.mp4");
-    await run(ffmpeg, buildFrameSequenceArgs({ framesDir, fps, codec, preset, outPath: videoPath }), { maxBuffer: 64 << 20 });
+    await run(ffmpeg, buildFrameSequenceArgs({ framesDir, fps, codec, preset, outPath: videoPath }), { maxBuffer: 64 << 20, ...signalOption });
     progress("encode", 90);
 
+    throwIfCanceled(signal, "assemble");
     progress("assemble", 92);
-    const outPath = resolve(options.outPath);
     await mkdir(dirname(outPath), { recursive: true });
     const mux = buildMuxArgs(codec);
     const assembleArgs =
       audioPath === undefined
-        ? ["-hide_banner", "-loglevel", "error", "-i", videoPath, "-c", "copy", ...mux, "-y", outPath]
+        ? ["-hide_banner", "-loglevel", "error", "-i", videoPath, "-c", "copy", ...mux, "-y", partialPath]
         : container === "webm"
-          ? ["-hide_banner", "-loglevel", "error", "-i", videoPath, "-i", audioPath, "-c:v", "copy", "-c:a", "libopus", "-b:a", "128k", ...mux, "-y", outPath]
-          : ["-hide_banner", "-loglevel", "error", "-i", videoPath, "-i", audioPath, "-c:v", "copy", "-c:a", "copy", ...mux, "-y", outPath];
-    await run(ffmpeg, assembleArgs, { maxBuffer: 64 << 20 });
+          ? ["-hide_banner", "-loglevel", "error", "-i", videoPath, "-i", audioPath, "-c:v", "copy", "-c:a", "libopus", "-b:a", "128k", ...mux, "-y", partialPath]
+          : ["-hide_banner", "-loglevel", "error", "-i", videoPath, "-i", audioPath, "-c:v", "copy", "-c:a", "copy", ...mux, "-y", partialPath];
+    try {
+      await run(ffmpeg, assembleArgs, { maxBuffer: 64 << 20, ...signalOption });
+      // Última chance de cancelar: depois do rename o arquivo final existe e o export está feito.
+      throwIfCanceled(signal, "assemble");
+      await publishOutput(partialPath, outPath);
+    } catch (error) {
+      // Falha ou cancelamento nunca deixa `.partial` nem toca num arquivo antigo; o erro segue para o chamador.
+      await rm(partialPath, { force: true }).catch(() => undefined);
+      throw error;
+    }
     progress("assemble", 100, outPath);
 
     return {

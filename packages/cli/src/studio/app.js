@@ -60,6 +60,25 @@ import { keyframeMarks, keyframePropsFor, renderKeyframeSection, renderMotionSec
   const undoButton = document.getElementById("undoButton");
   const redoButton = document.getElementById("redoButton");
   const dropOverlay = document.getElementById("dropOverlay");
+  const exportButton = document.getElementById("exportButton");
+  const exportDialog = document.getElementById("exportDialog");
+  const exportForm = document.getElementById("exportForm");
+  const exportSetup = document.getElementById("exportSetup");
+  const exportPreset = document.getElementById("exportPreset");
+  const exportCodec = document.getElementById("exportCodec");
+  const exportOutput = document.getElementById("exportOutput");
+  const exportProgress = document.getElementById("exportProgress");
+  const exportStages = document.getElementById("exportStages");
+  const exportBar = document.getElementById("exportBar");
+  const exportMessage = document.getElementById("exportMessage");
+  const exportDiagnostics = document.getElementById("exportDiagnostics");
+  const exportCloseButton = document.getElementById("exportClose");
+  const exportCancelButton = document.getElementById("exportCancel");
+  const exportRevealButton = document.getElementById("exportReveal");
+  const exportAgainButton = document.getElementById("exportAgain");
+  const exportStartButton = document.getElementById("exportStart");
+  /* Estágios do pipeline, na ordem em que aparecem no progresso. */
+  const EXPORT_STAGES = ["compile", "probe", "extract", "capture", "audio", "encode", "assemble"];
   const toolDiagnostics = document.getElementById("toolDiagnostics");
   /* Mesma folga do servidor: corte colado na borda geraria um pedaço vazio. */
   const MIN_SPLIT_PIECE = 0.001;
@@ -72,7 +91,15 @@ import { keyframeMarks, keyframePropsFor, renderKeyframeSection, renderMotionSec
     selectedId: null,
     /* Área de transferência por referência: o id do clip copiado, não o conteúdo. */
     clipboard: null,
-    inspectorDirty: false,
+    /* Mudança no inspetor ainda não aplicada; o botão Exportar acompanha (só vale o que está salvo). */
+    _inspectorDirty: false,
+    get inspectorDirty() {
+      return this._inspectorDirty;
+    },
+    set inspectorDirty(value) {
+      this._inspectorDirty = value;
+      updateExportButton();
+    },
     playhead: 0,
     history: { canUndo: false, canRedo: false, undo: null, redo: null },
     busy: false,
@@ -88,6 +115,15 @@ import { keyframeMarks, keyframePropsFor, renderKeyframeSection, renderMotionSec
     waveformResults: new Map(),
     /* Ids de clips com data-track cujo elemento não é posicionado no preview (z-index sem efeito). */
     layerWarnings: new Set(),
+    /* Pedidos de edição em andamento. */
+    inflight: 0,
+    /* Export (EDT-46): o job vem do servidor; exportView escolhe entre o formulário e o progresso. */
+    exportJob: null,
+    exportDefaults: null,
+    exportView: "setup",
+    exportShownId: null,
+    exportSubmitting: false,
+    exportCanceling: false,
   };
 
   let drag = null;
@@ -494,6 +530,177 @@ import { keyframeMarks, keyframePropsFor, renderKeyframeSection, renderMotionSec
     splitButton.disabled = state.busy || splittable() === null;
     deleteButton.disabled = state.busy || deletable() === null;
     importButton.disabled = state.busy;
+    updateExportButton();
+  }
+
+  /* Exportar (EDT-46) */
+
+  function exportRunning() {
+    return state.exportJob !== null && state.exportJob.status === "running";
+  }
+
+  /* Com export rodando o botão reabre o progresso; senão só vale sem edição pendente nem inspetor sujo. */
+  function updateExportButton() {
+    const running = exportRunning();
+    const blocked = !running && (state.busy || state.inflight > 0 || state.inspectorDirty);
+    exportButton.disabled = blocked || state.exportDefaults === null;
+    exportButton.textContent = running ? "Exportando " + Math.round(state.exportJob.percent) + "%" : "Exportar";
+    exportButton.title = blocked
+      ? "aplique as alterações antes de exportar"
+      : running
+        ? "Ver o progresso do export"
+        : "Exportar o vídeo (renderiza o arquivo salvo)";
+  }
+
+  function applyExportJob(job) {
+    state.exportJob = job;
+    if (job !== null && job.id === state.exportShownId) state.exportView = "job";
+    renderExport();
+  }
+
+  async function loadExport() {
+    try {
+      const response = await fetch("/api/export", { cache: "no-store", headers: { accept: "application/json" } });
+      const payload = await readJson(response);
+      if (!response.ok) throw new Error(payload.message || "HTTP " + response.status);
+      state.exportDefaults = payload.defaults;
+      state.exportJob = payload.job;
+      fillExportForm();
+      renderExport();
+    } catch (error) {
+      renderDiagnostics(toolDiagnostics, [{ severity: "error", message: "Não foi possível ler o estado do export: " + error.message }]);
+    }
+  }
+
+  function fillExportForm() {
+    const defaults = state.exportDefaults;
+    if (defaults === null) return;
+    if (exportPreset.options.length === 0) {
+      for (const name of defaults.presets) exportPreset.add(new Option(name, name));
+      exportPreset.value = defaults.presets.includes("standard") ? "standard" : defaults.presets[0];
+    }
+    if (exportCodec.options.length === 0) {
+      for (const name of defaults.codecs) exportCodec.add(new Option(name, name));
+      exportCodec.value = defaults.codecs[0];
+    }
+    if (exportOutput.value === "") exportOutput.value = defaults.output;
+  }
+
+  /* Trocar o codec troca a extensão do destino (vp9 = .webm; av1 e h264 = .mp4). */
+  function syncExportExtension() {
+    const wanted = exportCodec.value === "vp9" ? ".webm" : ".mp4";
+    exportOutput.value = exportOutput.value.replace(/\.(mp4|webm)$/i, wanted);
+  }
+
+  function exportJobDiagnostics(job) {
+    if (job.status === "failed" && job.error) {
+      const items = [
+        { severity: "error", message: job.error.code + (job.error.stage ? " (" + job.error.stage + ")" : "") + ": " + job.error.message },
+      ];
+      for (const item of job.error.diagnostics || []) {
+        items.push({ severity: item.severity === "warning" ? "warning" : "error", message: item.code + (item.clipId ? " [" + item.clipId + "]" : "") });
+      }
+      return items;
+    }
+    if (job.status === "done") return job.warnings.map((message) => ({ severity: "warning", message }));
+    return [];
+  }
+
+  function renderExport() {
+    updateExportButton();
+    if (!exportDialog.open) return;
+    const job = state.exportJob;
+    const showJob = state.exportView === "job" && job !== null;
+    exportSetup.hidden = showJob;
+    exportProgress.hidden = !showJob;
+    exportStartButton.hidden = showJob;
+    exportStartButton.disabled = state.exportSubmitting;
+    exportCancelButton.hidden = !(showJob && job.status === "running");
+    exportCancelButton.disabled = state.exportCanceling;
+    exportRevealButton.hidden = !(showJob && job.status === "done");
+    exportAgainButton.hidden = !(showJob && job.status !== "running");
+    if (!showJob) return;
+
+    const current = job.stage === null ? -1 : EXPORT_STAGES.indexOf(job.stage);
+    exportStages.replaceChildren(
+      ...EXPORT_STAGES.map((name, index) => {
+        const item = document.createElement("li");
+        item.textContent = name;
+        if (job.status === "done" || index < current) item.className = "is-done";
+        else if (index === current && job.status === "running") item.className = "is-current";
+        return item;
+      }),
+    );
+    exportBar.value = job.status === "done" ? 100 : job.percent;
+    if (job.status === "running") exportMessage.textContent = job.stage === null ? "iniciando…" : job.stage + " · " + Math.round(job.percent) + "%";
+    else if (job.status === "done") exportMessage.textContent = "Exportado: " + job.output;
+    else if (job.status === "canceled") exportMessage.textContent = "Export cancelado; nenhum arquivo foi gravado.";
+    else exportMessage.textContent = "O export falhou.";
+    renderDiagnostics(exportDiagnostics, exportJobDiagnostics(job));
+  }
+
+  function openExportDialog() {
+    if (state.exportDefaults === null) return;
+    state.exportView = exportRunning() ? "job" : "setup";
+    state.exportShownId = exportRunning() ? state.exportJob.id : null;
+    renderDiagnostics(exportDiagnostics, []);
+    fillExportForm();
+    if (!exportDialog.open) exportDialog.showModal();
+    renderExport();
+  }
+
+  async function submitExport(overwrite) {
+    state.exportSubmitting = true;
+    renderExport();
+    try {
+      // Edição pendente termina antes: o export lê o arquivo que está salvo.
+      await mutationQueue;
+      if (state.inspectorDirty) {
+        renderDiagnostics(exportDiagnostics, [{ severity: "error", message: "Há alterações do inspetor sem aplicar; aplique antes de exportar." }]);
+        return;
+      }
+      const body = { preset: exportPreset.value, codec: exportCodec.value, output: exportOutput.value };
+      if (overwrite === true) body.overwrite = true;
+      const result = await mutate("POST", "/api/export", body);
+      if (!result.ok) {
+        const code = result.payload ? result.payload.code : null;
+        if (code === "E_EXPORT_EXISTS" && overwrite !== true) {
+          const name = exportOutput.value.split(/[\\/]/).pop();
+          if (window.confirm("Substituir " + name + "?")) {
+            state.exportSubmitting = false;
+            await submitExport(true);
+          }
+          return;
+        }
+        renderDiagnostics(exportDiagnostics, result.diagnostics);
+        return;
+      }
+      renderDiagnostics(exportDiagnostics, []);
+      state.exportShownId = result.payload.id;
+      state.exportView = "job";
+      await loadExport();
+    } finally {
+      state.exportSubmitting = false;
+      renderExport();
+    }
+  }
+
+  async function cancelExport() {
+    state.exportCanceling = true;
+    renderExport();
+    try {
+      const result = await mutate("POST", "/api/export/cancel", {});
+      if (!result.ok) renderDiagnostics(exportDiagnostics, result.diagnostics);
+      await loadExport();
+    } finally {
+      state.exportCanceling = false;
+      renderExport();
+    }
+  }
+
+  async function revealExport() {
+    const result = await mutate("POST", "/api/export/reveal", {});
+    if (!result.ok) renderDiagnostics(exportDiagnostics, result.diagnostics);
   }
 
   function applyHistory(value) {
@@ -1672,6 +1879,8 @@ import { keyframeMarks, keyframePropsFor, renderKeyframeSection, renderMotionSec
   /* Mutação */
 
   async function mutate(method, url, body) {
+    state.inflight += 1;
+    updateExportButton();
     try {
       const response = await fetch(url, {
         method,
@@ -1697,6 +1906,9 @@ import { keyframeMarks, keyframePropsFor, renderKeyframeSection, renderMotionSec
         payload: null,
         diagnostics: [{ severity: "error", message: "Falha de rede: " + error.message }],
       };
+    } finally {
+      state.inflight -= 1;
+      updateExportButton();
     }
   }
 
@@ -1772,6 +1984,13 @@ import { keyframeMarks, keyframePropsFor, renderKeyframeSection, renderMotionSec
       refreshComposition();
     };
     source.addEventListener("change", onChange);
+    source.addEventListener("export", (event) => {
+      try {
+        applyExportJob(JSON.parse(event.data));
+      } catch (error) {
+        renderDiagnostics(toolDiagnostics, [{ severity: "error", message: "Evento de export ilegível: " + error.message }]);
+      }
+    });
     source.onmessage = (event) => {
       if (String(event.data).trim() === "change") onChange();
     };
@@ -1894,6 +2113,21 @@ import { keyframeMarks, keyframePropsFor, renderKeyframeSection, renderMotionSec
   deleteButton.addEventListener("click", () => deleteSelected());
   undoButton.addEventListener("click", () => travel("undo"));
   redoButton.addEventListener("click", () => travel("redo"));
+  exportButton.addEventListener("click", () => openExportDialog());
+  exportCodec.addEventListener("change", syncExportExtension);
+  exportForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    submitExport(false);
+  });
+  exportCloseButton.addEventListener("click", () => exportDialog.close());
+  exportCancelButton.addEventListener("click", () => cancelExport());
+  exportRevealButton.addEventListener("click", () => revealExport());
+  exportAgainButton.addEventListener("click", () => {
+    state.exportView = "setup";
+    state.exportShownId = null;
+    renderDiagnostics(exportDiagnostics, []);
+    renderExport();
+  });
 
   /* Arrastar arquivo para qualquer ponto da janela importa no playhead. */
   window.addEventListener("dragenter", (event) => {
@@ -2019,5 +2253,6 @@ import { keyframeMarks, keyframePropsFor, renderKeyframeSection, renderMotionSec
   refreshHistory();
   loadMotionPresets();
   loadBlocks();
+  loadExport();
   connectEvents();
 })();
