@@ -10,6 +10,7 @@ export const PREVIEW_UI_SOURCE = `(() => {
   // Instante e loop salvos são por composição: abrir outro arquivo não pode herdar o estado.
   const storageKey = "__ffTime:" + (meta.id || "preview");
   const loopKey = "__ffLoop:" + (meta.id || "preview");
+  const playingKey = "__ffPlaying:" + (meta.id || "preview");
   const durationMs = (total / fps) * 1000;
   const frameMs = (frame) => (frame * 1000 * meta.fps.den) / meta.fps.num;
   // O relógio termina no início do último frame, nunca em durationMs.
@@ -147,21 +148,61 @@ export const PREVIEW_UI_SOURCE = `(() => {
       persist(true);
     }
   });
+  // Estado de transporte (tocando ou parado) guardado junto do instante: recarregar o preview depois de
+  // uma edição não pode religar o play, senão o relógio corre até o fim e o instante parado se perde.
+  const writePlaying = () => {
+    try {
+      sessionStorage.setItem(playingKey, window.__ff.playing() ? "1" : "0");
+    } catch (error) {
+      storageFailed(error);
+    }
+  };
+  window.__ff.transportHooks.push(writePlaying);
   window.addEventListener("pagehide", () => {
     try {
       sessionStorage.setItem(storageKey, persistValue());
     } catch (error) {
       storageFailed(error);
     }
+    writePlaying();
   });
 
+  // Leitura do estado salvo. Valor ausente é normal (primeira abertura); valor inválido ou storage
+  // bloqueado vira erro visível em liveErrors, nunca um zero silencioso.
+  let savedMs = null;
+  let savedPlaying = null;
+  try {
+    const rawTime = sessionStorage.getItem(storageKey);
+    if (rawTime !== null) {
+      const parsed = Number(rawTime);
+      if (rawTime.trim() === "" || !Number.isFinite(parsed)) {
+        window.__ff.liveErrors.push("sessionStorage: instante salvo inválido em " + storageKey + ": " + rawTime);
+      } else {
+        savedMs = clampMs(parsed);
+      }
+    }
+    const rawPlaying = sessionStorage.getItem(playingKey);
+    if (rawPlaying === "1" || rawPlaying === "0") savedPlaying = rawPlaying === "1";
+    else if (rawPlaying !== null) window.__ff.liveErrors.push("sessionStorage: estado de play inválido em " + playingKey + ": " + rawPlaying);
+  } catch (error) {
+    storageFailed(error);
+  }
+
+  // Recarga (F5, edição no Studio): o instante guardado vale mais que o "#f=" da URL, que só reflete o
+  // último scrub feito na barra e ficaria velho depois de um seek vindo de fora.
+  const navigation = performance.getEntriesByType("navigation")[0];
+  const isReload = navigation !== undefined && navigation.type === "reload";
   const fromHash = /#f=(\\d+)/.exec(location.hash);
-  const fromSession = clampMs(Number(sessionStorage.getItem(storageKey) || 0));
-  if (fromHash) {
+  if (fromHash && !(isReload && savedMs !== null)) {
     goToFrame(Math.min(total - 1, Math.max(0, Number(fromHash[1]))));
     paint();
+  } else if (savedMs !== null && savedPlaying === false) {
+    // Estava parado: volta parado no mesmo instante.
+    window.__ff.stopLive();
+    window.__ff.seek(savedMs);
+    paint();
   } else {
-    window.__ff.startLive(fromSession);
+    window.__ff.startLive(savedMs === null ? 0 : savedMs);
     paint();
   }
   paintPlay();

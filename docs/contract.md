@@ -668,8 +668,13 @@ No preview o relógio roda em **tempo real** (`__ff.startLive`) e **termina no �
 (`(frames − 1) / fps`): ao chegar lá, para e fica nele; Play no fim recomeça do 0. Com **Loop** ligado
 (botão ⟳ da barra; tecla L no Studio; lembrado na aba), volta ao 0 sem parar. Animações e visibilidade
 avançam sozinhas, sem seek. Salvar qualquer arquivo do diretório recompila (~4 ms medidos) e recarrega por
-SSE; o instante atual é guardado em `sessionStorage` (nunca acima do último frame) e retomado após a
-recarga. `__ff.transportHooks` recebe `start`, `stop`, `seek`, `end` e `loop`. Sem `__ff.setLiveBounds`
+SSE; o instante atual e o estado de transporte (tocando ou parado) são guardados em `sessionStorage` por
+composição (`__ffTime:<id>`, nunca acima do último frame, e `__ffPlaying:<id>`) e retomados após a
+recarga: parado volta parado no mesmo instante, tocando volta tocando dali. Instante acima do novo fim
+(composição encurtada) vira o último frame; um valor salvo inválido ou `sessionStorage` bloqueado aparece
+em `__ff.liveErrors`, nunca vira 0 em silêncio. Na recarga o instante salvo vale mais que o `#f=` da URL
+(que só reflete o último scrub da barra); numa abertura nova (sem recarga) o `#f=` manda.
+`__ff.transportHooks` recebe `start`, `stop`, `seek`, `end` e `loop`. Sem `__ff.setLiveBounds`
 o relógio ao vivo é ilimitado; a barra de controle sempre o chama.
 
 **Áudio no preview** é o mesmo mix do render (mesmo grafo: volume, fades, `data-offset`,
@@ -709,7 +714,11 @@ Qualquer outra falha de medição continua falhando alto.
   do Studio, desfazer/refazer recusa com `409 E_HISTORY_STALE` e descarta o histórico em vez de
   sobrescrever a mudança. Desfazer uma importação remove o clip, não o arquivo em `assets/`.
 - **Playhead.** Vai de 0 ao início do último frame, `(frames − 1) / fps`, nunca ao fim da composição. A
-  barra do preview no Studio não abre `/__ff_reload`: o Studio recarrega pelo próprio `/api/events`.
+  barra do preview no Studio não abre `/__ff_reload`: o Studio recarrega pelo próprio `/api/events`. Depois
+  de qualquer edição que recarrega o preview (cortar, colar, duplicar, apagar, aparar, mover keyframe) o
+  playhead fica no mesmo instante e no mesmo estado de play; quem guarda e restaura é o preview, o Studio
+  só recarrega. Erro do relógio do preview (`__ff.liveErrors`) ou preview inacessível aparece no indicador
+  de conexão do Studio.
 - **Caminhos relativos** do preview resolvem contra o diretório da entrada via `<base href="/__ff_site/">`.
   Nenhum caminho com segmento começando por `.` (`.env`, `.git`) é servido.
 

@@ -79,6 +79,76 @@ test("Loop volta ao início sem parar", { timeout: 60_000 }, (t) =>
     assert.ok(now < 500, `em loop o tempo nunca passa do fim, obtido ${Math.round(now)} ms`);
   }));
 
+/** Para o relógio num instante e recarrega, como o Studio faz depois de uma edição. */
+async function stopAtAndReload(session: Awaited<ReturnType<typeof openSession>>, ms: number): Promise<void> {
+  await session.evaluate(`window.__ff.stopLive(); window.__ff.seek(${ms})`);
+  await session.reload();
+}
+
+test("EDT-76: preview parado em t volta parado em t depois de recarregar", { timeout: 60_000 }, (t) =>
+  withShortPreview(t, async (session) => {
+    await stopAtAndReload(session, 200);
+    // Sem o estado de play salvo, o preview religava e corria até o fim (LAST_FRAME_MS) em ~300 ms.
+    await sleep(700);
+    const now = await session.evaluate<number>("window.__ff.now()");
+    assert.ok(Math.abs(now - 200) <= 1000 / 30, `deveria continuar em 200 ms, obtido ${Math.round(now)}`);
+    assert.equal(await session.evaluate<boolean>("window.__ff.playing()"), false);
+    assert.equal(await session.evaluate<string>(`document.querySelector("[data-ff-play]").textContent`), "play");
+    assert.deepEqual(await session.evaluate<string[]>("window.__ff.liveErrors"), []);
+    // Recarregar de novo, sem mexer, não perde nem desloca o instante.
+    await session.reload();
+    const again = await session.evaluate<number>("window.__ff.now()");
+    assert.ok(Math.abs(again - 200) <= 1000 / 30, `segunda recarga: obtido ${Math.round(again)}`);
+  }));
+
+test("EDT-76: preview tocando continua tocando depois de recarregar", { timeout: 60_000 }, (t) =>
+  withShortPreview(t, async (session) => {
+    await session.evaluate(`window.__ff.stopLive(); window.__ff.seek(50); window.__ff.startLive(50)`);
+    await session.reload();
+    assert.equal(await session.evaluate<boolean>("window.__ff.playing()"), true);
+    const now = await session.evaluate<number>("window.__ff.now()");
+    assert.ok(now >= 50 - 1000 / 30, `não pode recomeçar antes do instante salvo, obtido ${Math.round(now)}`);
+  }));
+
+test("EDT-76: instante salvo além do fim vira o último frame, não 0", { timeout: 60_000 }, (t) =>
+  withShortPreview(t, async (session) => {
+    // Composição encurtada por uma edição: o instante antigo (9 s) passa do fim novo (500 ms).
+    // O pagehide da barra grava o instante real; o nosso roda depois e deixa o valor antigo.
+    await session.evaluate(`window.__ff.stopLive(); window.addEventListener("pagehide", () => {
+      sessionStorage.setItem("__ffTime:preview", "9000");
+      sessionStorage.setItem("__ffPlaying:preview", "0");
+    })`);
+    await session.reload();
+    const now = await session.evaluate<number>("window.__ff.now()");
+    assert.ok(Math.abs(now - LAST_FRAME_MS) < 0.001, `deveria ir ao último frame, obtido ${now}`);
+    assert.equal(await session.evaluate<boolean>("window.__ff.playing()"), false);
+  }));
+
+test("EDT-76: instante salvo inválido aparece em liveErrors", { timeout: 60_000 }, (t) =>
+  withShortPreview(t, async (session) => {
+    await session.evaluate(`window.__ff.stopLive(); window.addEventListener("pagehide", () => sessionStorage.setItem("__ffTime:preview", "abc"))`);
+    await session.reload();
+    const errors = await session.evaluate<string[]>("window.__ff.liveErrors");
+    assert.ok(
+      errors.some((message) => message.includes("instante salvo inválido")),
+      `valor inválido precisa aparecer em liveErrors, obtido ${JSON.stringify(errors)}`,
+    );
+  }));
+
+test("EDT-76: o instante salvo vale mais que o #f velho da URL na recarga", { timeout: 60_000 }, (t) =>
+  withShortPreview(t, async (session) => {
+    // Scrub na barra deixa "#f=3"; depois um seek vindo de fora (timeline do Studio) move o instante.
+    await session.evaluate(`(() => {
+      const range = document.querySelector("[data-ff-scrub]");
+      range.value = "3";
+      range.dispatchEvent(new Event("input", { bubbles: true }));
+    })()`);
+    assert.equal(await session.evaluate<string>("location.hash"), "#f=3");
+    await stopAtAndReload(session, 300);
+    const now = await session.evaluate<number>("window.__ff.now()");
+    assert.ok(Math.abs(now - 300) <= 1000 / 30, `deveria ficar em 300 ms, e não no #f=3 (100 ms), obtido ${Math.round(now)}`);
+  }));
+
 test("carregar a barra do preview não lança exceção", { timeout: 60_000 }, (t) =>
   withShortPreview(t, async (session) => {
     assert.deepEqual(session.pageErrors(), []);

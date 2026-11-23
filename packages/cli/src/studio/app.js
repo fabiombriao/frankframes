@@ -1587,28 +1587,35 @@ import { keyframeMarks, keyframePropsFor, renderKeyframeSection, renderMotionSec
     observer.observe(playerFrame);
   }
 
+  /* Último erro do relógio do preview já mostrado, para não repetir o aviso a cada poll. */
+  let reportedLiveError = 0;
+
   function readPlayerTime() {
+    let win;
     try {
-      const win = player.contentWindow;
+      win = player.contentWindow;
       if (win && win.__ff && typeof win.__ff.now === "function") {
         const value = Number(win.__ff.now());
-        return Number.isFinite(value) ? value : null;
+        if (!Number.isFinite(value)) {
+          setConnection("preview: relógio devolveu instante inválido", true);
+          return null;
+        }
+        const errors = win.__ff.liveErrors;
+        if (Array.isArray(errors) && errors.length > reportedLiveError) {
+          reportedLiveError = errors.length;
+          setConnection("preview: " + errors[errors.length - 1], true);
+        }
+        return value;
       }
     } catch (error) {
-      return null;
+      setConnection("preview inacessível: " + (error && error.message ? error.message : error), true);
     }
     return null;
   }
 
+  /* O preview guarda e restaura o próprio instante e o estado de play (pagehide, em preview-ui): o Studio só recarrega. */
   function reloadPreview() {
-    const timeMs = readPlayerTime();
-    if (timeMs !== null) {
-      try {
-        sessionStorage.setItem("__ffTime", String(Math.round(timeMs)));
-      } catch (error) {
-        /* sessionStorage indisponível: o preview começa do zero */
-      }
-    }
+    reportedLiveError = 0;
     try {
       if (player.contentWindow) player.contentWindow.location.reload();
       else player.src = "/preview";
