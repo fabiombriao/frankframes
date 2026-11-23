@@ -214,6 +214,21 @@ export interface AnnotateResult {
   annotations: number;
 }
 
+/**
+ * Camada do clip visual (§4): `data-track` inteiro vira `z-index:<n>` no `style` do próprio clip.
+ * Respeita o autor: se o `style` já declara `z-index`, nada muda. Não injeta `position`
+ * (sem posicionamento o z-index não tem efeito, e o Studio avisa).
+ */
+function applyTrackLayer(node: P5Node): void {
+  if (node.tagName === "audio") return;
+  const track = attr(node, "data-track");
+  if (track === undefined || !/^-?\d+$/.test(track.trim())) return;
+  const style = attr(node, "style") ?? "";
+  if (/(^|;)\s*z-index\s*:/i.test(style)) return;
+  const base = style.trim().replace(/;+\s*$/, "");
+  setAttr(node, "style", (base === "" ? "" : base + ";") + "z-index:" + Number(track.trim()));
+}
+
 function annotateDocument(document: P5Node, composition: Composition): number {
   const timings = new Map<string, Timing>();
   collectTiming(composition.clips, 0, timings);
@@ -221,10 +236,12 @@ function annotateDocument(document: P5Node, composition: Composition): number {
   let annotations = 0;
   for (const node of walk(document.childNodes)) {
     if (node.nodeName === "#text") continue;
-    const id = attr(node, "data-clip-id") ?? attr(node, "data-composition-id");
+    const clipId = attr(node, "data-clip-id");
+    const id = clipId ?? attr(node, "data-composition-id");
     if (id === undefined) continue;
     const timing = timings.get(id);
     if (!timing) continue;
+    if (clipId !== undefined) applyTrackLayer(node);
     setAttr(node, "data-ff-start", String(Math.floor(timing.start * 1000)));
     if (timing.end !== undefined) setAttr(node, "data-ff-end", String(Math.ceil(timing.end * 1000)));
     setAttr(node, "data-ff-comp-start", String(Math.floor(timing.compStart * 1000)));

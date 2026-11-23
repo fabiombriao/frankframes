@@ -739,6 +739,42 @@ textarea {
   text-overflow: ellipsis;
 }
 
+/* Linhas por faixa (EDT-44): cada sub-raia tem a altura de uma linha; clips sobrepostos empilham. */
+.sublane {
+  position: relative;
+  height: 32px;
+}
+
+.track-zone {
+  display: grid;
+  grid-template-columns: var(--gutter) var(--lane-width);
+  height: 16px;
+  border-bottom: 1px dashed #2b3846;
+}
+
+.track-zone .row-label {
+  padding-top: 0;
+  padding-bottom: 0;
+  font-size: 10px;
+  opacity: 0.7;
+}
+
+.timeline-row.is-drop-target,
+.track-zone.is-drop-target {
+  background: rgba(139, 167, 197, 0.18);
+  box-shadow: inset 0 0 0 1px #8ba7c5;
+}
+
+.track-zone.is-drop-target {
+  height: 24px;
+}
+
+.timeline-row.is-drop-invalid,
+.track-zone.is-drop-invalid {
+  box-shadow: inset 0 0 0 1px #c75b5b;
+  cursor: not-allowed;
+}
+
 .lane {
   position: relative;
   min-width: 0;
@@ -766,6 +802,24 @@ textarea {
   cursor: grab;
   touch-action: none;
   user-select: none;
+}
+
+.clip-bar.is-dragging {
+  z-index: 4;
+  opacity: 0.9;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+}
+
+.clip-bar .bar-name {
+  position: relative;
+  pointer-events: none;
+}
+
+.clip-bar .bar-warn {
+  position: relative;
+  margin-left: 6px;
+  color: #ffd166;
+  font-weight: 700;
 }
 
 .clip-bar:hover {
@@ -953,6 +1007,21 @@ textarea {
   /* A cabeça do playhead passa da pista nas pontas; sem cortar ela alargaria a área rolável em "ajustar". */
   overflow: hidden;
   pointer-events: none;
+}
+
+/* Linha-guia do ímã (EDT-44): aparece no instante em que a borda grudou. */
+.snap-guide {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 1px;
+  background: #ffd166;
+  box-shadow: 0 0 4px rgba(255, 209, 102, 0.8);
+}
+
+.snap-guide[hidden] {
+  display: none;
 }
 
 .playhead {

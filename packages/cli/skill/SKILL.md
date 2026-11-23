@@ -152,7 +152,10 @@ quando tiver espaço: `font-family: "Space Grotesk", sans-serif`.
 2. **Não referencie CDN**: nada de `http://`, `https://`, `googleapis`, `cdn`, `unpkg` ou fonte
    remota. Todo recurso é local ou desenhado em CSS.
 3. **Não use `data-media-start`.** O nome do deslocamento dentro da mídia é `data-offset`.
-4. **Não confie em `data-track` para lógica.** Ele é só arrumação visual de UI; o render ignora.
+4. **`data-track` é camada, não lógica de tempo.** Em clip visual (vídeo, imagem, texto), faixa maior fica
+   por cima: o compilador escreve `z-index:<faixa>` no `style` do clip (se você já declarou `z-index`, o seu vale).
+   O `z-index` só age em elemento posicionado: dê `position:absolute` (ou `relative`) ao clip, senão o Studio
+   marca ⚠ "camada sem efeito". Em `<audio>` a faixa é só arrumação da timeline.
 5. **Não deixe mídia sem `data-duration` nem duração medida.** Se o probe não puder medir, declare o
    tempo no elemento.
 

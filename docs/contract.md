@@ -69,7 +69,7 @@ tem `data-track` (sem duração) **não** é clip.
 | `data-fade-in` / `data-fade-out` | segundos ≥ 0; entram no mixer. Fade maior que a duração é ajustado com aviso |
 | `data-enter` / `data-exit` / `data-emphasis` / `data-camera` / `data-transition` | movimento declarativo do clip ou de um descendente; ver §7b |
 | `data-keyframes` | JSON com pontos de volume (só no clip) e de propriedades visuais (clip ou descendente); ver §7b.7 |
-| `data-track` | **só UI**. O render ignora. Não use para lógica |
+| `data-track` | inteiro. Num clip **visual**, define a camada: o compilador acrescenta `z-index:<n>` ao `style` do clip, salvo se o autor já declarou `z-index` nele. Faixa maior fica por cima. Só tem efeito em elemento posicionado (ou item de flex/grid). Não mexe em tempo. Em `<audio>` é só organização. Clip sem `data-track` segue a ordem do documento |
 | `class="clip"` | convenção de autoria. **Nunca** governa visibilidade — o runtime usa o atributo `data-start` |
 
 ## 5. Sub-composições
@@ -866,9 +866,26 @@ Qualquer outra falha de medição continua falhando alto.
   campos de edição) e Ctrl+roda, que dá passos de ×1,15 e mantém parado o instante sob o ponteiro. A régua
   (cabeçalho fixo no topo) mostra só os tiques da janela visível e escolhe o passo pelo zoom: de 1 s ou mais
   até frames; no nível de frame (≥ 8 px por frame) os rótulos são `s:ff`. Mover e redimensionar clips
-  alinham ao frame no nível de frame e a 0,05 s abaixo dele; o diamante de keyframe sempre alinha ao frame.
+  alinham ao frame (ver "Faixas"); o diamante de keyframe sempre alinha ao frame.
   O playhead é desenhado em px e, com ele em movimento (tocando ou arrastado no player), a timeline rola
   para mantê-lo visível.
+- **Faixas** (EDT-44). A timeline agrupa os clips em linhas por (tipo, `data-track`): vídeo/imagem (`V`), texto
+  (`T`) e áudio (`A`); `data-track` ausente vale 0. O bloco visual vem primeiro, da faixa maior (por cima) para
+  a menor, e em empate o texto fica acima do vídeo; o bloco de áudio vem abaixo, em ordem crescente. Rótulos
+  `V2`, `T3`, `A0`. Clips que se sobrepõem na mesma linha ocupam sub-raias (só visual, nada é gravado). As
+  zonas "+ nova faixa" (acima do bloco visual e abaixo do de áudio) criam `maxVisual + 1` / `maxAudio + 1`.
+  Arrastar um clip para outra linha grava `data-track`, e o tempo da mesma soltura (`data-start`) vai no mesmo
+  patch, então Ctrl+Z desfaz os dois de uma vez. Clip visual só solta em linha visual (ou na zona nova de
+  cima) e áudio só em linha de áudio; destino inválido deixa a faixa como estava. Ao mover, redimensionar a
+  borda direita e aparar a borda esquerda, as bordas grudam (ímã) no playhead, em 0, no fim da composição e nas
+  bordas dos outros clips quando a distância é de até 8 px na tela (`8 / state.pxPerSecond` segundos, então
+  vale em qualquer zoom); uma linha vertical (`.snap-guide`) marca o alvo. Alt desliga o ímã. Sem ímã o tempo é
+  arredondado ao frame (`roundToFrame`) em qualquer zoom. Colar e duplicar (EDT-43) clonam o clip original, então
+  a cópia fica na mesma faixa dele; só um clip novo (bloco de título/legenda) nasce em `maxVisual + 1`, com
+  `position:absolute` no `style`.
+- **Camada sem efeito**: depois de carregar o preview, o Studio lê `getComputedStyle(el).position` dos clips com
+  `data-track` no iframe; se o elemento está `static` (e o pai não é flex/grid) a barra mostra ⚠ com o título
+  "camada sem efeito: elemento não posicionado". É aviso de UI, nada bloqueia nem é gravado.
 - **Waveform** (`GET /api/waveform/<id>`, EDT-45). Para clip `editable` de vídeo/áudio com som devolve
   `{digest, peaksPerSecond: 100, duration, peaks}`: `digest` é o sha256 do arquivo de mídia, `duration` os
   segundos de áudio decodificados e `peaks` um inteiro 0–255 por centésimo de segundo (máximo do módulo da

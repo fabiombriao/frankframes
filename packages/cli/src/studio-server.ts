@@ -596,7 +596,14 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
       throw new ReplyError(400, "E_ROOT_NOT_FOUND", "elemento com data-composition-id não encontrado");
     }
     const id = nextClipId(source);
-    const markup = `\n  <div data-clip-id="${id}" data-start="${start}" data-duration="${duration}" class="clip">Texto</div>\n`;
+    // Clip novo nasce na faixa de cima (EDT-44): uma acima da maior faixa visual da raiz, 0 se não há nenhuma.
+    const visualTracks = loadComposition(source)
+      .clips.filter((clip) => clipKind(clip) !== "audio")
+      .map((clip) => clip.track);
+    const track = visualTracks.length === 0 ? 0 : Math.max(...visualTracks) + 1;
+    // `position:absolute` porque a camada (`z-index`, §4) só vale em elemento posicionado.
+    const style = "position:absolute;left:0;right:0;top:45%;text-align:center";
+    const markup = `\n  <div data-clip-id="${id}" data-start="${start}" data-duration="${duration}" data-track="${track}" class="clip" style="${style}">Texto</div>\n`;
     const next = source.slice(0, root.index) + markup + source.slice(root.index);
 
     validated(next, "o clip novo deixaria o contrato inválido");

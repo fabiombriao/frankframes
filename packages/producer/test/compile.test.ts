@@ -92,6 +92,43 @@ test("clip sem data-clip-id recebe tempo anotado", async () => {
   assert.match(annotated, /data-ff-end="2000"/);
 });
 
+/** Compila só a anotação de uma raiz com os clips dados e devolve o HTML. */
+function annotateClips(inner: string): string {
+  const html = `<div data-composition-id="main" data-root="true" data-duration="4">${inner}</div>`;
+  const composition = loadComposition(html);
+  assert.equal(composition.ok, true);
+  return annotateTiming(html, composition).html;
+}
+
+test("EDT-44: data-track de clip visual vira z-index no style do clip", () => {
+  const semStyle = annotateClips(`<div data-clip-id="a" data-start="0" data-duration="1" data-track="2"></div>`);
+  assert.match(semStyle, /<div[^>]*data-clip-id="a"[^>]*style="z-index:2"/);
+  const comStyle = annotateClips(`<div data-clip-id="a" data-start="0" data-duration="1" data-track="2" style="color:red"></div>`);
+  assert.match(comStyle, /style="color:red;z-index:2"/);
+  const comPontoEVirgula = annotateClips(`<div data-clip-id="a" data-start="0" data-duration="1" data-track="3" style="color:red; "></div>`);
+  assert.match(comPontoEVirgula, /style="color:red;z-index:3"/);
+});
+
+test("EDT-44: z-index declarado pelo autor no clip é respeitado", () => {
+  const out = annotateClips(`<div data-clip-id="a" data-start="0" data-duration="1" data-track="2" style="z-index:9"></div>`);
+  assert.match(out, /style="z-index:9"/);
+  assert.ok(!out.includes("z-index:2"), out);
+});
+
+test("EDT-44: sem data-track ou com wrapper que não é clip, nada é escrito", () => {
+  const semTrack = annotateClips(`<div data-clip-id="a" data-start="0" data-duration="1" style="color:red"></div>`);
+  assert.ok(!semTrack.includes("z-index"), semTrack);
+  const wrapper = annotateClips(
+    `<div data-track="2"><div data-clip-id="deep" data-start="0" data-duration="1"></div></div>`,
+  );
+  assert.ok(!wrapper.includes("z-index"), wrapper);
+});
+
+test("EDT-44: <audio> com data-track é só organização, sem z-index", () => {
+  const out = annotateClips(`<audio data-clip-id="m" src="m.wav" data-start="0" data-duration="1" data-track="3"></audio>`);
+  assert.ok(!out.includes("z-index"), out);
+});
+
 test("<style> do <head> da sub-composição é preservado", async () => {
   const dir = await mkdtemp(join(tmpdir(), "ff-head-"));
   await writeFile(

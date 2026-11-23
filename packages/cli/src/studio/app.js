@@ -1,10 +1,13 @@
-import { MAX_PX_PER_FRAME, chooseStep, clampZoom, isFrameLevel, lastFrameTime, peakSlice, pxSpan, roundToFrame, tickLabel, zoomAround } from "/timeline-math.js";
+import { MAX_PX_PER_FRAME, chooseStep, clampZoom, lastFrameTime, isFrameLevel, nextTrack, peakSlice, pxSpan, roundToFrame, snap as snapTarget, snapMove, snapToFrame, tickLabel, trackGroup, trackRows, zoomAround } from "/timeline-math.js";
 import { keyframeMarks, keyframePropsFor, renderKeyframeSection, renderMotionSection, renderTransitionSection } from "/motion.js";
 
 (() => {
   "use strict";
 
-  const SNAP = 0.05;
+  /* Passo das setas ao mover o clip selecionado. */
+  const NUDGE = 0.05;
+  /* Ímã (EDT-44): distância em px da tela até onde a borda gruda. O limiar em segundos é SNAP_PX / pxPerSecond. */
+  const SNAP_PX = 8;
   const MIN_DURATION = 0.1;
   /* Passo do zoom da timeline. */
   const ZOOM_STEP = 1.15;
@@ -49,6 +52,7 @@ import { keyframeMarks, keyframePropsFor, renderKeyframeSection, renderMotionSec
   const timelineRows = document.getElementById("timelineRows");
   const timelineEmpty = document.getElementById("timelineEmpty");
   const playheadEl = document.getElementById("playhead");
+  const snapGuideEl = document.getElementById("snapGuide");
   const importButton = document.getElementById("importButton");
   const importInput = document.getElementById("importInput");
   const splitButton = document.getElementById("splitButton");
@@ -82,6 +86,8 @@ import { keyframeMarks, keyframePropsFor, renderKeyframeSection, renderMotionSec
     /* Waveform por fonte (mediaSrc): a promessa é buscada uma vez; o resultado fica em waveformResults. */
     waveforms: new Map(),
     waveformResults: new Map(),
+    /* Ids de clips com data-track cujo elemento não é posicionado no preview (z-index sem efeito). */
+    layerWarnings: new Set(),
   };
 
   let drag = null;
@@ -97,15 +103,9 @@ import { keyframeMarks, keyframePropsFor, renderKeyframeSection, renderMotionSec
     return Math.min(max, Math.max(min, value));
   }
 
-  function snap(value) {
-    return Math.round(value / SNAP) * SNAP;
-  }
-
-  /* Alinhamento do arrasto: no nível de frame da régua (>= 8 px/frame) vai de frame em frame, senão de 0,05 s. */
-  function snapTime(value) {
-    if (!isFrameLevel(state.pxPerSecond, state.fps)) return snap(value);
-    /* Trunca em ms: 2/30 vira 0,066 e o frame 2 (0,0667 s) continua dentro do clip; arredondar para cima o cortaria. */
-    return Math.floor((Math.round(value * state.fps) / state.fps) * 1000 + 1e-6) / 1000;
+  /* Instante sem ímã: o frame mais próximo, truncado em ms (ver floorMs), em qualquer zoom. */
+  function toFrame(value) {
+    return snapToFrame(value, state.fps);
   }
 
   function formatNumber(value) {
@@ -257,6 +257,7 @@ import { keyframeMarks, keyframePropsFor, renderKeyframeSection, renderMotionSec
       updateSelectionStyles();
       if (!state.inspectorDirty) fillInspector();
     }
+    checkLayerEffect();
   }
 
   async function refreshComposition() {
@@ -613,7 +614,7 @@ import { keyframeMarks, keyframePropsFor, renderKeyframeSection, renderMotionSec
   /** Cola (`paste`, no playhead) ou duplica (`duplicate`, logo depois do original); seleciona a cópia. */
   function copyClip(mode, id) {
     return runTool(async () => {
-      const body = mode === "paste" ? { at: snap(Math.max(0, state.playhead)) } : {};
+      const body = mode === "paste" ? { at: toFrame(Math.max(0, state.playhead)) } : {};
       const result = await mutate("POST", "/api/clips/" + encodeURIComponent(id) + "/" + mode, body);
       if (result.payload && result.payload.history) applyHistory(result.payload.history);
       if (!result.ok) {
@@ -649,7 +650,7 @@ import { keyframeMarks, keyframePropsFor, renderKeyframeSection, renderMotionSec
     const list = Array.from(files);
     if (!list.length) return mutationQueue;
     return runTool(async () => {
-      let start = snap(Math.max(0, state.playhead));
+      let start = toFrame(Math.max(0, state.playhead));
       const notes = [];
       let lastId = null;
       for (const file of list) {
@@ -1031,6 +1032,7 @@ import { keyframeMarks, keyframePropsFor, renderKeyframeSection, renderMotionSec
     }
   }
 
+  /* Uma linha por (tipo, faixa); clips que se sobrepõem na mesma linha ganham sub-raias (docs/contract.md §9d). */
   function renderTimeline() {
     const scrollTop = timelineScroll.scrollTop;
     const scrollLeft = timelineScroll.scrollLeft;
@@ -1045,84 +1047,125 @@ import { keyframeMarks, keyframePropsFor, renderKeyframeSection, renderMotionSec
     }
     timelineEmpty.hidden = true;
 
-    const ordered = [...state.clips].sort((a, b) => {
-      const delta = (a.start ?? 0) - (b.start ?? 0);
-      return delta !== 0 ? delta : a.id.localeCompare(b.id);
-    });
-
-    for (const clip of ordered) {
-      const row = document.createElement("div");
-      row.className = "timeline-row";
-
-      const label = document.createElement("div");
-      label.className = "row-label";
-      const tag = document.createElement("span");
-      tag.className = "row-tag";
-      tag.textContent = clip.tag;
-      const name = document.createElement("span");
-      name.className = "row-name";
-      name.textContent = clip.id;
-      label.append(tag, name);
-
-      const lane = document.createElement("div");
-      lane.className = "lane";
-
-      const bar = document.createElement("button");
-      bar.type = "button";
-      bar.className = "clip-bar";
-      bar.dataset.clipId = clip.id;
-      if (clip.start === null) bar.classList.add("is-unresolved");
-      if (clip.id === state.selectedId) bar.classList.add("is-selected");
-      bar.dataset.start = formatNumber(clip.start);
-      bar.dataset.duration = formatNumber(clip.duration);
-      positionBar(bar, clip);
-      bar.addEventListener("pointerdown", onBarPointerDown);
-      bar.addEventListener("keydown", (event) => {
-        if (event.key === "Enter") {
-          event.preventDefault();
-          selectClip(clip.id);
-        }
-      });
-
-      if (hasWave(clip)) {
-        ensureWaveform(clip);
-        const canvas = document.createElement("canvas");
-        canvas.className = "wave";
-        canvas.hidden = true;
-        canvas.setAttribute("aria-hidden", "true");
-        const failed = document.createElement("span");
-        failed.className = "wave-error";
-        failed.hidden = true;
-        bar.append(canvas, failed);
-      }
-
-      if (trimmable(clip)) {
-        const startHandle = document.createElement("span");
-        startHandle.className = "resize-handle-start";
-        startHandle.dataset.handle = "trim-start";
-        startHandle.setAttribute("aria-hidden", "true");
-        bar.append(startHandle);
-      }
-
-      if (clip.start !== null) {
-        const handle = document.createElement("span");
-        handle.className = "resize-handle";
-        handle.dataset.handle = "resize";
-        handle.setAttribute("aria-hidden", "true");
-        bar.append(handle);
-      }
-
-      lane.append(bar);
-      const strip = transitionStrip(clip);
-      if (strip !== null) lane.append(strip);
-      for (const mark of keyframeMarkElements(clip)) lane.append(mark);
-      row.append(label, lane);
-      timelineRows.append(row);
-    }
+    const rows = trackRows(state.clips);
+    const hasVisual = rows.some((row) => row.group === "visual");
+    const hasAudio = rows.some((row) => row.group === "audio");
+    if (hasVisual) timelineRows.append(trackZone("visual"));
+    for (const row of rows) timelineRows.append(trackRowElement(row));
+    if (hasAudio) timelineRows.append(trackZone("audio"));
 
     timelineScroll.scrollTop = scrollTop;
     timelineScroll.scrollLeft = scrollLeft;
     scheduleWaveforms();
+  }
+
+  /* Zona "+ nova faixa": solta aqui, o clip ganha a próxima faixa do grupo (acima da maior, ou abaixo da última de áudio). */
+  function trackZone(group) {
+    const zone = document.createElement("div");
+    zone.className = "track-zone";
+    zone.dataset.group = group;
+    zone.dataset.track = String(nextTrack(state.clips, group));
+    const label = document.createElement("div");
+    label.className = "row-label";
+    label.textContent = "+ nova faixa";
+    const lane = document.createElement("div");
+    lane.className = "lane";
+    zone.append(label, lane);
+    return zone;
+  }
+
+  function trackRowElement(row) {
+    const rowEl = document.createElement("div");
+    rowEl.className = "timeline-row";
+    rowEl.dataset.rowKey = row.key;
+    rowEl.dataset.group = row.group;
+    rowEl.dataset.track = String(row.track);
+
+    const label = document.createElement("div");
+    label.className = "row-label";
+    const tag = document.createElement("span");
+    tag.className = "row-tag";
+    tag.textContent = row.label;
+    const name = document.createElement("span");
+    name.className = "row-name";
+    name.textContent = row.kind === "audio" ? "áudio" : row.kind === "video" ? "vídeo" : "texto";
+    label.append(tag, name);
+
+    const lane = document.createElement("div");
+    lane.className = "lane";
+    for (const clips of row.lanes) {
+      const sub = document.createElement("div");
+      sub.className = "sublane";
+      for (const clip of clips) appendClip(sub, clip);
+      lane.append(sub);
+    }
+    rowEl.append(label, lane);
+    return rowEl;
+  }
+
+  /* Barra do clip + faixa de transição + losangos de keyframe, na sub-raia dele. */
+  function appendClip(sub, clip) {
+    const bar = document.createElement("button");
+    bar.type = "button";
+    bar.className = "clip-bar";
+    bar.dataset.clipId = clip.id;
+    if (clip.start === null) bar.classList.add("is-unresolved");
+    if (clip.id === state.selectedId) bar.classList.add("is-selected");
+    bar.dataset.start = formatNumber(clip.start);
+    bar.dataset.duration = formatNumber(clip.duration);
+    positionBar(bar, clip);
+    bar.addEventListener("pointerdown", onBarPointerDown);
+    bar.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        selectClip(clip.id);
+      }
+    });
+
+    if (hasWave(clip)) {
+      ensureWaveform(clip);
+      const canvas = document.createElement("canvas");
+      canvas.className = "wave";
+      canvas.hidden = true;
+      canvas.setAttribute("aria-hidden", "true");
+      const failed = document.createElement("span");
+      failed.className = "wave-error";
+      failed.hidden = true;
+      bar.append(canvas, failed);
+    }
+
+    const title = document.createElement("span");
+    title.className = "bar-name";
+    title.textContent = clip.id;
+    bar.append(title);
+    if (state.layerWarnings.has(clip.id)) {
+      const warn = document.createElement("span");
+      warn.className = "bar-warn";
+      warn.textContent = "⚠";
+      warn.title = "camada sem efeito: elemento não posicionado";
+      bar.append(warn);
+    }
+
+    if (trimmable(clip)) {
+      const startHandle = document.createElement("span");
+      startHandle.className = "resize-handle-start";
+      startHandle.dataset.handle = "trim-start";
+      startHandle.setAttribute("aria-hidden", "true");
+      bar.append(startHandle);
+    }
+
+    if (clip.start !== null) {
+      const handle = document.createElement("span");
+      handle.className = "resize-handle";
+      handle.dataset.handle = "resize";
+      handle.setAttribute("aria-hidden", "true");
+      bar.append(handle);
+    }
+
+    sub.append(bar);
+    const strip = transitionStrip(clip);
+    if (strip !== null) sub.append(strip);
+    for (const mark of keyframeMarkElements(clip)) sub.append(mark);
   }
 
   /* Faixa hachurada da transição: largura = sobreposição (dur), no começo da barra de B. */
@@ -1269,6 +1312,12 @@ import { keyframeMarks, keyframePropsFor, renderKeyframeSection, renderMotionSec
       originEnd: clip.end ?? clip.start + (clip.duration ?? 0),
       pointerId: event.pointerId,
       originX: event.clientX,
+      originY: event.clientY,
+      originTrack: clip.track,
+      /* Faixa de destino ao soltar: a mesma do clip até o ponteiro entrar numa linha válida. */
+      targetTrack: clip.track,
+      targetEl: null,
+      candidates: snapCandidates(clip.id),
       originStart: clip.start,
       originDuration: clip.duration ?? 0,
       pps: state.pxPerSecond,
@@ -1285,30 +1334,100 @@ import { keyframeMarks, keyframePropsFor, renderKeyframeSection, renderMotionSec
     window.addEventListener("pointercancel", onDragEnd);
   }
 
+  /**
+   * Alvos do ímã: início e fim dos outros clips de topo (os aninhados têm tempo local), o playhead e as pontas
+   * da composição. Fora o próprio clip arrastado.
+   */
+  function snapCandidates(excludeId) {
+    const list = [0, state.playhead];
+    if (state.total > 0) list.push(state.total);
+    for (const other of state.clips) {
+      if (other.id === excludeId || other.parentId !== null || other.start === null) continue;
+      list.push(other.start);
+      if (other.end !== null) list.push(other.end);
+    }
+    return list;
+  }
+
+  function paintSnapGuide(time) {
+    snapGuideEl.hidden = time === null;
+    if (time !== null) snapGuideEl.style.left = time * state.pxPerSecond + "px";
+  }
+
+  /** Linha ou zona sob o ponteiro (só pela geometria: a barra arrastada está deslocada e taparia o hit-test). */
+  function dropTargetAt(clientY) {
+    for (const el of timelineRows.children) {
+      const box = el.getBoundingClientRect();
+      if (clientY >= box.top && clientY < box.bottom) return el;
+    }
+    return null;
+  }
+
+  function clearDropMarks() {
+    for (const el of timelineRows.children) el.classList.remove("is-drop-target", "is-drop-invalid");
+  }
+
+  /** Move a barra com o ponteiro na vertical e escolhe a linha de destino; só o mesmo grupo (visual/áudio) vale. */
+  function updateDropTarget(event) {
+    const clip = drag.clip;
+    drag.bar.classList.add("is-dragging");
+    drag.bar.style.transform = "translateY(" + (event.clientY - drag.originY) + "px)";
+    clearDropMarks();
+    const el = dropTargetAt(event.clientY);
+    drag.targetEl = null;
+    drag.targetTrack = drag.originTrack;
+    if (el === null || el.dataset.track === undefined) return;
+    const valid = el.dataset.group === trackGroup(clip.kind);
+    el.classList.add(valid ? "is-drop-target" : "is-drop-invalid");
+    if (!valid) return;
+    drag.targetEl = el;
+    drag.targetTrack = Number(el.dataset.track);
+  }
+
   function onDragMove(event) {
     if (!drag || event.pointerId !== drag.pointerId) return;
     const deltaPx = event.clientX - drag.originX;
     if (Math.abs(deltaPx) >= 2) drag.moved = true;
+    if (drag.mode === "move" && Math.abs(event.clientY - drag.originY) >= 2) drag.moved = true;
     const deltaSeconds = deltaPx / drag.pps;
+    const threshold = SNAP_PX / drag.pps;
+    /* Alt desliga o ímã: o instante cai no frame mais próximo. */
+    const magnet = !event.altKey;
+    let guide = null;
 
     if (drag.mode === "move") {
-      drag.clip.start = snapTime(Math.max(0, drag.originStart + deltaSeconds));
+      const raw = Math.max(0, drag.originStart + deltaSeconds);
+      const duration = drag.clip.duration ?? 0;
+      const hit = magnet ? snapMove(raw, duration, drag.candidates, threshold) : { t: raw, guide: null };
+      drag.clip.start = hit.guide === null ? toFrame(raw) : Math.max(0, hit.t);
+      guide = hit.guide;
       if (drag.clip.duration !== null) drag.clip.end = drag.clip.start + drag.clip.duration;
+      updateDropTarget(event);
     } else if (drag.mode === "trim-start") {
       // O fim fica parado; o início para na borda da fonte (mídia), em 0 e a MIN_DURATION do fim.
       const media = drag.clip.kind === "video" || drag.clip.kind === "audio";
       const rate = drag.clip.playbackRate > 0 ? drag.clip.playbackRate : 1;
       const lowest = media ? Math.max(0, drag.originStart - drag.originOffset / rate) : 0;
       const highest = Math.max(lowest, drag.originEnd - MIN_DURATION);
-      const start = clamp(roundToFrame(drag.originStart + deltaSeconds, state.fps), lowest, highest);
+      const raw = drag.originStart + deltaSeconds;
+      const hit = magnet ? snapTarget(raw, drag.candidates, threshold) : { t: raw, guide: null };
+      const wanted = hit.guide === null ? roundToFrame(raw, state.fps) : hit.t;
+      const start = clamp(wanted, lowest, highest);
+      guide = hit.guide !== null && start === hit.t ? hit.guide : null;
       drag.clip.start = start;
       drag.clip.duration = drag.originEnd - start;
       drag.clip.end = drag.originEnd;
       if (media) drag.clip.offset = drag.originOffset + (start - drag.originStart) * rate;
     } else {
-      drag.clip.duration = snapTime(Math.max(MIN_DURATION, drag.originDuration + deltaSeconds));
+      const start = drag.clip.start ?? 0;
+      const raw = drag.originStart + drag.originDuration + deltaSeconds;
+      const hit = magnet ? snapTarget(raw, drag.candidates, threshold) : { t: raw, guide: null };
+      const end = hit.guide === null ? toFrame(raw) : hit.t;
+      drag.clip.duration = Math.max(MIN_DURATION, end - start);
+      guide = hit.guide !== null && end - start >= MIN_DURATION ? hit.guide : null;
       drag.clip.end = drag.clip.start === null ? null : drag.clip.start + drag.clip.duration;
     }
+    paintSnapGuide(guide);
     updateBarGeometry(drag.clip, drag.bar);
   }
 
@@ -1324,12 +1443,26 @@ import { keyframeMarks, keyframePropsFor, renderKeyframeSection, renderMotionSec
     } catch (error) {
       /* o ponteiro já pode ter sido liberado */
     }
+    paintSnapGuide(null);
+    clearDropMarks();
+    finished.bar.style.transform = "";
+    finished.bar.classList.remove("is-dragging");
     if (!finished.moved) return;
 
     if (finished.mode === "trim-start") {
       if (finished.clip.start !== finished.originStart) trimClip(finished.clip.id, finished.clip.start);
-    } else if (finished.mode === "move" && finished.clip.start !== finished.originStart) {
-      queuePatch(finished.clip.id, { "data-start": formatNumber(finished.clip.start) });
+    } else if (finished.mode === "move") {
+      /* Faixa e início saem num PATCH só: um passo no histórico, um desfazer. */
+      const attributes = {};
+      if (finished.clip.start !== finished.originStart) attributes["data-start"] = formatNumber(finished.clip.start);
+      const trackChanged = finished.targetTrack !== finished.originTrack;
+      if (trackChanged) attributes["data-track"] = String(finished.targetTrack);
+      if (Object.keys(attributes).length === 0) return;
+      if (trackChanged) {
+        finished.clip.track = finished.targetTrack;
+        renderTimeline();
+      }
+      queuePatch(finished.clip.id, attributes);
     } else if (finished.mode === "resize" && finished.clip.duration !== finished.originDuration) {
       queuePatch(finished.clip.id, { "data-duration": formatNumber(finished.clip.duration) });
     }
@@ -1395,7 +1528,7 @@ import { keyframeMarks, keyframePropsFor, renderKeyframeSection, renderMotionSec
   function nudgeSelected(direction) {
     const clip = state.selectedId === null ? null : findClip(state.selectedId);
     if (!clip || clip.start === null) return;
-    const next = snap(Math.max(0, clip.start + direction * SNAP));
+    const next = Math.max(0, Math.round((clip.start + direction * NUDGE) / NUDGE) * NUDGE);
     if (next === clip.start) return;
     clip.start = next;
     if (clip.duration !== null) clip.end = next + clip.duration;
@@ -1513,7 +1646,7 @@ import { keyframeMarks, keyframePropsFor, renderKeyframeSection, renderMotionSec
       renderDiagnostics(blocksDiagnostics, [{ severity: "error", message: "Bloco sem duração válida: " + name }]);
       return;
     }
-    const start = snap(Math.max(0, state.playhead));
+    const start = toFrame(Math.max(0, state.playhead));
     button.disabled = true;
     try {
       const result = await mutate("POST", "/api/clips", { template, start, duration });
@@ -1780,6 +1913,24 @@ import { keyframeMarks, keyframePropsFor, renderKeyframeSection, renderMotionSec
     if (dragDepth === 0) setDropOverlay(false);
   });
   /* O iframe do preview engole eventos de arraste; o overlay cobre a janela assim que ele percebe um arquivo. */
+  /* Camada sem efeito (EDT-44): clip visual com data-track cujo elemento é estático no preview — o z-index não vale. */
+  function checkLayerEffect() {
+    const doc = player.contentDocument;
+    const view = doc ? doc.defaultView : null;
+    if (!doc || !view) return;
+    const warned = new Set();
+    for (const clip of state.clips) {
+      if (clip.kind === "audio") continue;
+      const el = doc.querySelector('[data-clip-id="' + CSS.escape(clip.id) + '"]');
+      if (el === null || !el.hasAttribute("data-track")) continue;
+      if (view.getComputedStyle(el).position === "static") warned.add(clip.id);
+    }
+    const same = warned.size === state.layerWarnings.size && [...warned].every((id) => state.layerWarnings.has(id));
+    if (same) return;
+    state.layerWarnings = warned;
+    if (drag === null) renderTimeline();
+  }
+  player.addEventListener("load", checkLayerEffect);
   player.addEventListener("load", () => {
     const doc = player.contentDocument;
     if (!doc) return;

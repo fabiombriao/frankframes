@@ -472,3 +472,48 @@ test("estúdio entrega a waveform de um clip com som e recusa o que não tem", a
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+const LAYERED = HTML.replace(
+  '<div data-clip-id="a" data-start="0" data-duration="1" class="clip">Primeiro</div>',
+  '<div data-clip-id="a" data-start="0" data-duration="1" data-track="1" class="clip">Primeiro</div>',
+);
+
+test("estúdio grava faixa e início num PATCH só: um passo no histórico, um desfazer byte a byte (EDT-44)", () =>
+  withStudio(async (server, _dir, entry) => {
+    await writeFile(entry, LAYERED, "utf8");
+    const moved = await post(`${server.url}api/clips/a`, { attributes: { "data-track": "3", "data-start": "0.5" } });
+    assert.equal(moved.status, 200, JSON.stringify(moved.json));
+    assert.equal((moved.json.history as { undo: string }).undo, "editar a");
+    const clip = loadComposition(await readFile(entry, "utf8")).clips.find((item) => item.id === "a")!;
+    assert.equal(clip.track, 3);
+    assert.equal(clip.start, 0.5);
+
+    const undone = await post(`${server.url}api/undo`, {});
+    assert.equal(undone.status, 200);
+    assert.equal(await readFile(entry, "utf8"), LAYERED, "um desfazer devolve faixa e início juntos");
+    const history = (await (await fetch(`${server.url}api/history`)).json()) as { canUndo: boolean };
+    assert.equal(history.canUndo, false, "só havia um passo");
+  }));
+
+test("clip de título novo nasce na faixa de cima e posicionado (EDT-44)", () =>
+  withStudio(async (server, _dir, entry) => {
+    await writeFile(entry, LAYERED, "utf8");
+    const inserted = await post(`${server.url}api/clips`, { template: "title", start: 0, duration: 1 });
+    assert.equal(inserted.status, 200, JSON.stringify(inserted.json));
+    const source = await readFile(entry, "utf8");
+    const clip = loadComposition(source).clips.find((item) => item.id === inserted.json.id)!;
+    assert.equal(clip.track, 2, "uma acima da maior faixa visual (a está na 1)");
+    assert.match(source, new RegExp(`data-clip-id="${String(inserted.json.id)}"[^>]*style="position:absolute`), "sem position o z-index não vale");
+  }));
+
+test("duplicar e colar mantêm a faixa do original (EDT-44)", () =>
+  withStudio(async (server, _dir, entry) => {
+    await writeFile(entry, LAYERED.replace('data-duration="2">', 'data-duration="10">'), "utf8");
+    const duplicated = await post(`${server.url}api/clips/a/duplicate`, {});
+    assert.equal(duplicated.status, 200, JSON.stringify(duplicated.json));
+    const pasted = await post(`${server.url}api/clips/a/paste`, { at: 5 });
+    assert.equal(pasted.status, 200, JSON.stringify(pasted.json));
+    const clips = loadComposition(await readFile(entry, "utf8")).clips;
+    assert.equal(clips.find((item) => item.id === duplicated.json.id)!.track, 1);
+    assert.equal(clips.find((item) => item.id === pasted.json.id)!.track, 1);
+  }));
