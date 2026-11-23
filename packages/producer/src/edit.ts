@@ -43,6 +43,8 @@ export class EditError extends Error {
     | "E_DELETE_UNSUPPORTED"
     | "E_TRIM_OUT_OF_RANGE"
     | "E_TRIM_UNSUPPORTED"
+    | "E_COPY_UNSUPPORTED"
+    | "E_COPY_OUT_OF_RANGE"
     | "E_TRANSITION_GAP"
     | "E_KEYFRAME_NOT_FOUND"
     | "E_KEYFRAME_EXISTS"
@@ -338,6 +340,100 @@ export function splitClip(source: string, request: SplitRequest): string {
     patches.push({ clipId: referrer.id, attributes: { "data-start": `${newId}${refSuffix(offset)}` } });
   }
   return applyPatches(inserted, patches);
+}
+
+export interface DuplicateRequest {
+  clipId: string;
+  /** Início da cópia, em segundos desde o começo da composição (≥ 0). */
+  at: number;
+  /** Id da cópia; precisa ser livre. */
+  newId: string;
+}
+
+export interface DuplicateResult {
+  source: string;
+  /** Coisas que a cópia não carrega ou que o autor deve olhar. */
+  warnings: string[];
+}
+
+/**
+ * Copia um clip da raiz, com tudo o que há dentro dele, para logo depois do original (mesmo pai, mesma
+ * indentação). A cópia começa em `at` (`data-start` absoluto) e ganha `data-clip-id=newId`; todo
+ * descendente com id passa a `<newId>-<id>` e os `data-start` internos que apontavam para eles seguem
+ * a renomeação (referência para fora da cópia fica como está). Nenhum outro clip é tocado.
+ * `data-transition` da raiz não é copiado (a cópia deixa de encostar no parceiro): vira aviso.
+ */
+export function duplicateClip(source: string, request: DuplicateRequest): DuplicateResult {
+  const { clipId, at, newId } = request;
+  if (!Number.isFinite(at) || at < 0) throw new EditError("E_COPY_OUT_OF_RANGE", "início da cópia precisa ser um número ≥ 0");
+  if (!/^[A-Za-z0-9_.:-]+$/.test(newId)) throw new EditError("E_ATTRIBUTE_INVALID", `id inválido: ${newId}`);
+
+  const composition = loadComposition(source);
+  const all = flatten(composition.clips);
+  const clip = topLevelClip(composition, clipId, "E_COPY_UNSUPPORTED", "copie o clip no arquivo da sub-composição");
+  const location = locateClip(source, clipId);
+
+  const byId = new Map(all.map((item) => [item.id, item]));
+  const inside = flatten([clip]);
+  // Ids que a cópia cria: o da raiz vira `newId`; os dos descendentes, `<newId>-<id>`.
+  const renamed = new Map<string, string>(inside.map((item) => [item.id, item.id === clipId ? newId : `${newId}-${item.id}`]));
+  for (const created of renamed.values()) {
+    if (all.some((item) => item.id === created) || explicitClipIds(source).has(created)) {
+      throw new EditError("E_AMBIGUOUS_CLIP", `id "${created}" já existe`);
+    }
+  }
+
+  const warnings: string[] = [];
+  const text = source.slice(location.start, location.end);
+  const snippet = parseSource(text);
+  const replacements: Replacement[] = [];
+  const replaceAttribute = (node: P5Node, name: string, value: string | null): void => {
+    const range = node.sourceCodeLocation?.attrs?.[name];
+    // Todo clip tem `data-clip-id` e `data-start` (é o que o faz clip): nada a inserir, só trocar.
+    if (!range) return;
+    if (value === null) {
+      const start = text[range.startOffset - 1] === " " ? range.startOffset - 1 : range.startOffset;
+      replacements.push({ start, end: range.endOffset, text: "" });
+    } else {
+      replacements.push({ start: range.startOffset, end: range.endOffset, text: `${name}="${escapeAttribute(value)}"` });
+    }
+  };
+
+  const seenHtmlIds = new Set<string>();
+  for (const node of walk(snippet.childNodes)) {
+    if (node.nodeName === "#text") continue;
+    const htmlId = attr(node, "id");
+    if (htmlId !== undefined && !seenHtmlIds.has(htmlId)) {
+      seenHtmlIds.add(htmlId);
+      warnings.push(`id HTML duplicado: ${htmlId}`);
+    }
+    // O id do clip vem de `data-clip-id`, ou de `data-composition-id` quando não há o primeiro.
+    const idAttribute = attr(node, "data-clip-id") !== undefined ? "data-clip-id" : attr(node, "data-composition-id") !== undefined ? "data-composition-id" : undefined;
+    if (idAttribute === undefined) continue;
+    const oldId = attr(node, idAttribute)!;
+    const created = renamed.get(oldId);
+    if (created === undefined) continue;
+    replaceAttribute(node, idAttribute, created);
+
+    if (oldId === clipId) {
+      replaceAttribute(node, "data-start", seconds(at));
+      if (attr(node, "data-transition") !== undefined) {
+        replaceAttribute(node, "data-transition", null);
+        warnings.push("transição não copiada");
+      }
+      continue;
+    }
+    const expr = byId.get(oldId)?.startExpr;
+    if (expr?.kind === "reference" && renamed.has(expr.refId)) {
+      replaceAttribute(node, "data-start", `${renamed.get(expr.refId)}${refSuffix(expr.offset)}`);
+    }
+  }
+  const copy = applyReplacements(text, replacements);
+
+  const lineStart = source.lastIndexOf("\n", location.start - 1) + 1;
+  const lead = source.slice(lineStart, location.start);
+  const separator = /^[ \t]*$/.test(lead) ? `\n${lead}` : "";
+  return { source: source.slice(0, location.end) + separator + copy + source.slice(location.end), warnings };
 }
 
 export interface DeleteRequest {

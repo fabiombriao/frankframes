@@ -25,6 +25,7 @@ import {
   resolveFfmpeg,
   splitClip,
   deleteClip,
+  duplicateClip,
   trimClipStart,
 } from "@frankframes/producer";
 import type { ClipPatch, KeyframeRequest, PreparedComposition } from "@frankframes/producer";
@@ -668,6 +669,38 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
     sendJson(res, 200, { ok: true, id: newId, duration: durationOf(composition), history: history.state() });
   };
 
+  /**
+   * `POST /api/clips/<id>/duplicate` com `{}` (cópia no fim do original) ou `/paste` com `{at}`; ver
+   * `duplicateClip`. O id novo sai do servidor; nenhum clip existente se move.
+   */
+  const copy = async (clipId: string, mode: "duplicate" | "paste", req: IncomingMessage, res: ServerResponse): Promise<void> => {
+    const body = objectBody(await bodyJson(req));
+    const source = await readFile(entryPath, "utf8");
+    let at = 0;
+    if (mode === "paste") at = numeric(body, "at");
+    else {
+      const original = loadComposition(source).clips.find((item) => item.id === clipId);
+      if (original !== undefined) {
+        if (original.end === undefined) throw new ReplyError(400, "E_COPY_UNSUPPORTED", `clip "${clipId}" não tem fim resolvido; defina data-duration`);
+        at = original.end;
+      }
+    }
+    const newId = nextClipId(source);
+    let result: ReturnType<typeof duplicateClip>;
+    try {
+      result = duplicateClip(source, { clipId, at, newId });
+    } catch (error) {
+      if (error instanceof EditError) {
+        const message = mode === "paste" && error.code === "E_CLIP_NOT_FOUND" ? "o clip copiado não existe mais" : error.message;
+        throw new ReplyError(400, error.code, message);
+      }
+      throw error;
+    }
+    const composition = validated(result.source, mode === "paste" ? "colar deixaria o contrato inválido" : "duplicar deixaria o contrato inválido");
+    await commit(`${mode === "paste" ? "colar" : "duplicar"} ${clipId}`, source, result.source);
+    sendJson(res, 200, { ok: true, id: newId, duration: durationOf(composition), warnings: result.warnings, history: history.state() });
+  };
+
   /** `POST /api/clips/<id>/trim` com `{start}`; ver `trimClipStart`. O offset de mídia sai do servidor. */
   const trim = async (clipId: string, req: IncomingMessage, res: ServerResponse): Promise<void> => {
     const body = objectBody(await bodyJson(req));
@@ -919,6 +952,11 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
         const splitMatch = /^([^/]+)\/split$/.exec(rest);
         if (splitMatch !== null) {
           await serial(() => split(splitMatch[1]!, req, res));
+          return;
+        }
+        const copyMatch = /^([^/]+)\/(duplicate|paste)$/.exec(rest);
+        if (copyMatch !== null) {
+          await serial(() => copy(copyMatch[1]!, copyMatch[2] as "duplicate" | "paste", req, res));
           return;
         }
         const trimMatch = /^([^/]+)\/trim$/.exec(rest);

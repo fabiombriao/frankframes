@@ -60,6 +60,8 @@ import { keyframeMarks, keyframePropsFor, renderKeyframeSection, renderMotionSec
     fps: 30,
     fileName: "index.html",
     selectedId: null,
+    /* Área de transferência por referência: o id do clip copiado, não o conteúdo. */
+    clipboard: null,
     inspectorDirty: false,
     playhead: 0,
     history: { canUndo: false, canRedo: false, undo: null, redo: null },
@@ -576,6 +578,52 @@ import { keyframeMarks, keyframePropsFor, renderKeyframeSection, renderMotionSec
       await refreshComposition();
       renderDiagnostics(toolDiagnostics, [{ severity: "info", message: clip.id + " excluído; o resto da timeline não se moveu." }]);
     });
+  }
+
+  /** Ctrl+C: guarda a referência do clip selecionado; nada muda no arquivo. */
+  function copySelected() {
+    const clip = deletable();
+    if (clip === null) {
+      renderDiagnostics(toolDiagnostics, [{ severity: "info", message: "Selecione um clip editável para copiar." }]);
+      return;
+    }
+    state.clipboard = clip.id;
+    renderDiagnostics(toolDiagnostics, [{ severity: "info", message: "copiado " + clip.id }]);
+  }
+
+  /** Cola (`paste`, no playhead) ou duplica (`duplicate`, logo depois do original); seleciona a cópia. */
+  function copyClip(mode, id) {
+    return runTool(async () => {
+      const body = mode === "paste" ? { at: snap(Math.max(0, state.playhead)) } : {};
+      const result = await mutate("POST", "/api/clips/" + encodeURIComponent(id) + "/" + mode, body);
+      if (result.payload && result.payload.history) applyHistory(result.payload.history);
+      if (!result.ok) {
+        renderDiagnostics(toolDiagnostics, result.diagnostics);
+        return;
+      }
+      state.inspectorDirty = false;
+      await refreshComposition();
+      if (typeof result.payload.id === "string" && findClip(result.payload.id)) selectClip(result.payload.id);
+      const warnings = Array.isArray(result.payload.warnings) ? result.payload.warnings : [];
+      renderDiagnostics(toolDiagnostics, [
+        { severity: "info", message: (mode === "paste" ? "colado" : "duplicado") + " " + id + " como " + result.payload.id + "." },
+        ...warnings.map((message) => ({ severity: "warning", message: String(message) })),
+      ]);
+    });
+  }
+
+  function pasteClipboard() {
+    if (state.clipboard === null) return mutationQueue;
+    return copyClip("paste", state.clipboard);
+  }
+
+  function duplicateSelected() {
+    const clip = deletable();
+    if (clip === null) {
+      renderDiagnostics(toolDiagnostics, [{ severity: "info", message: "Selecione um clip editável para duplicar." }]);
+      return mutationQueue;
+    }
+    return copyClip("duplicate", clip.id);
   }
 
   function importFiles(files) {
@@ -1411,6 +1459,21 @@ import { keyframeMarks, keyframePropsFor, renderKeyframeSection, renderMotionSec
     if (mod && !event.altKey && !event.shiftKey && key === "y") {
       event.preventDefault();
       travel("redo");
+      return;
+    }
+    if (mod && !event.altKey && !event.shiftKey && key === "c" && state.selectedId !== null) {
+      event.preventDefault();
+      copySelected();
+      return;
+    }
+    if (mod && !event.altKey && !event.shiftKey && key === "v" && state.clipboard !== null) {
+      event.preventDefault();
+      pasteClipboard();
+      return;
+    }
+    if (mod && !event.altKey && !event.shiftKey && key === "d" && state.selectedId !== null) {
+      event.preventDefault();
+      duplicateSelected();
       return;
     }
     if (!mod && !event.altKey && key === "s") {

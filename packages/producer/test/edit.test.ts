@@ -1,7 +1,7 @@
 // FrankFrames — proprietário. Ver LICENSE na raiz.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { applyPatches, applyTransition, deleteClip, EditError, splitClip, trimClipStart } from "../src/edit.ts";
+import { applyPatches, applyTransition, deleteClip, duplicateClip, EditError, splitClip, trimClipStart } from "../src/edit.ts";
 import { loadComposition } from "@frankframes/contract";
 
 const SOURCE = `<!doctype html>
@@ -502,4 +502,148 @@ test("aparar clip com data-start=\"clip-1 + 1\" até deslocamento 0 grava clip-1
   const clip = clipsOf(out).get("clip-2")!;
   assert.equal(clip.start, 2);
   assert.equal(clip.end, 5);
+});
+
+// ---- EDT-43: copiar, colar e duplicar ----
+
+const DUP = `<!doctype html>
+<html><body>
+  <div data-composition-id="main" data-root="true" data-duration="10">
+    <div data-clip-id="t" data-start="1" data-duration="2" data-enter="surgir">título</div>
+    <div data-clip-id="u" data-start="t" data-duration="1">u</div>
+  </div>
+</body></html>
+`;
+
+function duplicateError(source: string, clipId: string, at: number, newId = "clip-9"): EditError {
+  try {
+    duplicateClip(source, { clipId, at, newId });
+  } catch (error) {
+    assert.ok(error instanceof EditError, String(error));
+    return error;
+  }
+  assert.fail("era para falhar");
+}
+
+test("duplicar insere a cópia logo depois do original, com início absoluto e sem tocar no resto", () => {
+  const { source, warnings } = duplicateClip(DUP, { clipId: "t", at: 3, newId: "clip-9" });
+  assert.deepEqual(warnings, []);
+  const original = `    <div data-clip-id="t" data-start="1" data-duration="2" data-enter="surgir">título</div>\n`;
+  const copy = `    <div data-clip-id="clip-9" data-start="3" data-duration="2" data-enter="surgir">título</div>\n`;
+  assert.ok(source.includes(original + copy), source);
+  assert.equal(source.replace(copy, ""), DUP, "fora da cópia o arquivo é idêntico");
+  const clips = clipsOf(source);
+  assert.equal(clips.get("clip-9")!.start, 3);
+  assert.equal(clips.get("clip-9")!.end, 5);
+  assert.equal(clips.get("t")!.start, 1);
+  assert.equal(clips.get("u")!.start, 3, "quem referenciava o original continua onde estava");
+});
+
+const GROUP = `<div data-composition-id="main" data-root="true" data-duration="12">
+  <div data-clip-id="a" data-start="0" data-duration="1">a</div>
+  <div data-clip-id="g" data-composition-id="card" data-start="a" data-duration="4">
+    <div data-clip-id="g1" data-start="0" data-duration="1">um</div>
+    <div data-clip-id="g2" data-start="g1 + 0.5" data-duration="1">dois</div>
+    <div data-clip-id="g3" data-start="a" data-duration="1">fora</div>
+  </div>
+</div>
+`;
+
+test("container: ids internos viram <novo>-<antigo>, referências internas seguem e as externas ficam", () => {
+  const { source } = duplicateClip(GROUP, { clipId: "g", at: 6, newId: "clip-9" });
+  assert.match(source, /data-clip-id="clip-9" data-composition-id="card" data-start="6" data-duration="4"/);
+  assert.match(source, /data-clip-id="clip-9-g1" data-start="0"/);
+  assert.match(source, /data-clip-id="clip-9-g2" data-start="clip-9-g1 \+ 0.5"/);
+  assert.match(source, /data-clip-id="clip-9-g3" data-start="a"/, "referência para fora da cópia não muda");
+  const composition = loadComposition(source);
+  assert.equal(composition.ok, true, JSON.stringify(composition.diagnostics));
+  const copy = composition.clips.find((clip) => clip.id === "clip-9")!;
+  const [g1, g2] = copy.children;
+  assert.equal(g1!.id, "clip-9-g1");
+  assert.equal(g2!.start, g1!.end! + 0.5, "id hifenizado resolve pelo id exato (EDT-75)");
+  assert.equal(composition.clips.find((clip) => clip.id === "g")!.start, 1, "original intacto");
+});
+
+test("referência interna sem deslocamento a um irmão com id hifenizado continua resolvendo", () => {
+  const source = GROUP.replace('data-start="g1 + 0.5"', 'data-start="g1"');
+  const { source: out } = duplicateClip(source, { clipId: "g", at: 6, newId: "clip-9" });
+  assert.match(out, /data-clip-id="clip-9-g2" data-start="clip-9-g1"/);
+  const composition = loadComposition(out);
+  assert.equal(composition.ok, true, JSON.stringify(composition.diagnostics));
+  const [g1, g2] = composition.clips.find((clip) => clip.id === "clip-9")!.children;
+  assert.equal(g2!.start, g1!.end);
+});
+
+test("transição entre dois filhos continua válida na cópia", () => {
+  const source = GROUP.replace(
+    'data-clip-id="g2" data-start="g1 + 0.5"',
+    'data-clip-id="g2" data-start="g1 - 0.4" data-transition="dissolver"',
+  );
+  assert.equal(loadComposition(source).ok, true, JSON.stringify(loadComposition(source).diagnostics));
+  const { source: out, warnings } = duplicateClip(source, { clipId: "g", at: 6, newId: "clip-9" });
+  assert.deepEqual(warnings, []);
+  assert.match(out, /data-clip-id="clip-9-g2" data-start="clip-9-g1 - 0.4" data-transition="dissolver"/);
+  const composition = loadComposition(out);
+  assert.equal(composition.ok, true, JSON.stringify(composition.diagnostics));
+});
+
+test("data-transition da raiz não é copiado e vira aviso", () => {
+  const source = CHAIN.replace(`data-start="b + 0.5"`, `data-start="b - 0.5" data-transition="dissolver"`);
+  const { source: out, warnings } = duplicateClip(source, { clipId: "c", at: 6, newId: "clip-9" });
+  assert.deepEqual(warnings, ["transição não copiada"]);
+  assert.ok(out.includes(`data-clip-id="clip-9" data-start="6" data-duration="1">c<`), out);
+  assert.equal(out.match(/data-transition/g)?.length, 1, "só o original mantém a transição");
+  assert.equal(loadComposition(out).ok, true);
+  assert.equal(clipsOf(out).get("clip-9")!.start, 6);
+});
+
+test("id HTML dentro da cópia vira aviso e continua igual", () => {
+  const source = DUP.replace(`data-enter="surgir">título`, `data-enter="surgir"><img id="logo" src="x.png">título`);
+  const { source: out, warnings } = duplicateClip(source, { clipId: "t", at: 3, newId: "clip-9" });
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0]!, /logo/);
+  assert.equal(out.match(/id="logo"/g)?.length, 2);
+  assert.equal(loadComposition(out).ok, true);
+});
+
+test("data-keyframes e movimento vêm junto, com os mesmos pontos", () => {
+  const source = DUP.replace(
+    `data-enter="surgir">título`,
+    `data-enter="surgir" data-volume="0.8" data-keyframes='[{"time":0,"volume":1},{"time":1,"volume":0.2}]'>título`,
+  );
+  const { source: out } = duplicateClip(source, { clipId: "t", at: 5, newId: "clip-9" });
+  const composition = loadComposition(out);
+  assert.equal(composition.ok, true, JSON.stringify(composition.diagnostics));
+  const original = composition.clips.find((clip) => clip.id === "t")!;
+  const copy = composition.clips.find((clip) => clip.id === "clip-9")!;
+  assert.deepEqual(copy.keyframes, original.keyframes);
+  assert.equal(copy.volume, 0.8);
+  assert.ok(out.includes(`data-clip-id="clip-9" data-start="5" data-duration="2" data-enter="surgir"`));
+});
+
+test("clip aninhado é E_COPY_UNSUPPORTED; clip inexistente é E_CLIP_NOT_FOUND", () => {
+  assert.equal(duplicateError(GROUP, "g1", 6).code, "E_COPY_UNSUPPORTED");
+  assert.equal(duplicateError(GROUP, "nada", 6).code, "E_CLIP_NOT_FOUND");
+});
+
+test("início negativo ou não finito é E_COPY_OUT_OF_RANGE", () => {
+  assert.equal(duplicateError(DUP, "t", -1).code, "E_COPY_OUT_OF_RANGE");
+  assert.equal(duplicateError(DUP, "t", Number.NaN).code, "E_COPY_OUT_OF_RANGE");
+  assert.equal(duplicateError(DUP, "t", Number.POSITIVE_INFINITY).code, "E_COPY_OUT_OF_RANGE");
+});
+
+test("id novo já existente (da raiz ou de um descendente) é E_AMBIGUOUS_CLIP", () => {
+  assert.equal(duplicateError(DUP, "t", 3, "u").code, "E_AMBIGUOUS_CLIP");
+  const clash = GROUP.replace("</div>\n</div>\n", `</div>\n  <div data-clip-id="clip-9-g1" data-start="0" data-duration="1">z</div>\n</div>\n`);
+  assert.equal(duplicateError(clash, "g", 6, "clip-9").code, "E_AMBIGUOUS_CLIP");
+});
+
+test("sub-composição por arquivo: a cópia leva a referência, não o outro arquivo", () => {
+  const source = `<div data-composition-id="main" data-root="true" data-duration="8">
+  <div data-clip-id="sub" data-composition-src="parts/card.html" data-start="0" data-duration="3"></div>
+</div>
+`;
+  const { source: out } = duplicateClip(source, { clipId: "sub", at: 3, newId: "clip-9" });
+  assert.equal(out.match(/data-composition-src="parts\/card.html"/g)?.length, 2);
+  assert.match(out, /data-clip-id="clip-9" data-composition-src="parts\/card.html" data-start="3" data-duration="3"/);
 });

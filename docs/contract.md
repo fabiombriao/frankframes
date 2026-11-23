@@ -824,6 +824,31 @@ Qualquer outra falha de medição continua falhando alto.
   fim, e o início é arredondado ao frame. O `data-offset` é calculado pelo servidor e a Studio recarrega a
   composição ao soltar.
 
+- **Copiar/colar/duplicar** (`POST /api/clips/<id>/duplicate`, corpo `{}`, e `POST /api/clips/<id>/paste`, corpo
+  `{at}` em segundos; atalhos Ctrl+C, Ctrl+V no playhead e Ctrl+D logo depois do original, só com o foco fora de
+  campos de edição e um clip editável selecionado, no caso de copiar e duplicar). Copia o elemento inteiro, com
+  os filhos, para logo depois do original no arquivo (mesmo pai, mesma indentação). A cópia ganha
+  `data-clip-id` novo (`clip-N` livre, escolhido pelo servidor) e `data-start` absoluto: `duplicate` usa o fim
+  do original, `paste` usa `at`. Todo descendente com `data-clip-id` passa a `<novo>-<antigo>`, e os
+  `data-start` de dentro da cópia que apontavam para um clip renomeado seguem o novo id (com o mesmo
+  deslocamento); referência para um clip fora da cópia fica como está. Como o id exato vale sobre a leitura
+  `id - n` (EDT-75), `data-start="clip-9-g1"` resolve para o fim de `clip-9-g1`. `data-enter`, `data-exit`,
+  `data-keyframes`, `data-volume` e os demais atributos locais ao clip vêm junto. Nenhum outro clip se move
+  nem muda. Avisos (`warnings`, a cópia é feita mesmo assim): `id HTML duplicado: <x>` para cada atributo HTML
+  `id` copiado (o arquivo fica com dois elementos com o mesmo `id`; seletores CSS por `[data-clip-id="x"]` ou
+  por `id` do autor também não alcançam a cópia, e o autor decide o que fazer) e `transição não copiada` quando
+  a raiz tinha `data-transition`: a cópia começa em instante absoluto e deixaria de encostar no parceiro
+  (`E_TRANSITION_PARTNER`), então o atributo não é copiado; uma transição entre dois filhos da cópia continua
+  válida, porque as referências internas foram renomeadas. Erros (400, arquivo intacto): `E_COPY_UNSUPPORTED` para
+  clip aninhado em sub-composição (só clip de topo; um host de sub-composição por `data-composition-src` pode
+  ser copiado e a cópia aponta para o mesmo arquivo, que não é duplicado), `E_COPY_OUT_OF_RANGE` para `at < 0`
+  ou não finito, `E_AMBIGUOUS_CLIP` quando algum id novo já existe, `E_CLIP_NOT_FOUND` para id inexistente ou sem
+  `data-clip-id` explícito (em `paste`, a mensagem é "o clip copiado não existe mais"). Sucesso devolve
+  `{ok, id, duration, warnings, history}` e entra no histórico como `duplicar <id>` ou `colar <id>` (Ctrl+Z
+  restaura o arquivo byte a byte). Copiar guarda só a referência (`state.clipboard = <id>`), não o conteúdo:
+  se o original for excluído ou editado antes de colar, vale o que existir na hora de colar. Depois de colar ou
+  duplicar a cópia fica selecionada e os avisos aparecem no painel de ferramentas.
+
 As escritas são serializadas: duas edições nunca intercalam leitura e gravação do mesmo arquivo.
 
 ## 10. Compatibilidade

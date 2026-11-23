@@ -362,3 +362,65 @@ test("estúdio apara o início de um vídeo, mantém o fim e desfaz byte a byte"
     assert.equal(invalid.status, 400);
     assert.equal(await readFile(entry, "utf8"), media, "falha não grava");
   }));
+
+// ---- EDT-43: copiar, colar e duplicar ----
+
+test("estúdio cola no instante pedido, duplica no fim do original e desfaz cada passo", () =>
+  withStudio(async (server, _dir, entry) => {
+    const source = HTML.replace('data-duration="2">', 'data-duration="10">').replace(
+      '<div data-clip-id="b" data-start="1" data-duration="1" class="clip">Segundo</div>',
+      '<div data-clip-id="b" data-start="a" data-duration="1" class="clip" id="logo">Segundo</div>',
+    );
+    await writeFile(entry, source, "utf8");
+    const before = new Map(loadComposition(source).clips.map((clip) => [clip.id, clip.start]));
+
+    const pasted = await post(`${server.url}api/clips/a/paste`, { at: 5 });
+    assert.equal(pasted.status, 200, JSON.stringify(pasted.json));
+    assert.equal(typeof pasted.json.id, "string");
+    assert.deepEqual(pasted.json.warnings, []);
+    assert.equal((pasted.json.history as { undo: string }).undo, "colar a");
+    const afterPaste = await readFile(entry, "utf8");
+    const pastedClip = loadComposition(afterPaste).clips.find((clip) => clip.id === pasted.json.id)!;
+    assert.equal(pastedClip.start, 5);
+    assert.equal(pastedClip.end, 6);
+
+    const duplicated = await post(`${server.url}api/clips/b/duplicate`, {});
+    assert.equal(duplicated.status, 200, JSON.stringify(duplicated.json));
+    assert.deepEqual(duplicated.json.warnings, ["id HTML duplicado: logo"]);
+    assert.equal((duplicated.json.history as { undo: string }).undo, "duplicar b");
+    const afterDuplicate = await readFile(entry, "utf8");
+    const composition = loadComposition(afterDuplicate);
+    assert.equal(composition.ok, true, JSON.stringify(composition.diagnostics));
+    const copy = composition.clips.find((clip) => clip.id === duplicated.json.id)!;
+    assert.equal(copy.start, 2, "começa no fim do original");
+    assert.equal(copy.end, 3);
+    for (const [id, start] of before) {
+      assert.equal(composition.clips.find((clip) => clip.id === id)!.start, start, `${id} não se move`);
+    }
+
+    const undoDuplicate = await post(`${server.url}api/undo`, {});
+    assert.equal(undoDuplicate.status, 200);
+    assert.equal(await readFile(entry, "utf8"), afterPaste, "desfazer duplicar volta ao arquivo anterior byte a byte");
+    const undoPaste = await post(`${server.url}api/undo`, {});
+    assert.equal(undoPaste.status, 200);
+    assert.equal(await readFile(entry, "utf8"), source, "desfazer colar volta ao original byte a byte");
+  }));
+
+test("estúdio recusa colar clip que sumiu e início inválido, sem gravar", () =>
+  withStudio(async (server, _dir, entry) => {
+    const deleted = await post(`${server.url}api/clips/b/delete`, {});
+    assert.equal(deleted.status, 200, JSON.stringify(deleted.json));
+    const afterDelete = await readFile(entry, "utf8");
+
+    const gone = await post(`${server.url}api/clips/b/paste`, { at: 1 });
+    assert.equal(gone.status, 400);
+    assert.equal(gone.json.code, "E_CLIP_NOT_FOUND");
+    assert.equal(gone.json.message, "o clip copiado não existe mais");
+
+    const negative = await post(`${server.url}api/clips/a/paste`, { at: -1 });
+    assert.equal(negative.status, 400);
+    assert.equal(negative.json.code, "E_COPY_OUT_OF_RANGE");
+    const missingAt = await post(`${server.url}api/clips/a/paste`, {});
+    assert.equal(missingAt.status, 400);
+    assert.equal(await readFile(entry, "utf8"), afterDelete, "falha não grava");
+  }));
