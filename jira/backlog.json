@@ -486,6 +486,22 @@
             "Gate completo verde."
           ],
           "jiraKey": "EDT-81"
+        },
+        {
+          "summary": "Suítes de teste deixam milhares de diretórios ff-* em %TEMP%",
+          "points": 2,
+          "labels": [
+            "bug",
+            "robustez",
+            "testes"
+          ],
+          "acceptance": [
+            "Visto em 2026-11-24 depois do EDT-81: 9.384 diretórios ff-* em %TEMP% (ff-server-read 494, ff-ui-short 444, ff-compile 416, ff-audio-test 367, ff-preview-audio 342...); cerca de 60 arquivos de teste criam ff-* com mkdtemp sem remover tudo.",
+            "Um helper compartilhado de teste (mesmo padrão do tempDir de packages/engine/test/cache.test.ts: t.after com rm recursive sem force) usado por todos os testes que criam diretório temporário.",
+            "Checagem no gate que falharia sem a mudança: a suíte completa termina sem diretório ff-* novo em os.tmpdir() (compara antes/depois, não apaga os antigos do usuário).",
+            "Gate completo verde."
+          ],
+          "jiraKey": "EDT-82"
         }
       ],
       "jiraKey": "EDT-26"
