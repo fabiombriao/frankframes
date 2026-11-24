@@ -62,7 +62,7 @@ node packages/cli/src/cli.ts blocks serve dist/catalogo   # servidor local com o
 node packages/cli/src/cli.ts transcribe audio.wav --language pt
 node packages/cli/src/cli.ts models install whisper-large-v3-turbo   # ~1,5 GB, só por este comando
 
-node scripts/generate-catalog.ts          # regenera catalog/README.md a partir dos blocos
+node scripts/generate-catalog.ts          # recalcula o sha256 dos meta.json e regenera catalog/README.md
 node scripts/check-ffmpeg.ts <caminho-do-ffmpeg>
 node scripts/check-gpu.ts
 ```

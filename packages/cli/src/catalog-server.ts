@@ -37,22 +37,22 @@ function text(value: unknown, field: string, where: string): string {
 }
 
 /** Lê `catalog/blocks/*` e devolve o índice publicado, validando o sha256 do HTML. */
-export async function buildCatalogIndex(): Promise<CatalogEntry[]> {
+export async function buildCatalogIndex(blocksDir: string = BLOCKS_DIR): Promise<CatalogEntry[]> {
   let entries: string[];
   try {
-    entries = (await readdir(BLOCKS_DIR, { withFileTypes: true }))
+    entries = (await readdir(blocksDir, { withFileTypes: true }))
       .filter((entry) => entry.isDirectory() && SLUG.test(entry.name))
       .map((entry) => entry.name)
       .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
   } catch (error) {
-    throw new Error(`diretório do catálogo ausente: ${BLOCKS_DIR} (${(error as Error).message})`);
+    throw new Error(`diretório do catálogo ausente: ${blocksDir} (${(error as Error).message})`);
   }
 
-  return Promise.all(entries.map(async (slug) => readEntry(slug)));
+  return Promise.all(entries.map(async (slug) => readEntry(blocksDir, slug)));
 }
 
-async function readEntry(slug: string): Promise<CatalogEntry> {
-  const dir = join(BLOCKS_DIR, slug);
+async function readEntry(blocksDir: string, slug: string): Promise<CatalogEntry> {
+  const dir = join(blocksDir, slug);
   const metaPath = join(dir, "meta.json");
   let raw: Record<string, unknown>;
   try {

@@ -141,7 +141,9 @@ node packages/cli/src/cli.ts blocks add title-card meu-video/abertura
 ```
 
 `catalog/README.md` é o índice dos 36 blocos (22 paisagem 16:9 + 14 vertical 9:16), gerado por
-`node scripts/generate-catalog.ts`; não edite à mão.
+`node scripts/generate-catalog.ts`; não edite à mão. Mexeu no `index.html` de um bloco? Rode o mesmo
+script: ele recalcula o `sha256` do `meta.json` (o índice e a instalação remota exigem o hash exato) e só
+reescreve o `meta.json` que mudou.
 
 ## 8. Skills para agentes
 
