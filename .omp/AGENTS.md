@@ -58,7 +58,7 @@ Node ≥ 22.18 (TypeScript roda direto, sem build). Nada de bundler.
 | CI | gate local (`scripts/ci.ts`); **GitHub Actions proibido** (`.omp/RULES.md`) |
 | Plataformas | `win64` e `linux64` com browser e FFmpeg pinados por SHA-256; outra plataforma falha alto. Gate Linux em Docker (`scripts/linux/gate.ts`) |
 | Transcrição | local só por comando explícito; nunca baixa sozinho |
-| Distribuição | pacotes npm privados com `files`/`engines`/`prepack`; sem instalador ainda |
+| Distribuição | tarball único `@frankframes/cli` compilado por `scripts/build-release.ts`, instalado com `npm i -g`; os pacotes do monorepo seguem TS sem build; sem instalador nativo (`docs/release.md`) |
 
 ## Jira
 

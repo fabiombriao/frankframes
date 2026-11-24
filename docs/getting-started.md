@@ -4,6 +4,19 @@ Requisito: Node ≥ 22.18 (o projeto roda TypeScript direto, sem build).
 
 ## 1. Preparar a máquina
 
+### Pelo tarball (instalação de uso)
+
+```bash
+npm i -g frankframes-cli-1.0.0.tgz      # o tgz gerado por `node scripts/build-release.ts` (ver docs/release.md)
+frankframes --version
+frankframes setup                       # fontes, FFmpeg LGPL e browser pinados, com SHA-256, em ~/.frankframes
+frankframes doctor
+```
+
+Com o tarball, use `frankframes <comando>` onde os exemplos abaixo escrevem `node packages/cli/src/cli.ts <comando>`.
+
+### Pelo clone (desenvolvimento)
+
 ```bash
 npm install
 node scripts/fetch-fonts.ts      # 25 famílias OFL (~1 MB)
