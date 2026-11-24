@@ -718,6 +718,21 @@
             "docs/contract.md descreve a regra de rotação; gate verde."
           ],
           "jiraKey": "EDT-86"
+        },
+        {
+          "summary": "Preview do Studio fixo em 1920x1080: composição vertical aparece cortada",
+          "points": 2,
+          "labels": [
+            "bug",
+            "studio"
+          ],
+          "acceptance": [
+            "Visto no aceite do EDT-64 em 2026-11-24: packages/cli/src/studio/app.js (PLAYER_WIDTH/PLAYER_HEIGHT), index.html (iframe 1920x1080) e style.css (.player-frame com aspect-ratio 16/9) fixam o player; vertical-lower-third (1080x1920) aparece só a parte de cima.",
+            "O player do Studio segue data-width/data-height da raiz (e muda ao editar pelo inspetor da composição), com escala para caber, sem cortar; posição do playhead, seleção e overlays continuam alinhados.",
+            "O template do init não fixa o tamanho do #stage em CSS: o tamanho vem da raiz, então editar largura/altura pelo inspetor muda o vídeo inteiro.",
+            "Teste que falharia sem a mudança (bloco vertical no Studio: o iframe tem a proporção da raiz); gate verde."
+          ],
+          "jiraKey": "EDT-87"
         }
       ],
       "jiraKey": "EDT-35"
