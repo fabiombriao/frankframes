@@ -422,6 +422,21 @@
             "teste que falharia hoje: cena-dupla em auto com vários workers, 3 rodadas, hashes por frame iguais (skip explícito sem GPU)"
           ],
           "jiraKey": "EDT-77"
+        },
+        {
+          "summary": "prepare() sem render deixa a pasta ff-render-* vazia no temporário",
+          "points": 1,
+          "labels": [
+            "robustez",
+            "bug"
+          ],
+          "acceptance": [
+            "Visto em 2026-11-23: 6616 pastas %TEMP%\ff-render-* vazias, cerca de 800 só em um dia de gates. prepare() cria o workDir com mkdtemp quando o chamador não passa um e devolve ownsWorkDir, mas quem chama só prepare (goldens.ts e outros) nunca remove.",
+            "Correção na causa: todo caminho que chama prepare sem render remove o workDir que não é dele, ou prepare deixa de criar pasta quando não vai precisar dela.",
+            "Teste que conta as pastas ff-render-* antes e depois de prepare e da conferência de goldens e falharia sem a correção.",
+            "Gate completo verde."
+          ],
+          "jiraKey": "EDT-78"
         }
       ],
       "jiraKey": "EDT-26"
