@@ -733,6 +733,22 @@
             "Teste que falharia sem a mudança (bloco vertical no Studio: o iframe tem a proporção da raiz); gate verde."
           ],
           "jiraKey": "EDT-87"
+        },
+        {
+          "summary": "Studio: painel Blocos insere texto genérico em vez do bloco; sem inserir sub-composição",
+          "points": 3,
+          "labels": [
+            "bug",
+            "studio"
+          ],
+          "acceptance": [
+            "Visto no aceite do EDT-64 em 2026-11-24: clicar em 'Crédito vertical' (vertical-lower-third) no painel Blocos manda POST /api/clips {template} e o servidor (studio-server.ts) só conhece 'title'/'subtitle'; o resultado é um <div>Texto</div>, sem aviso. Não há como inserir um .html local (ex.: legendas.html do captions) como sub-composição.",
+            "Clicar num bloco do catálogo insere o próprio bloco: copia para o projeto pelo mesmo código do blocks add e cria no playhead um clip com data-composition-src e a duração do bloco; preview e export mostram o bloco; desfazer remove o clip.",
+            "Importar aceita um .html local como sub-composição no playhead, com duração derivada; sub-composição inválida falha com o código do contrato.",
+            "Sem fallback silencioso: template ou bloco desconhecido falha com código registrado e hint.",
+            "Testes que falhariam sem a mudança (bloco do catálogo e .html local inseridos pelo Studio no Chrome, render confere o bloco); gate verde."
+          ],
+          "jiraKey": "EDT-88"
         }
       ],
       "jiraKey": "EDT-35"
