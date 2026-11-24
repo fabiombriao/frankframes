@@ -3,7 +3,7 @@ import { parse } from "parse5";
 import type { Diagnostic, MotionSource, MotionSplit, RawClip, RawComposition } from "./types.ts";
 import { CODES, diag } from "./errors.ts";
 import { parseFps, parseTimeExpr } from "./timing.ts";
-import { MEDIA_TAGS, hasMotion, hasSplit, isHost, isTimed, motionAttrsOf, motionElements } from "./motion/targets.ts";
+import { MEDIA_TAGS, hasMotion, hasSplit, isHost, isTimed, motionAttrsOf, motionElements, nestedStartElements } from "./motion/targets.ts";
 import type { DomNode } from "./motion/targets.ts";
 import { parseKeyframes } from "./motion/keyframes.ts";
 import { buildSplit, orphanUnits } from "./motion/split.ts";
@@ -220,6 +220,27 @@ function buildClip(
       }
     } else {
       children.push(...collectClips(node, node, depth + 1, diagnostics, counter));
+    }
+  }
+
+  // Num clip comum o parser não desce: `data-start` num descendente não vira clip e o motion dele
+  // conta a partir do clip dono (§7b.2). Avisar em vez de ignorar em silêncio.
+  if (!isSubComposition) {
+    for (const nested of nestedStartElements(node)) {
+      const value = attr(nested, ATTRS.start) ?? "";
+      const nestedId = attr(nested, ATTRS.clipId);
+      const label = nestedId ? `<${nested.nodeName} data-clip-id="${nestedId}">` : `<${nested.nodeName}>`;
+      diagnostics.push(
+        diag(
+          CODES.NESTED_START_IGNORED,
+          "warning",
+          `data-start="${value}" em ${label} dentro do clip "${id}" é ignorado: ele não vira clip e o motion dele usa o início do clip dono`,
+          {
+            clipId: id,
+            hint: "tire o data-start e use delay= (ou o time de data-keyframes) relativo ao clip, ou mova o elemento para o topo da composição ou para um host de sub-composição",
+          },
+        ),
+      );
     }
   }
 

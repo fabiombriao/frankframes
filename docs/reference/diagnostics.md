@@ -67,6 +67,7 @@ Gerado por `node scripts/generate-reference.ts` a partir do código. Não edite 
 | `W_KEYFRAME_CURVE_IGNORED` | aviso | contrato |
 | `W_KEYFRAME_OUT_OF_RANGE` | aviso | contrato |
 | `W_MOTION_JUMP` | aviso | contrato |
+| `W_NESTED_START_IGNORED` | aviso | contrato |
 | `W_RATE_CLAMPED` | aviso | contrato |
 | `W_ROOT_START_IGNORED` | aviso | contrato |
 | `W_START_NEGATIVE` | aviso | contrato |

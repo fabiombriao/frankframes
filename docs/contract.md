@@ -57,7 +57,8 @@ Uma linha de timeline, nesta ordem de decisão:
 2. **elemento temporizado** — tem `data-start`, ou tem `data-track` e `data-duration`, ou é `<video>`, `<audio>`, `<img>`.
 
 Wrapper sem tempo é atravessado: `div > section > clip` produz um clip, não três. Um container que só
-tem `data-track` (sem duração) **não** é clip.
+tem `data-track` (sem duração) **não** é clip. A varredura para no primeiro clip: um `data-start` dentro de
+um clip comum não cria outro clip e avisa (`W_NESTED_START_IGNORED`, §7b.2).
 
 | Atributo | Regra |
 |---|---|
@@ -123,7 +124,12 @@ reproduz. CSS `@keyframes` continua permitido; os atributos de motion são a for
 - **Clip**: o próprio elemento temporizado (§4).
 - **Descendente**: qualquer elemento dentro de um clip; o tempo dele é relativo ao clip dono. Num clip
   comum o parser não enxerga clips internos (um `data-start` aninhado não cria clip), então todo
-  descendente pertence ao clip de fora. Num host de sub-composição (§5), elementos temporizados e hosts
+  descendente pertence ao clip de fora. Como isso é fácil de errar (o autor espera um clip e o motion
+  do elemento passa a contar do início do clip dono), cada descendente de clip comum que declara
+  `data-start` gera um aviso `W_NESTED_START_IGNORED` (por elemento, `clipId` = o clip dono, nunca
+  bloqueia o render). Não avisa dentro de host de sub-composição, onde o temporizado é clip do escopo;
+  hosts aninhados num clip comum avisam pelo próprio `data-start` e não são atravessados. O critério é o
+  atributo `data-start`: descendente só com `data-enter` e mídia sem `data-start` não avisam. Num host de sub-composição (§5), elementos temporizados e hosts
   internos são clips do próprio escopo e levam o próprio motion.
 - Erros `E_MOTION_TARGET`:
   - motion na raiz, fora de qualquer clip, ou em `<audio>`;

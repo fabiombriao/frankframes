@@ -88,3 +88,23 @@ export function motionElements<T extends DomNode>(clip: T): T[] {
   visit(clip, true);
   return out;
 }
+
+/**
+ * Descendentes de um clip comum que declaram `data-start` e, por isso, parecem clips mas não são:
+ * o parser não desce num clip comum (§7b.2). Quem chama não passa hosts de sub-composição, onde o
+ * temporizado interno é clip do escopo. Hosts aninhados entram na lista (o `data-start` deles também
+ * é ignorado) mas não são atravessados. O critério é o atributo, não `isTimed`: mídia sem `data-start` não conta.
+ */
+export function nestedStartElements<T extends DomNode>(clip: T): T[] {
+  const out: T[] = [];
+  const visit = (node: DomNode): void => {
+    if (node.nodeName === "#text" || node.nodeName === "#comment") return;
+    if (hasAttr(node, "data-start")) out.push(node as T);
+    if (isHost(node)) return;
+    for (const child of node.content?.childNodes ?? []) visit(child);
+    for (const child of node.childNodes ?? []) visit(child);
+  };
+  for (const child of clip.content?.childNodes ?? []) visit(child);
+  for (const child of clip.childNodes ?? []) visit(child);
+  return out;
+}
