@@ -2,6 +2,8 @@
 import { test } from "node:test";
 import type { TestContext } from "node:test";
 import assert from "node:assert/strict";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -40,8 +42,8 @@ async function chromeOrSkip(t: TestContext): Promise<boolean> {
 }
 
 /** Abre a página, espera `idleMs` de tempo real e captura os frames pedidos. */
-async function capture(dir: string, idleMs: number, frames: number[]): Promise<string[]> {
-  const server = await startServer(dir, { page: { path: "index.html", html: HTML } });
+async function capture(dir: string, idleMs: number, frames: number[], html: string = HTML): Promise<string[]> {
+  const server = await startServer(dir, { page: { path: "index.html", html } });
   const session = await openSessionFor(server, { url: `${server.url}index.html`, viewport: VIEWPORT, gpu: "software", captureShots: 3 });
   try {
     await new Promise((resolve) => setTimeout(resolve, idleMs));
@@ -68,7 +70,35 @@ test("animações CSS ficam congeladas no tempo 0 desde a prontidão: o pixel n�
   assert.deepEqual(slow, quick, "o raster mudou porque as animações correram em tempo real antes do primeiro seek");
 });
 
-test("a prontidão pausa as animações em 0 antes do primeiro seek", { timeout: 300_000 }, async (t) => {
+test("o raster não depende de quanto o DOMContentLoaded demora: animações CSS nascem pausadas (EDT-72)", { timeout: 300_000 }, async (t) => {
+  if (!(await chromeOrSkip(t))) return;
+
+  // Um script no fim do body que o servidor segura por `delayMs`: o Chrome produz frames (e começaria a rodar as
+  // animações) antes do DOMContentLoaded, como numa máquina carregada ou com um recurso lento.
+  let delayMs = 0;
+  const slow = createServer((_request, response) => {
+    setTimeout(() => response.writeHead(200, { "content-type": "text/javascript" }).end("/* lento */"), delayMs);
+  });
+  await new Promise<void>((resolve) => slow.listen(0, "127.0.0.1", resolve));
+  const { port } = slow.address() as AddressInfo;
+  const delayed = HTML.replace("</body>", `<script src="http://127.0.0.1:${port}/lento.js"></script></body>`);
+  try {
+    const dir = await mkdtemp(join(tmpdir(), "ff-anim-dcl-"));
+    const frames = [12, 36];
+    delayMs = 0;
+    const fast = await capture(dir, 0, frames, delayed);
+    delayMs = 400;
+    const late = await capture(dir, 0, frames, delayed);
+    assert.deepEqual(late, fast, "o DOMContentLoaded tardio deixou as animações rodarem em tempo real antes do congelamento");
+  } finally {
+    await new Promise<void>((resolve) => {
+      slow.closeAllConnections();
+      slow.close(() => resolve());
+    });
+  }
+});
+
+test("a prontidão pausa as animações em 0 antes do primeiro seek",{ timeout: 300_000 }, async (t) => {
   if (!(await chromeOrSkip(t))) return;
 
   const dir = await mkdtemp(join(tmpdir(), "ff-anim-paused-"));

@@ -65,6 +65,16 @@ export const CLOCK_SOURCE = `(() => {
     };
   }
 
+  // Animações CSS nascem pausadas, antes de qualquer frame real. Congelar só em settle() (DOMContentLoaded) deixa uma
+  // janela: se o Chrome produz um frame antes dele (página, fonte ou script lento, máquina carregada), a animação
+  // começa a rodar no compositor, o elemento é promovido a camada e o raster do texto muda para sempre, mesmo
+  // depois de pause() + currentTime = 0. O tempo real decidia o pixel (EDT-72). Pausada desde a criação, a animação
+  // nunca roda; o relógio só a move por currentTime (syncAnimations).
+  const freeze = document.createElement("style");
+  freeze.setAttribute("data-ff-freeze", "");
+  freeze.textContent = "*,*::before,*::after{animation-play-state:paused!important}";
+  (document.head || document.documentElement).appendChild(freeze);
+
   const scopeStart = (element) => {
     let node = element;
     while (node && node.nodeType === 1) {

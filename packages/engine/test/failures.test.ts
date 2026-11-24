@@ -59,6 +59,48 @@ test("E_FONT_LOAD é erro de autoria e não se repete, mesmo com 'network error'
   assert.equal(font.retryable, false);
 });
 
+const fontMessage = (faces: string[], tail = ""): string =>
+  `E_FONT_LOAD: fonte declarada não carregou: ${faces.join("; ")} (confira o src do @font-face, caminho e arquivo, ou a fonte em vendor/fonts)${tail}`;
+
+test("E_FONT_LOAD só de rede, sem falha registrada pelo servidor, é transiente e repetível (EDT-72)", () => {
+  const failure = classifyFailure(
+    new Error(
+      fontMessage([
+        "Montserrat (peso 400, estilo normal): A network error occurred.",
+        "Poppins (peso 600, estilo normal): A network error occurred.",
+      ]),
+    ),
+  );
+  assert.deepEqual({ kind: failure.kind, code: failure.code, retryable: failure.retryable }, { kind: "transient", code: "E_FONT_LOAD", retryable: true });
+});
+
+test("E_FONT_LOAD de autoria nunca é repetido: servidor registrou falha ou a causa não é só rede (EDT-72)", () => {
+  const network = "Montserrat (peso 400, estilo normal): A network error occurred.";
+  // O servidor registrou o 404 da fonte: o arquivo é o problema.
+  const annotated = classifyFailure(new Error(fontMessage([network], " [servidor: ENOENT ao ler /nao-existe.woff2 (1 falha(s), sem sucesso)]")));
+  assert.deepEqual({ kind: annotated.kind, retryable: annotated.retryable }, { kind: "authoring", retryable: false });
+  // Uma das faces chegou e não decodifica: erro de autoria mesmo sem registro do servidor.
+  const decode = classifyFailure(new Error(fontMessage([network, "Quebrada (peso normal, estilo normal): A font data decoding error occurred."])));
+  assert.deepEqual({ kind: decode.kind, retryable: decode.retryable }, { kind: "authoring", retryable: false });
+});
+
+test("retryOnceIfTransient avisa a causa da primeira tentativa e a segunda falha é a que sobe (EDT-72)", async () => {
+  const causes: string[] = [];
+  let calls = 0;
+  await assert.rejects(
+    retryOnceIfTransient(
+      async () => {
+        calls += 1;
+        throw new Error(fontMessage(["Poppins (peso 600, estilo normal): A network error occurred."], ` tentativa ${calls}`));
+      },
+      (cause) => causes.push(cause.code),
+    ),
+    /tentativa 2$/,
+  );
+  assert.equal(calls, 2);
+  assert.deepEqual(causes, ["E_FONT_LOAD"]);
+});
+
 test("BrowserError carrega código e hint, e a mensagem começa pelo código", () => {
   const error = new BrowserError("E_BROWSER_TIMEOUT", "demorou", "aumente o prazo");
   assert.equal(error.code, "E_BROWSER_TIMEOUT");

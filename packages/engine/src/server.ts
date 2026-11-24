@@ -88,6 +88,9 @@ const READ_RETRY_DELAYS_MS = [50, 100, 200];
 const NOT_FOUND_CODES = new Set(["ENOENT", "ENOTDIR", "EISDIR"]);
 const MAX_FAILURES = 50;
 
+/** Arquivo de fonte pela extensão: vale para as embarcadas e para `@font-face` do autor. */
+const FONT_PATH = /\.(woff2?|ttf|otf)$/i;
+
 const MEDIA_PREFIX = "/__ff_media/";
 const FONTS_PREFIX = "/__ff_fonts/";
 const AUDIO_PREFIX = "/__ff_audio/";
@@ -205,6 +208,10 @@ export async function startServer(rootDir: string, options: ServerOptions = {}):
       if (error instanceof URIError) {
         response.writeHead(400).end("URL inválida");
       } else if (code !== undefined && NOT_FOUND_CODES.has(code)) {
+        // Fonte declarada que não existe é falha de autoria e precisa aparecer no registro: sem ele,
+        // "A network error occurred" de um 404 e de uma queda de conexão ficam indistinguíveis (EDT-72).
+        const path = new URL(request.url ?? "/", "http://127.0.0.1").pathname;
+        if (FONT_PATH.test(path)) record({ path, code, attempt: 1, outcome: "failed" });
         response.writeHead(404).end("não encontrado");
       } else {
         // Qualquer outro erro é falha do servidor, não "arquivo ausente": o corpo traz o código.

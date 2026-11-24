@@ -52,6 +52,34 @@ async function until<T>(read: () => Promise<T>, done: (value: T) => boolean, wha
   return last;
 }
 
+/** Meio frame: acima disso o runtime de áudio reancora o som (ver `preview-audio.ts`). */
+const HALF_FRAME_MS = 1000 / 60;
+
+/**
+ * Acompanha as medições de deriva depois de `before` até uma cair dentro de meio frame.
+ * O relógio de áudio é do dispositivo real: uma parada do serviço de áudio (~100 ms) move uma
+ * medição para −100 ms ou mais. O que o runtime promete é CONVERGIR (reancora na medição
+ * seguinte), não que cada medição seja pequena; sem convergir em 5 s o teste falha (EDT-72).
+ */
+async function driftConverges(session: Session, before: number, minChecks: number): Promise<number[]> {
+  const trace: number[] = [];
+  const deadline = Date.now() + 5_000;
+  let seen = before;
+  for (;;) {
+    const state = await audioState(session);
+    if (state.checks !== seen) {
+      // Medições são espaçadas de 250 ms e o passo é de 40 ms: nenhuma se perde.
+      seen = state.checks;
+      trace.push(Number(state.driftMs.toFixed(1)));
+      if (seen >= before + minChecks && Math.abs(state.driftMs) <= HALF_FRAME_MS) return trace;
+    }
+    if (Date.now() > deadline) {
+      throw new Error(`deriva não voltou a meio frame em 5 s; medições depois do seek: ${JSON.stringify(trace)} ms`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 40));
+  }
+}
+
 async function withPage(
   t: { skip: (reason: string) => void },
   audio: PreviewAudioConfig,
@@ -102,9 +130,9 @@ test("áudio do preview: carrega, toca, corrige a deriva, pausa e para no fim", 
     // Seek tocando joga o áudio para 1 s enquanto o relógio segue em ~0,5 s: a correção tem de trazê-lo de volta.
     const before = (await audioState(session)).checks;
     await session.evaluate("window.__ff.seek(1000)");
-    const settled = await until(() => audioState(session), (s) => s.checks >= before + 2, "duas medições de deriva depois do seek");
-    assert.ok(Math.abs(settled.driftMs) <= 1000 / 60, `deriva ${settled.driftMs.toFixed(1)} ms acima de meio frame`);
-    assert.equal(settled.playing, true);
+    const trace = await driftConverges(session, before, 2);
+    assert.ok(trace.length >= 2, `o seek tem de ser medido e corrigido: ${JSON.stringify(trace)}`);
+    assert.equal((await audioState(session)).playing, true);
 
     await session.evaluate("window.__ff.stopLive()");
     assert.equal((await audioState(session)).playing, false, "pausar corta o som");
@@ -117,6 +145,27 @@ test("áudio do preview: carrega, toca, corrige a deriva, pausa e para no fim", 
     // Play no fim recomeça do zero, com som.
     await session.evaluate("window.__ff.seek(0); window.__ff.startLive(0)");
     await until(() => audioState(session), (s) => s.playing, "o som voltar no replay");
+  }),
+);
+
+test("áudio do preview: parada do relógio de áudio vira deriva medida e é corrigida na medição seguinte (EDT-72)", { timeout: 120_000 }, (t) =>
+  withPage(t, { src: "/tone.wav" }, async (session) => {
+    await until(() => audioState(session), (s) => s.status === "ready" && s.playing, "o som começar a tocar");
+    await driftConverges(session, (await audioState(session)).checks, 2); // regime antes da parada
+
+    // Simula a parada do serviço de áudio: `currentTime` do contexto volta 150 ms e o som
+    // fica atrás do relógio do preview (a parada real de 150 ms mediu −95 a −160 ms).
+    await session.evaluate(`(() => {
+      const original = Object.getOwnPropertyDescriptor(BaseAudioContext.prototype, "currentTime");
+      Object.defineProperty(BaseAudioContext.prototype, "currentTime", {
+        configurable: true,
+        get() { return original.get.call(this) - 0.15; },
+      });
+    })()`);
+    const before = (await audioState(session)).checks;
+    const trace = await driftConverges(session, before, 1);
+    assert.ok(trace[0] !== undefined && trace[0] < -100, `a parada tem de aparecer na deriva medida: ${JSON.stringify(trace)}`);
+    assert.ok(trace.length >= 2, `e a medição seguinte já é do som reancorado: ${JSON.stringify(trace)}`);
   }),
 );
 

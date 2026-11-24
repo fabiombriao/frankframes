@@ -611,6 +611,14 @@ O contrato promete isto ao autor, e o engine tem que cumprir:
    não correm em tempo real até o primeiro seek. Se corressem, o tempo real decorrido (a carga da máquina)
    decidiria quais terminam e quais ficam como camada do compositor, e o raster do texto mudaria 1 px de
    uma execução para outra (visto nos goldens `vertical-toc` e `vertical-callout` com 4 capturas paralelas).
+   As animações **CSS** são pausadas ainda antes: o relógio injeta `<style data-ff-freeze>` com
+   `*,*::before,*::after{animation-play-state:paused!important}` como primeira coisa do `<head>`, então elas nascem
+   pausadas e nenhum frame real as roda antes de `DOMContentLoaded` (script, fonte ou recurso lento, máquina
+   carregada). Congelar só na prontidão deixava essa janela: um frame do Chrome antes dela começava a animação no
+   compositor e o raster do meio da animação mudava para o resto da sessão, mesmo com `pause()` e `currentTime = 0`
+   depois (EDT-72; reproduzido sem carga atrasando `DOMContentLoaded` em 100 ms). O relógio continua sendo quem move
+   as animações, por `currentTime`. Animação WAAPI criada por script do autor antes da prontidão ainda não é coberta
+   por essa regra.
 6. **Uma captura por frame, depois do paint.** A primeira captura de cada sessão é descartada; depois
    de cada seek, `__ff.settle` espera dois frames de compositor e um `setTimeout` (que cai **depois** do
    paint) antes do screenshot. Em **software** a captura usa essa espera do seek: **uma espera de paint por
@@ -637,8 +645,17 @@ O contrato promete isto ao autor, e o engine tem que cumprir:
    reserva. A mensagem traz a família, o peso e o estilo da face e manda conferir o `src` do `@font-face` ou a
    fonte em `vendor/fonts`. Face declarada e nunca usada também falha: declarar é prometer que carrega, e
    apagar o `@font-face` morto é a correção. O código é de render, como `E_MOTION_RUNTIME`.
+   Classificação (`classifyFailure`): `E_FONT_LOAD` é erro de **autoria** e não se repete, exceto num caso de infraestrutura:
+   toda face reprovada falhou só com `A network error occurred` **e** o servidor local não registrou falha nenhuma
+   (nenhum `[servidor: …]` na mensagem). O arquivo está certo e a requisição não chegou ou foi derrubada no caminho
+   (conexão de loopback cortada sob carga, antivírus, sincronizador de pasta); isso é `transient` e o render repete a
+   captura **uma vez**, avisando a causa pelo progresso (`repetindo a captura uma vez (E_FONT_LOAD): …`). A segunda
+   falha sobe como `E_FONT_LOAD`. `@font-face` do autor para arquivo que não existe, arquivo que não decodifica e
+   qualquer falha com registro do servidor continuam sem repetição.
 9. **Captura nunca espera para sempre.** O servidor local e a sessão do browser falham alto, com código e `hint`:
-   - **Servidor de assets.** Caminho que não existe (`ENOENT`, `ENOTDIR`, `EISDIR`) responde `404`. Qualquer outro
+   - **Servidor de assets.** Caminho que não existe (`ENOENT`, `ENOTDIR`, `EISDIR`) responde `404`; quando o arquivo
+     é de fonte (`.woff2`, `.woff`, `.ttf`, `.otf`) o `404` também entra no registro de falhas (sem retry), para a
+     mensagem de `E_FONT_LOAD` distinguir fonte que não existe de conexão derrubada. Qualquer outro
      erro de leitura responde `500` com o código do sistema no corpo (`erro ao servir o arquivo: EBUSY`); nunca
      vira `404`. Só `EBUSY`, `EPERM` e `EACCES` são repetidos, e só dentro da leitura do servidor: no máximo 3
      repetições, com 50, 100 e 200 ms de espera; esgotadas, `500`. Cada falha e cada repetição vai para o

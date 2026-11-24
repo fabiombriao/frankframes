@@ -384,24 +384,28 @@ async function renderPipeline(
     const frames = [...Array(totalFrames).keys()];
     let hashes: Map<number, string>;
     try {
-      hashes = await retryOnceIfTransient(() => {
-        // O retry de falha transitória nunca recomeça uma captura já cancelada.
-        throwIfCanceled(signal, "capture");
-        return captureFramesInParallel({
-          url: `${server.url}${basename(prepared.entry)}`,
-          viewport,
-          gpu,
-          fps,
-          frames,
-          serverFailures: server.failures,
-          ...(options.workers !== undefined ? { workers: options.workers } : {}),
-          onFrame: async (frame, png) => {
-            // Lançar aqui derruba o worker; o `finally` do captureFramesInParallel fecha as sessões do Chrome.
-            throwIfCanceled(signal, "capture");
-            await writeFile(join(framesDir, `frame_${String(frame + 1).padStart(6, "0")}.png`), png);
-          },
-        });
-      });
+      hashes = await retryOnceIfTransient(
+        () => {
+          // O retry de falha transitória nunca recomeça uma captura já cancelada.
+          throwIfCanceled(signal, "capture");
+          return captureFramesInParallel({
+            url: `${server.url}${basename(prepared.entry)}`,
+            viewport,
+            gpu,
+            fps,
+            frames,
+            serverFailures: server.failures,
+            ...(options.workers !== undefined ? { workers: options.workers } : {}),
+            onFrame: async (frame, png) => {
+              // Lançar aqui derruba o worker; o `finally` do captureFramesInParallel fecha as sessões do Chrome.
+              throwIfCanceled(signal, "capture");
+              await writeFile(join(framesDir, `frame_${String(frame + 1).padStart(6, "0")}.png`), png);
+            },
+          });
+        },
+        // A repetição é única e dita a causa; se a segunda tentativa falhar, é a falha dela que sobe.
+        (cause) => progress("capture", 25, `repetindo a captura uma vez (${cause.code}): ${cause.message.split(/\r?\n/)[0]}`),
+      );
     } catch (error) {
       throw motionFailure(error) ?? fontFailure(error) ?? browserFailure(error) ?? error;
     } finally {

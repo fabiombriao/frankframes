@@ -55,20 +55,42 @@ const RULES: Array<{ test: RegExp; kind: FailureKind; code: string; retryable: b
   { test: /ENOENT|EACCES|EBUSY|EPERM|no such file/i, kind: "io", code: "E_IO", retryable: false },
 ];
 
+/**
+ * `E_FONT_LOAD` que é só a rede do Chrome falhando: toda face reprovada com "A network error occurred" e
+ * nenhuma falha registrada pelo servidor local (`[servidor: …]` só existe quando ele registrou algo: 404 de
+ * fonte, EBUSY, erro de leitura). Sem registro nenhum, o arquivo está certo e a requisição não chegou ao servidor
+ * ou foi derrubada no caminho — falha de infraestrutura, não de autoria (EDT-72).
+ */
+export function isTransientFontNetworkFailure(message: string): boolean {
+  const start = message.indexOf("E_FONT_LOAD: fonte declarada não carregou: ");
+  if (start < 0 || message.includes("[servidor:")) return false;
+  const body = message.slice(start + "E_FONT_LOAD: fonte declarada não carregou: ".length).split(/\r?\n/)[0] ?? "";
+  const faces = body.replace(/ \(confira .*$/, "").split("; ");
+  return faces.length > 0 && faces.every((face) => /\): A network error occurred\.?$/.test(face));
+}
+
 export function classifyFailure(error: unknown): ClassifiedFailure {
   const message = error instanceof Error ? error.message : String(error);
+  if (isTransientFontNetworkFailure(message)) {
+    return { kind: "transient", code: "E_FONT_LOAD", message, retryable: true };
+  }
   for (const rule of RULES) {
     if (rule.test.test(message)) return { kind: rule.kind, code: rule.code, message, retryable: rule.retryable };
   }
   return { kind: "unknown", code: "E_UNKNOWN", message, retryable: false };
 }
 
-/** Repete uma vez somente se a falha for transiente ou timeout. */
-export async function retryOnceIfTransient<T>(operation: () => Promise<T>): Promise<T> {
+/**
+ * Repete uma vez somente se a falha for transiente ou timeout. `onRetry` recebe a causa da primeira
+ * tentativa: a repetição nunca é silenciosa, e a segunda falha é a que chega ao chamador.
+ */
+export async function retryOnceIfTransient<T>(operation: () => Promise<T>, onRetry?: (cause: ClassifiedFailure) => void): Promise<T> {
   try {
     return await operation();
   } catch (error) {
-    if (!classifyFailure(error).retryable) throw error;
+    const cause = classifyFailure(error);
+    if (!cause.retryable) throw error;
+    onRetry?.(cause);
     return operation();
   }
 }
