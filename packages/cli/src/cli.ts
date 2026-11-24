@@ -2,9 +2,8 @@
 // FrankFrames — proprietário. Ver LICENSE na raiz.
 import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
-import { cp, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { cp, writeFile } from "node:fs/promises";
 import { watch } from "node:fs";
-import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { loadComposition } from "@frankframes/contract";
 import { PINNED_BROWSER, assetPath, checkPinnedBrowser, startServer } from "@frankframes/engine";
@@ -518,8 +517,7 @@ async function main(): Promise<void> {
 
   if (cli.command === "preview") {
     const pair = await resolveFfmpeg();
-    const workDir = await mkdtemp(join(tmpdir(), "ff-preview-"));
-    let prepared = await prepare({ entry, ffmpeg: pair.ffmpeg, ffprobe: pair.ffprobe, workDir });
+    let prepared = await prepare({ entry, ffmpeg: pair.ffmpeg, ffprobe: pair.ffprobe });
 
     // Mix do preview = mesmo grafo do render. Falha vira aviso na barra, nunca derruba o vídeo.
     const audioDir = resolve(assetPath("cache", "preview-audio"));
@@ -572,7 +570,7 @@ async function main(): Promise<void> {
       recompiling = true;
       const started = Date.now();
       try {
-        const next = await prepare({ entry, ffmpeg: pair.ffmpeg, ffprobe: pair.ffprobe, workDir });
+        const next = await prepare({ entry, ffmpeg: pair.ffmpeg, ffprobe: pair.ffprobe });
         page.html = next.compiledHtml;
         serverOptions.manifest = next.manifest;
         serverOptions.preview = { fps: next.fps, frames: next.totalFrames, id: next.composition.id };
@@ -609,7 +607,6 @@ async function main(): Promise<void> {
       closing = true;
       watcher.close();
       if (timer.handle) clearTimeout(timer.handle);
-      void rm(workDir, { recursive: true, force: true }).catch(() => {});
       void server
         .close()
         .catch(() => {})

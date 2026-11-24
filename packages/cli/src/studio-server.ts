@@ -1,11 +1,10 @@
 // FrankFrames — proprietário. Ver LICENSE na raiz.
 import { watch } from "node:fs";
 import type { FSWatcher } from "node:fs";
-import { mkdtemp, readFile, rename, rm, stat, unlink, writeFile } from "node:fs/promises";
+import { readFile, rename, stat, unlink, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
-import { tmpdir } from "node:os";
 import { basename, dirname, extname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describePresets, listPresets, loadComposition, parseComposition, parseMotionValue } from "@frankframes/contract";
@@ -332,7 +331,6 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
   if (!info.isFile()) throw new Error(`entrada não é arquivo: ${entryPath}`);
 
   const clients = new Set<ServerResponse>();
-  const workDirs = new Set<string>();
   let watcher: FSWatcher | undefined;
   let debounce: NodeJS.Timeout | undefined;
   let preview: { mtimeMs: number; prepared: PreparedComposition; html: string } | undefined;
@@ -441,9 +439,7 @@ data: ${JSON.stringify(job)}
     if (preview !== undefined && preview.mtimeMs === current.mtimeMs) {
       return { prepared: preview.prepared, html: preview.html };
     }
-    const workDir = await mkdtemp(join(tmpdir(), "ff-studio-"));
-    workDirs.add(workDir);
-    const prepared = await prepare({ entry: entryPath, workDir });
+    const prepared = await prepare({ entry: entryPath });
     const audio = await previewAudioConfig(prepared);
     const html = injectEngine(prepared.compiledHtml, {
       manifest: prepared.manifest,
@@ -1130,8 +1126,6 @@ data: ${JSON.stringify(job)}
       server.closeAllConnections();
       server.close((error) => (error ? closed.reject(error) : closed.resolve()));
       await closed.promise;
-      for (const dir of workDirs) await rm(dir, { recursive: true, force: true });
-      workDirs.clear();
     },
   };
 }

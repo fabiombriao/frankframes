@@ -23,7 +23,7 @@
  *   (`optimizeForSpeed: true`), shotSpeedFalse (`false`, igual ao padrão).
  * No baseline (anterior ao H4), `captureScreenshot` media o PNG padrão.
  */
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 import { createHash } from "node:crypto";
 import { parseArgs } from "node:util";
@@ -201,7 +201,6 @@ try {
 } finally {
   await browser.close();
   await server.close();
-  await rm(prepared.workDir, { recursive: true, force: true });
 }
 
 const summary = Object.fromEntries(

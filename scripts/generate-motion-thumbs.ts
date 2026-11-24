@@ -150,7 +150,7 @@ async function makeGif(preset: PresetDef, work: string, ffmpeg: string): Promise
     await run(ffmpeg, ["-y", "-v", "error", "-f", "lavfi", "-i", "testsrc2=size=1280x720:rate=1", "-frames:v", "1", join(dir, CAMERA_PHOTO)]);
   }
 
-  const prepared = await prepare({ entry, workDir: join(dir, "work") });
+  const prepared = await prepare({ entry });
   const server = await startServer(prepared.entryDir, {
     ...(prepared.mediaDir !== undefined ? { mediaRoot: prepared.mediaDir } : {}),
     ...(prepared.manifest !== undefined ? { manifest: prepared.manifest } : {}),

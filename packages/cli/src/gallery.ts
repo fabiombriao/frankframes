@@ -1,7 +1,6 @@
 // FrankFrames — proprietário. Ver LICENSE na raiz.
 import { createServer } from "node:http";
-import { mkdtemp, readdir, readFile, rm, stat } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { readdir, readFile, stat } from "node:fs/promises";
 import { extname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { assetPath, injectEngine } from "@frankframes/engine";
@@ -184,16 +183,11 @@ export async function startGallery(options: { root?: string; port?: number } = {
   const root = resolve(options.root ?? DEFAULT_ROOT);
   const fontsRoot = resolve(assetPath("fonts"));
   const prepared = new Map<string, Promise<PreparedComposition>>();
-  const workDirs = new Set<string>();
 
   const load = (slug: string, indexHtml: string): Promise<PreparedComposition> => {
     const cached = prepared.get(slug);
     if (cached !== undefined) return cached;
-    const pending = (async () => {
-      const workDir = await mkdtemp(join(tmpdir(), "ff-gallery-"));
-      workDirs.add(workDir);
-      return prepare({ entry: indexHtml, workDir });
-    })();
+    const pending = prepare({ entry: indexHtml });
     prepared.set(slug, pending);
     pending.catch(() => prepared.delete(slug));
     return pending;
@@ -333,7 +327,6 @@ export async function startGallery(options: { root?: string; port?: number } = {
       server.close((error) => (error ? closed.reject(error) : closed.resolve()));
       server.closeAllConnections();
       await closed.promise;
-      await Promise.all([...workDirs].map((dir) => rm(dir, { recursive: true, force: true }).catch(() => {})));
     },
   };
 }

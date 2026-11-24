@@ -124,8 +124,6 @@ export interface PrepareOptions {
   entry: string;
   ffmpeg?: string;
   ffprobe?: string;
-  /** Diretório de trabalho; criado e devolvido ao chamador. */
-  workDir?: string;
   onProgress?: (stage: RenderStage, percent: number, message?: string) => void;
   /** Aborta entre as etapas e mata o FFmpeg de probe/extração em andamento (`E_CANCELED`). */
   signal?: AbortSignal;
@@ -146,9 +144,6 @@ export interface PreparedComposition {
   viewport: { width: number; height: number };
   totalFrames: number;
   warnings: string[];
-  workDir: string;
-  /** `true` quando o chamador criou o workDir e precisa removê-lo. */
-  ownsWorkDir: boolean;
 }
 
 function probeRaw(clips: RawClip[], into: RawClip[]): void {
@@ -236,12 +231,10 @@ export async function prepare(options: PrepareOptions): Promise<PreparedComposit
   const seconds = composition.duration.seconds;
   const fps = composition.fps;
   const viewport = { width: composition.width ?? 1920, height: composition.height ?? 1080 };
-  const ownsWorkDir = options.workDir === undefined;
-  const workDir = options.workDir ?? (await mkdtemp(join(tmpdir(), "ff-render-")));
-
+  // `prepare` não escreve em disco fora do cache de frames: o diretório de trabalho do render (vídeo, áudio, PNG do
+  // --keep) é criado por quem renderiza, em `renderPipeline` (EDT-78).
   let mediaDir: string | undefined;
   let manifest: MediaManifest | undefined;
-  try {
   const videos = timedClips(composition).filter((item) => item.clip.tag === "video" && item.clip.mediaSrc !== undefined);
   if (videos.length > 0) {
     progress("extract", 20);
@@ -273,11 +266,6 @@ export async function prepare(options: PrepareOptions): Promise<PreparedComposit
     }
   }
 
-  } catch (error) {
-    if (ownsWorkDir) await rm(workDir, { recursive: true, force: true });
-    throw error;
-  }
-
   return {
     entry,
     entryDir,
@@ -290,8 +278,6 @@ export async function prepare(options: PrepareOptions): Promise<PreparedComposit
     viewport,
     totalFrames: frameCountFor(seconds, fps),
     warnings,
-    workDir,
-    ownsWorkDir,
   };
 }
 
@@ -376,7 +362,9 @@ async function renderPipeline(
   });
   const pair = await resolveFfmpeg();
   const ffmpeg = options.ffmpeg ?? pair.ffmpeg;
-  const { workDir, totalFrames, fps, viewport, seconds, entryDir, composition, warnings } = prepared;
+  const { totalFrames, fps, viewport, seconds, entryDir, composition, warnings } = prepared;
+  // Só o render precisa de disco de trabalho; é criado aqui, depois do prepare, e removido no `finally` (ou no exit).
+  const workDir = await mkdtemp(join(tmpdir(), "ff-render-"));
 
   // Composição com vídeo fora de banda usa uma camada <img>; o compositor de GPU
   // atrasa a textura de forma não determinística. Nesses casos, software.
@@ -530,7 +518,7 @@ async function renderPipeline(
     };
   } finally {
     await encoding?.kill();
-    if (options.keepWorkDir !== true && prepared.ownsWorkDir) {
+    if (options.keepWorkDir !== true) {
       process.removeListener("exit", cleanup);
       await rm(workDir, { recursive: true, force: true });
     }
