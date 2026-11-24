@@ -84,7 +84,7 @@ Segunda rodada, depois de EDT-89 (legendas) e EDT-90 (true peak do arquivo codif
 | `keyframe[3].lower-third` (t=6) | PSNR 10,18 dB | < 30 | ok |
 | `keyframe[4].caption` (t=0,3) | PSNR 17,01 dB | < 30 | ok |
 
-**Aceite aprovado pelo script** (`ACEITE OK`). A sincronia de lábio (passo 7) é do titular e não foi avaliada aqui.
+**Aceite aprovado** pelo script (`ACEITE OK`) e pelo titular: sincronia de lábio e legendas (passo 7) aprovadas em 2026-11-24 no `final.mp4` de 1080×1920.
 
 Primeira rodada (mesma data, antes de EDT-89/EDT-90): reprovada só por `audio.truePeak` (-0,77 dBTP, o pico do arquivo
 AAC passava do limite porque o `loudnorm` limita o PCM, não o codec) e com legendas estreitas (caixa de 540 px, 4 a
