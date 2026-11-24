@@ -16,7 +16,7 @@ const STARTER = `<!doctype html>
   <meta charset="utf-8">
   <style>
     html, body { margin: 0; background: #0b0b0f; color: #fff; font-family: "Inter"; }
-    #stage { position: relative; width: 1920px; height: 1080px; overflow: hidden; }
+    #stage { position: relative; width: 100vw; height: 100vh; overflow: hidden; }
     .kicker { position: absolute; left: 120px; top: 350px; font-size: 26px; letter-spacing: 0.22em; text-transform: uppercase; color: #ff2d55; }
     .title { position: absolute; left: 120px; top: 400px; font-size: 128px; font-weight: 700; line-height: 1.02; }
     .rule { position: absolute; left: 120px; top: 570px; height: 6px; width: 0; background: #ff2d55; animation: grow 1.2s ease-out forwards; }

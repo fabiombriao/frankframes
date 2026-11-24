@@ -2,6 +2,7 @@ import { MAX_PX_PER_FRAME, chooseStep, clampZoom, lastFrameTime, isFrameLevel, n
 import { keyframeMarks, keyframePropsFor, renderKeyframeSection, renderMotionSection, renderTransitionSection } from "/motion.js";
 import { compositionFields, compositionPatch, pastEndNotice } from "/composition.js";
 import { displayNumber, numericChanges } from "/inspector.js";
+import { fitPlayerBox, playerViewport } from "/player-fit.js";
 
 (() => {
   "use strict";
@@ -14,8 +15,6 @@ import { displayNumber, numericChanges } from "/inspector.js";
   /* Passo do zoom da timeline. */
   const ZOOM_STEP = 1.15;
   const FRAME_POLL_MS = 100;
-  const PLAYER_WIDTH = 1920;
-  const PLAYER_HEIGHT = 1080;
 
   const fileNameEl = document.getElementById("fileName");
   const totalDurationEl = document.getElementById("totalDuration");
@@ -36,6 +35,7 @@ import { displayNumber, numericChanges } from "/inspector.js";
   const endNoticeButton = document.getElementById("endNoticeButton");
   const connectionEl = document.getElementById("connection");
   const player = document.getElementById("player");
+  const playerPanel = document.getElementById("playerPanel");
   const playerFrame = document.getElementById("playerFrame");
   const inspector = document.getElementById("inspector");
   const inspectorEmpty = document.getElementById("inspectorEmpty");
@@ -322,6 +322,7 @@ import { displayNumber, numericChanges } from "/inspector.js";
     state.playhead = clamp(state.playhead, 0, maxPlayhead());
     keepKeyframeSelection();
 
+    fitPlayer();
     renderTop();
     renderTimeline();
     paintPlayhead();
@@ -2044,22 +2045,34 @@ import { displayNumber, numericChanges } from "/inspector.js";
 
   /* Player, eventos e atalhos */
 
-  let lastPlayerWidth = -1;
+  let lastPlayerFit = "";
 
+  /* O viewport do preview é o da raiz (data-width/data-height), a mesma fonte do render; escala para caber sem cortar. */
   function fitPlayer() {
-    const width = playerFrame.clientWidth;
-    if (width <= 0) return;
-    if (width === lastPlayerWidth) return;
-    lastPlayerWidth = width;
-    const scale = width / PLAYER_WIDTH;
-    player.style.transform = "scale(" + scale + ")";
-    playerFrame.style.height = PLAYER_HEIGHT * scale + "px";
+    const style = getComputedStyle(playerPanel);
+    const available = {
+      width: playerPanel.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight),
+      height: playerPanel.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom),
+    };
+    if (!(available.width > 0) || !(available.height > 0)) return;
+    const viewport = playerViewport(state.composition);
+    const key = [available.width, available.height, viewport.width, viewport.height].join("x");
+    if (key === lastPlayerFit) return;
+    lastPlayerFit = key;
+    const box = fitPlayerBox(available, viewport);
+    player.style.width = viewport.width + "px";
+    player.style.height = viewport.height + "px";
+    player.style.transform = "scale(" + box.scale + ")";
+    playerFrame.style.width = box.frameWidth + "px";
+    playerFrame.style.height = box.frameHeight + "px";
+    playerFrame.style.left = parseFloat(style.paddingLeft) + box.left + "px";
+    playerFrame.style.top = parseFloat(style.paddingTop) + box.top + "px";
   }
 
   function observePlayerSize() {
     if (typeof ResizeObserver !== "function") return;
     const observer = new ResizeObserver(() => fitPlayer());
-    observer.observe(playerFrame);
+    observer.observe(playerPanel);
   }
 
   /* Último erro do relógio do preview já mostrado, para não repetir o aviso a cada poll. */

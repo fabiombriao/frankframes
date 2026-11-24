@@ -26,6 +26,11 @@ Consequências que o contrato assume:
 | `data-duration` | segundos > 0. Tem precedência sobre qualquer derivação |
 | `data-start` na raiz | ignorado; a raiz começa em 0 (aviso `W_ROOT_START_IGNORED`) |
 
+**Tamanho do quadro (EDT-87).** `data-width` × `data-height` da raiz são a **única fonte** do viewport: o render
+abre o navegador nesse tamanho (padrão 1920×1080 se faltar) e o preview do Studio também (§9d). O CSS da página não
+define o quadro: o `init` gera o `#stage` com `width: 100vw; height: 100vh`, então mudar a raiz (pelo inspetor de
+Composição, §9d) muda o quadro sem editar CSS. Composição com tamanho fixo em CSS diferente da raiz é do autor.
+
 ## 3. Tempo
 
 `data-start` aceita exatamente quatro formas:
@@ -843,6 +848,10 @@ Qualquer outra falha de medição continua falhando alto.
   atributos ficam como estão no HTML, byte a byte (`data-duration="68.164583"` não vira `68.165` ao trocar
   `data-start`). Um valor derivado da fonte nunca é arredondado para cima por causa de outro campo. O inspetor de
   Composição segue a mesma regra (`compositionPatch` só envia o que difere do que mostrou).
+- **Player segue a raiz** (EDT-87). O iframe do preview tem o viewport de `data-width` × `data-height` da raiz
+  (`GET /api/composition` → `width`/`height`; padrão 1920×1080 se faltar, como no render) e é escalado por **uma**
+  razão, `min(largura livre / largura, altura livre / altura)`, centrado no painel: nada é cortado nem esticado, em
+  16:9 ou 9:16. Editar largura/altura pelo inspetor de Composição muda o player na hora (`player-fit.js`, lógica pura).
 - **Dividir** (`POST /api/clips/<id>/split {at}`). Só para clip de topo com `data-clip-id` explícito, sem
   `data-keyframes`, atributos de motion (§7b) nem filhos (`E_SPLIT_UNSUPPORTED`), e com `at` a mais de 1 ms das bordas
   (`E_SPLIT_OUT_OF_RANGE`). A primeira metade fica com `data-duration = at − início` e perde o

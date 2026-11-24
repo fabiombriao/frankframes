@@ -59,6 +59,7 @@ const STUDIO_FILES: Record<string, string> = {
   "/motion.js": "motion.js",
   "/composition.js": "composition.js",
   "/inspector.js": "inspector.js",
+  "/player-fit.js": "player-fit.js",
   "/style.css": "style.css",
 };
 const MEDIA_PREFIX = "/__ff_media/";

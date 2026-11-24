@@ -295,18 +295,18 @@ textarea {
 }
 
 .player-panel {
+  position: relative;
   min-width: 0;
   padding: 12px;
   overflow: hidden;
   background: #05070a;
 }
 
+/* Posição e tamanho vêm de app.js (fitPlayer): a proporção é a da raiz, não um 16:9 fixo (EDT-87). */
 .player-frame {
-  position: relative;
-  width: 100%;
-  aspect-ratio: 16 / 9;
+  position: absolute;
   overflow: hidden;
-  border: 1px solid var(--border);
+  outline: 1px solid var(--border);
   border-radius: 4px;
   background: #000;
 }

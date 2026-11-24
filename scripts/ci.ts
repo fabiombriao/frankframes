@@ -38,6 +38,7 @@ const FAST_TESTS = [
   "packages/cli/test/studio-composition.test.ts",
   "packages/cli/test/studio-export.test.ts",
   "packages/cli/test/studio-inspector.test.ts",
+  "packages/cli/test/studio-player-fit.test.ts",
   "packages/cli/test/temp-leaks.test.ts",
   "packages/engine/test/clock.test.ts",
   "packages/engine/test/motion-runtime.test.ts",
