@@ -546,6 +546,22 @@
             "Gate completo verde."
           ],
           "jiraKey": "EDT-83"
+        },
+        {
+          "summary": "Export do Studio falhou uma vez com E_BROWSER_TIMEOUT no seek do frame 41 (não reproduzido)",
+          "points": 3,
+          "labels": [
+            "bug",
+            "engine",
+            "flaky"
+          ],
+          "acceptance": [
+            "Visto no aceite do EDT-64 em 2026-11-24: 1ª exportação do A001 (1080x1920, legendas-v2.html + bloco + vídeo) falhou com E_BROWSER_TIMEOUT, seek do frame 41 sem resposta em 60 s, CPU em 56%. A repetição sem mudança passou; as mesmas legendas renderizam sozinhas os 900 frames.",
+            "Reproduzir com carga (scripts/bench/with-load.ts) e N exports seguidos do mesmo projeto; registrar taxa de falha e onde o seek trava (log de captura com FRANKFRAMES_CAPTURE_PROFILE=1).",
+            "Corrigir a causa (sem aumentar timeout às cegas e sem retry); teste que falharia sem a correção; gate verde.",
+            "Até a correção, listado em Pendências conhecidas do CHANGELOG."
+          ],
+          "jiraKey": "EDT-91"
         }
       ],
       "jiraKey": "EDT-26"
