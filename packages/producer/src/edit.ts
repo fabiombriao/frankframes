@@ -32,24 +32,29 @@ export interface ClipPatch {
   singleQuoted?: string[];
 }
 
+/** Códigos das edições do Studio (`applyEdits`, split, trim, copy, keyframes): entram no `docs/reference/diagnostics.md`. */
+export const EDIT_ERROR_CODES = [
+  "E_CLIP_NOT_FOUND",
+  "E_AMBIGUOUS_CLIP",
+  "E_TEXT_NOT_EDITABLE",
+  "E_ATTRIBUTE_INVALID",
+  "E_SPLIT_UNSUPPORTED",
+  "E_SPLIT_OUT_OF_RANGE",
+  "E_DELETE_UNSUPPORTED",
+  "E_TRIM_OUT_OF_RANGE",
+  "E_TRIM_UNSUPPORTED",
+  "E_COPY_UNSUPPORTED",
+  "E_COPY_OUT_OF_RANGE",
+  "E_TRANSITION_GAP",
+  "E_KEYFRAME_NOT_FOUND",
+  "E_KEYFRAME_EXISTS",
+  "E_KEYFRAME_PROP",
+  "E_KEYFRAME_OUT_OF_RANGE",
+] as const;
+export type EditCode = (typeof EDIT_ERROR_CODES)[number];
+
 export class EditError extends Error {
-  readonly code:
-    | "E_CLIP_NOT_FOUND"
-    | "E_AMBIGUOUS_CLIP"
-    | "E_TEXT_NOT_EDITABLE"
-    | "E_ATTRIBUTE_INVALID"
-    | "E_SPLIT_UNSUPPORTED"
-    | "E_SPLIT_OUT_OF_RANGE"
-    | "E_DELETE_UNSUPPORTED"
-    | "E_TRIM_OUT_OF_RANGE"
-    | "E_TRIM_UNSUPPORTED"
-    | "E_COPY_UNSUPPORTED"
-    | "E_COPY_OUT_OF_RANGE"
-    | "E_TRANSITION_GAP"
-    | "E_KEYFRAME_NOT_FOUND"
-    | "E_KEYFRAME_EXISTS"
-    | "E_KEYFRAME_PROP"
-    | "E_KEYFRAME_OUT_OF_RANGE";
+  readonly code: EditCode;
 
   constructor(code: EditError["code"], message: string) {
     super(message);

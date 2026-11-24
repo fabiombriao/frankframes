@@ -13,8 +13,11 @@ export const PREVIEW_AUDIO_MAX_SECONDS = 20 * 60;
 /** O que o preview precisa de uma composição já preparada. */
 export type PreviewSource = Pick<PreparedComposition, "composition" | "entryDir" | "seconds">;
 
+/** Código do mix de áudio do preview do Studio (entra no `docs/reference/diagnostics.md`). */
+export const PREVIEW_AUDIO_ERROR_CODES = ["E_PREVIEW_AUDIO"] as const;
+
 export class PreviewAudioError extends Error {
-  readonly code = "E_PREVIEW_AUDIO";
+  readonly code: (typeof PREVIEW_AUDIO_ERROR_CODES)[number] = "E_PREVIEW_AUDIO";
   readonly hint: string;
 
   constructor(message: string, hint: string) {

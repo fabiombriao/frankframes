@@ -32,16 +32,18 @@ export interface ProviderConfig {
   language?: string;
 }
 
-export type TranscribeErrorCode =
-  | "E_TRANSCRIBE_UNAVAILABLE"
-  | "E_WHISPER_MISSING"
-  | "E_WHISPER_FAILED"
-  | "E_WHISPER_OUTPUT"
-  | "E_FFMPEG_MISSING"
-  | "E_OPENAI_HTTP"
-  | "E_OPENAI_RESPONSE"
-  | "E_MODEL_DOWNLOAD"
-  | "E_MODEL_HASH";
+export const TRANSCRIBE_ERROR_CODES = [
+  "E_TRANSCRIBE_UNAVAILABLE",
+  "E_WHISPER_MISSING",
+  "E_WHISPER_FAILED",
+  "E_WHISPER_OUTPUT",
+  "E_FFMPEG_MISSING",
+  "E_OPENAI_HTTP",
+  "E_OPENAI_RESPONSE",
+  "E_MODEL_DOWNLOAD",
+  "E_MODEL_HASH",
+] as const;
+export type TranscribeErrorCode = (typeof TRANSCRIBE_ERROR_CODES)[number];
 
 export class TranscribeError extends Error {
   readonly code: TranscribeErrorCode;

@@ -27,7 +27,7 @@ export { PREVIEW_AUDIO_SOURCE } from "./preview-audio.ts";
 export { DEFAULT_BATCH_SIZE, captureFramesInParallel, defaultWorkerCount, orderedFeeder, reorderWindow, splitIntoBatches } from "./parallel.ts";
 export type { OrderedFeeder } from "./parallel.ts";
 export type { ParallelCaptureOptions } from "./parallel.ts";
-export { BrowserError, classifyFailure, retryOnceIfTransient } from "./failures.ts";
+export { BrowserError, FAILURE_ERROR_CODES, classifyFailure, retryOnceIfTransient } from "./failures.ts";
 export type { BrowserErrorCode, ClassifiedFailure, FailureKind } from "./failures.ts";
 export { openSession, openSessionFor } from "./capture.ts";
 export { browserSignalOptions, setHostOwnsSignals } from "./signals.ts";

@@ -40,6 +40,21 @@ export class BrowserError extends Error {
   }
 }
 
+/**
+ * Códigos que `classifyFailure` devolve além de E_FONT_LOAD e E_BROWSER_* (já em RENDER_ERROR_CODES).
+ * Entram no `docs/reference/diagnostics.md`.
+ */
+export const FAILURE_ERROR_CODES = [
+  "E_CANCELLED",
+  "E_PROTOCOL",
+  "E_TIMEOUT",
+  "E_MEMORY",
+  "E_IMAGE_MISSING",
+  "E_AUTHORING",
+  "E_IO",
+  "E_UNKNOWN",
+] as const;
+
 const RULES: Array<{ test: RegExp; kind: FailureKind; code: string; retryable: boolean }> = [
   // Fonte declarada que não carrega é erro de autoria; a regra vem antes de "não carregou" (imagem).
   { test: /E_FONT_LOAD/, kind: "authoring", code: "E_FONT_LOAD", retryable: false },

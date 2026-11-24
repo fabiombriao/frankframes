@@ -4,7 +4,7 @@ export type { OpenAiCompatibleConfig } from "./openai.ts";
 export { createLocal, installLocalModel } from "./local.ts";
 export type { InstallLocalModelOptions, LocalConfig } from "./local.ts";
 export { resolveProvider } from "./resolve.ts";
-export { TranscribeError } from "./types.ts";
+export { TRANSCRIBE_ERROR_CODES, TranscribeError } from "./types.ts";
 export type {
   ProviderConfig,
   Segment,
