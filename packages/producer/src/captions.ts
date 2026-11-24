@@ -152,7 +152,8 @@ export function buildCaptionComposition(segments: CaptionSegment[], options: Cap
   const height = options.height ?? 1080;
   const fps = options.fps ?? 30;
   const font = options.font ?? "Inter";
-  const baseFontSize = options.fontSize ?? Math.round(height * 0.055);
+  // Proporcional à altura (16:9) e à largura (vertical): 1920×1080 → 59 px, 1080×1920 → 70 px.
+  const baseFontSize = options.fontSize ?? Math.round(Math.min(height * 0.055, width * 0.065));
   const maxChars = options.maxCharsPerLine ?? Math.max(12, Math.round((width * 0.84) / (baseFontSize * 0.55)));
   const fontSize = baseFontSize;
   const bottom = options.bottom ?? Math.round(height * 0.08);
@@ -220,10 +221,15 @@ export function buildCaptionComposition(segments: CaptionSegment[], options: Cap
     }
     .caption {
       position: absolute;
-      left: 50%;
+      /* Centraliza sem transform e sem left:50% (que limitaria a caixa a 50% do quadro) nem
+         encolher: left/right 0 dão a largura disponível toda, e a caixa cresce até o max-width. */
+      left: 0;
+      right: 0;
+      margin-inline: auto;
       bottom: ${bottom}px;
-      transform: translateX(-50%);
-      max-width: ${Math.round(width * 0.84)}px;
+      box-sizing: border-box;
+      width: fit-content;
+      max-width: 84%;
       padding: ${Math.round(baseFontSize * 0.28)}px ${Math.round(baseFontSize * 0.5)}px;
       background: rgba(0, 0, 0, 0.62);
       color: #ffffff;

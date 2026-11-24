@@ -6,8 +6,21 @@ import { rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import { buildAudioGraph, isSilentMeasurement, mixAudio } from "../src/audio.ts";
-import type { AudioClip } from "../src/audio.ts";
+import {
+  AUDIO_ERROR_CODES,
+  AudioTruePeakError,
+  DELIVERY_LOUDNESS,
+  TRUE_PEAK_MARGIN_DB,
+  buildAudioGraph,
+  enforceTruePeak,
+  isSilentMeasurement,
+  measureLoudness,
+  mixAudio,
+  truePeakCorrectionDb,
+} from "../src/audio.ts";
+import type { AudioClip, MeasuredLoudness } from "../src/audio.ts";
+import { RENDER_ERROR_CODES } from "../src/errors.ts";
+import { resolveFfmpeg } from "../src/ffmpeg.ts";
 import { tempDir } from "../../../scripts/test-support/temp.ts";
 
 const run = promisify(execFile);
@@ -403,4 +416,199 @@ test("mix que falha mantém o erro original quando a remoção do workspace tamb
   assert.match(outcome.error.message, /ENOENT|ff-nao-existe/, "o erro original (FFmpeg não executou) sobe intacto");
   assert.ok(workspace !== undefined, "a remoção injetada foi chamada");
   assert.ok(outcome.stderr.includes(`[frankframes] não consegui remover ${workspace}: EBUSY simulado`), `stderr sem o aviso: ${JSON.stringify(outcome.stderr)}`);
+});
+
+// ---- EDT-90: true peak do arquivo codificado ----
+
+const measurement = (tp: string, i = "-14.00"): MeasuredLoudness => ({ i, tp, lra: "1.00", thresh: "-24.00", offset: "0.00" });
+
+/** Medidor injetado: devolve as medidas em ordem e conta as chamadas. */
+function scriptedMeter(...values: Array<MeasuredLoudness | null>): { measure: () => Promise<MeasuredLoudness | null>; calls: () => number } {
+  let calls = 0;
+  return {
+    measure: async () => {
+      const value = values[calls];
+      calls += 1;
+      if (value === undefined) throw new Error(`medição inesperada nº ${calls}`);
+      return value;
+    },
+    calls: () => calls,
+  };
+}
+
+test("truePeakCorrectionDb: ganho = limite − medido − margem fixa de 0,2 dB", () => {
+  assert.equal(TRUE_PEAK_MARGIN_DB, 0.2);
+  assert.ok(Math.abs(truePeakCorrectionDb(-0.77, -1) - -0.43) < 1e-9, "−0,77 dBTP pede −0,43 dB");
+  assert.ok(Math.abs(truePeakCorrectionDb(0.6, -1) - -1.8) < 1e-9, "+0,6 dBTP pede −1,8 dB");
+  assert.ok(truePeakCorrectionDb(-0.95, -1) < 0, "pico logo acima do limite sempre pede corte");
+});
+
+test("enforceTruePeak: dentro do limite não recodifica nem avisa", async () => {
+  const meter = scriptedMeter(measurement("-1.00"));
+  let reencoded = 0;
+  const outcome = await enforceTruePeak({ limitDbtp: -1, measure: meter.measure, reencode: async () => void (reencoded += 1) });
+  assert.deepEqual(outcome, { warnings: [], gainDb: null });
+  assert.equal(reencoded, 0);
+  assert.equal(meter.calls(), 1);
+});
+
+test("enforceTruePeak: acima do limite recodifica UMA vez com o ganho da medida e avisa os dB aplicados", async () => {
+  const meter = scriptedMeter(measurement("-0.77"), measurement("-1.12", "-14.40"));
+  const gains: number[] = [];
+  const outcome = await enforceTruePeak({ limitDbtp: -1, measure: meter.measure, reencode: async (gain) => void gains.push(gain) });
+
+  assert.equal(gains.length, 1, "uma única recodificação");
+  assert.ok(Math.abs(gains[0]! - -0.43) < 1e-9, `ganho ${gains[0]}`);
+  assert.equal(meter.calls(), 2, "mede antes e depois, nada além");
+  assert.equal(outcome.gainDb, gains[0]);
+  assert.equal(outcome.warnings.length, 1);
+  assert.match(outcome.warnings[0]!, /-0\.77 dBTP acima do limite -1 dBTP; ganho de -0\.43 dB aplicado/);
+  assert.match(outcome.warnings[0]!, /agora -1\.12 dBTP, -14\.4 LUFS/);
+});
+
+test("enforceTruePeak: ainda acima depois da correção falha alto com E_AUDIO_TRUE_PEAK, sem segunda correção", async () => {
+  const meter = scriptedMeter(measurement("-0.50"), measurement("-0.90"));
+  let reencoded = 0;
+  await assert.rejects(
+    enforceTruePeak({ limitDbtp: -1, measure: meter.measure, reencode: async () => void (reencoded += 1) }),
+    (error: unknown) => {
+      assert.ok(error instanceof AudioTruePeakError);
+      assert.equal(error.code, "E_AUDIO_TRUE_PEAK");
+      assert.equal(error.measuredDbtp, -0.9);
+      assert.equal(error.limitDbtp, -1);
+      assert.match(error.message, /-0\.50 dBTP.*-0\.90 dBTP/s, "a mensagem traz as duas medidas");
+      assert.ok(error.hint.length > 10, "hint acionável");
+      return true;
+    },
+  );
+  assert.equal(reencoded, 1, "nunca mais de uma recodificação");
+  assert.equal(meter.calls(), 2);
+});
+
+test("enforceTruePeak: medição ausente ou ilegível falha alto, antes e depois da correção", async () => {
+  const unmeasured = scriptedMeter(null);
+  await assert.rejects(
+    enforceTruePeak({ limitDbtp: -1, measure: unmeasured.measure, reencode: async () => assert.fail("não recodifica sem medida") }),
+    (error: unknown) => error instanceof AudioTruePeakError && error.measuredDbtp === null && /não consegui medir/.test(error.message),
+  );
+  const garbage = scriptedMeter(measurement("lixo"));
+  await assert.rejects(
+    enforceTruePeak({ limitDbtp: -1, measure: garbage.measure, reencode: async () => assert.fail("não recodifica sem medida") }),
+    (error: unknown) => error instanceof AudioTruePeakError && /ilegível/.test(error.message),
+  );
+  const lostAfter = scriptedMeter(measurement("-0.50"), null);
+  await assert.rejects(
+    enforceTruePeak({ limitDbtp: -1, measure: lostAfter.measure, reencode: async () => undefined }),
+    (error: unknown) => error instanceof AudioTruePeakError && /depois da correção/.test(error.message),
+  );
+});
+
+test("enforceTruePeak: pico -inf (sem sinal) passa sem recodificar", async () => {
+  const meter = scriptedMeter(measurement("-inf"));
+  const outcome = await enforceTruePeak({ limitDbtp: -1, measure: meter.measure, reencode: async () => assert.fail("nada a corrigir") });
+  assert.deepEqual(outcome, { warnings: [], gainDb: null });
+});
+
+test("buildAudioGraph: postGainDb entra DEPOIS do loudnorm e só com loudnorm", () => {
+  const clips = [clip({ clipId: "a", file: "/media/a.wav" })];
+  const withGain = buildAudioGraph(clips, 1, 1, { loudness: DELIVERY_LOUDNESS, postGainDb: -0.43 });
+  assert.match(withGain.filter, /loudnorm=I=-14:TP=-1:LRA=11,volume=-0\.43dB\[out\]$/);
+  assert.doesNotMatch(buildAudioGraph(clips, 1, 1, { loudness: DELIVERY_LOUDNESS }).filter, /dB\[out\]/);
+  assert.doesNotMatch(buildAudioGraph(clips, 1, 1, { postGainDb: -0.43 }).filter, /dB\[out\]/, "sem loudnorm não há correção de pico");
+});
+
+test("E_AUDIO_TRUE_PEAK está na allowlist de render e no código registrado", () => {
+  for (const code of AUDIO_ERROR_CODES) assert.ok(RENDER_ERROR_CODES.includes(code), `${code} fora de RENDER_ERROR_CODES`);
+});
+
+/**
+ * Cliques de 1–2 amostras sobre um tom a 440 Hz: depois do loudnorm (TP=-1) o PCM respeita o teto, mas o AAC e o
+ * Opus sobem o pico entre amostras (medido: AAC −0,77 dBTP, Opus −0,85 dBTP, ambos com ~−14,1 LUFS).
+ */
+const CLICK_SIGNAL = "aevalsrc='0.26*sin(2*PI*440*t)+0.9*lt(mod(t,0.1),0.00003)':s=48000:d=3";
+/** Medidor que sempre aprova: reproduz o comportamento anterior (ninguém mede o arquivo codificado). */
+const BLIND_METER = async (): Promise<MeasuredLoudness> => measurement("-99");
+
+async function ffmpegOrSkip(t: { skip: (reason: string) => void }): Promise<{ ffmpeg: string } | null> {
+  try {
+    return { ffmpeg: (await resolveFfmpeg()).ffmpeg };
+  } catch (error) {
+    t.skip(`FFmpeg indisponível: ${(error as Error).message}`);
+    return null;
+  }
+}
+
+for (const [format, extension] of [["aac", "m4a"], ["opus", "opus"]] as const) {
+  test(`integração: sem a correção o ${format} estoura −1 dBTP; com ela o arquivo entregue mede ≤ −1 dBTP e avisa`, { timeout: 180_000 }, async (t) => {
+    const tools = await ffmpegOrSkip(t);
+    if (tools === null) return;
+    const { ffmpeg } = tools;
+    const dir = await tempDir(t, "ff-true-peak-");
+    const source = join(dir, "cliques.wav");
+    await run(ffmpeg, ["-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", CLICK_SIGNAL, "-ac", "2", "-ar", "48000", "-y", source]);
+    const clips = [clip({ clipId: "cliques", file: source, duration: 3 })];
+
+    // Premissa (comportamento antigo): medidor cego = nenhuma correção. O arquivo estoura o limite de entrega.
+    const blindPath = join(dir, `cego.${extension}`);
+    const blind = await mixAudio({ ffmpeg, clips, totalSeconds: 3, outPath: blindPath, format, measureEncoded: BLIND_METER });
+    assert.deepEqual(blind.warnings, [], "sem correção não há aviso");
+    const blindMeasure = await measureLoudness(ffmpeg, blindPath);
+    assert.ok(blindMeasure !== null);
+    assert.ok(Number(blindMeasure.tp) > DELIVERY_LOUDNESS.truePeakDbtp, `premissa do teste: o ${format} deveria estourar, mediu ${blindMeasure.tp} dBTP`);
+
+    // Com a garantia (medidor real): o arquivo final passa e o aviso traz os dB aplicados.
+    const outPath = join(dir, `entrega.${extension}`);
+    const result = await mixAudio({ ffmpeg, clips, totalSeconds: 3, outPath, format });
+    const delivered = await measureLoudness(ffmpeg, outPath);
+    assert.ok(delivered !== null);
+    assert.ok(Number(delivered.tp) <= DELIVERY_LOUDNESS.truePeakDbtp, `arquivo entregue mede ${delivered.tp} dBTP, limite ${DELIVERY_LOUDNESS.truePeakDbtp}`);
+    assert.ok(Math.abs(Number(delivered.i) - DELIVERY_LOUDNESS.targetLufs) <= 1, `loudness integrado ${delivered.i} LUFS fora de −14 ± 1`);
+    const warning = result.warnings.find((text) => /true peak do arquivo codificado/.test(text));
+    assert.ok(warning !== undefined, `warnings sem o aviso de correção: ${JSON.stringify(result.warnings)}`);
+    assert.match(warning, new RegExp(`${Number(blindMeasure.tp).toFixed(2)} dBTP acima do limite -1 dBTP; ganho de -\\d+\\.\\d{2} dB aplicado`));
+  });
+}
+
+test("integração: mixAudio falha alto com E_AUDIO_TRUE_PEAK quando a medida do arquivo corrigido ainda passa do limite", { timeout: 120_000 }, async (t) => {
+  const tools = await ffmpegOrSkip(t);
+  if (tools === null) return;
+  const { ffmpeg } = tools;
+  const dir = await tempDir(t, "ff-true-peak-");
+  const tone = join(dir, "tom.wav");
+  await run(ffmpeg, ["-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "sine=frequency=300:sample_rate=48000:duration=2", "-ac", "2", "-y", tone]);
+
+  let calls = 0;
+  await assert.rejects(
+    mixAudio({
+      ffmpeg,
+      clips: [clip({ clipId: "tom", file: tone, duration: 2 })],
+      totalSeconds: 2,
+      outPath: join(dir, "mix.m4a"),
+      measureEncoded: async () => {
+        calls += 1;
+        return measurement("-0.40");
+      },
+    }),
+    (error: unknown) => error instanceof AudioTruePeakError && error.code === "E_AUDIO_TRUE_PEAK" && error.measuredDbtp === -0.4,
+  );
+  assert.equal(calls, 2, "mede, corrige uma vez, mede de novo e para");
+});
+
+test("integração: loudness:false, mix silencioso e WAV do preview não medem nem corrigem o arquivo codificado", { timeout: 120_000 }, async (t) => {
+  const tools = await ffmpegOrSkip(t);
+  if (tools === null) return;
+  const { ffmpeg } = tools;
+  const dir = await tempDir(t, "ff-true-peak-");
+  const tone = join(dir, "tom.wav");
+  const silent = join(dir, "mudo.wav");
+  await run(ffmpeg, ["-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "sine=frequency=300:sample_rate=48000:duration=1", "-ac", "2", "-y", tone]);
+  await run(ffmpeg, ["-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo", "-t", "1", "-y", silent]);
+  const forbidden = async (): Promise<MeasuredLoudness> => assert.fail("não deve medir o arquivo codificado");
+
+  const raw = await mixAudio({ ffmpeg, clips: [clip({ clipId: "tom", file: tone })], totalSeconds: 1, outPath: join(dir, "cru.m4a"), loudness: false, measureEncoded: forbidden });
+  assert.deepEqual(raw.warnings, []);
+  const mute = await mixAudio({ ffmpeg, clips: [clip({ clipId: "mudo", file: silent })], totalSeconds: 1, outPath: join(dir, "mudo.m4a"), measureEncoded: forbidden });
+  assert.ok(mute.warnings.some((warning) => /áudio silencioso/.test(warning)));
+  const wav = await mixAudio({ ffmpeg, clips: [clip({ clipId: "tom", file: tone })], totalSeconds: 1, outPath: join(dir, "preview.wav"), format: "wav", measureEncoded: forbidden });
+  assert.ok(!wav.warnings.some((warning) => /true peak/.test(warning)));
 });

@@ -14,7 +14,7 @@ import { BrowserError, MediaRotationError, assetPath, captureFramesInParallel, c
 import type { MediaManifest, VideoProbe } from "@frankframes/engine";
 import { annotateCompiled, materializeClipIds, mergeSubCompositions } from "./compile.ts";
 import { resolveFfmpeg } from "./ffmpeg.ts";
-import { mixAudio } from "./audio.ts";
+import { AudioTruePeakError, mixAudio } from "./audio.ts";
 import { PipeEncodeError, encodeWhileCapturing } from "./pipe-encode.ts";
 import type { EncodeRun } from "./pipe-encode.ts";
 import { audioClipsFor } from "./preview-audio.ts";
@@ -489,16 +489,24 @@ async function renderPipeline(
     if (audioInputs.length > 0) {
       throwIfCanceled(signal, "audio");
       progress("audio", 78, `${audioInputs.length} faixa(s)`);
-      audioPath = join(workDir, "audio.m4a");
-      const mixed = await mixAudio({
-        ffmpeg,
-        clips: audioInputs,
-        totalSeconds: seconds,
-        outPath: audioPath,
-        ...(options.loudness === false ? { loudness: false } : {}),
-        ...signalOption,
-      });
-      warnings.push(...mixed.warnings);
+      // WebM: o mix já sai em Opus (o true peak é medido no stream que vai ao arquivo; o mux só copia). MP4: AAC.
+      audioPath = join(workDir, container === "webm" ? "audio.opus" : "audio.m4a");
+      try {
+        const mixed = await mixAudio({
+          ffmpeg,
+          clips: audioInputs,
+          totalSeconds: seconds,
+          outPath: audioPath,
+          format: container === "webm" ? "opus" : "aac",
+          ...(options.loudness === false ? { loudness: false } : {}),
+          ...signalOption,
+        });
+        warnings.push(...mixed.warnings);
+      } catch (error) {
+        // O código e o hint do mix (E_AUDIO_TRUE_PEAK) chegam ao render --json, sem virar E_INTERNAL.
+        if (error instanceof AudioTruePeakError) throw new RenderError(error.code, "audio", `${error.message} (${error.hint})`);
+        throw error;
+      }
     }
 
     // O encode já vinha andando junto da captura: aqui só falta a cauda depois do último frame.
@@ -518,9 +526,7 @@ async function renderPipeline(
     const assembleArgs =
       audioPath === undefined
         ? ["-hide_banner", "-loglevel", "error", "-i", videoPath, "-c", "copy", ...mux, "-y", partialPath]
-        : container === "webm"
-          ? ["-hide_banner", "-loglevel", "error", "-i", videoPath, "-i", audioPath, "-c:v", "copy", "-c:a", "libopus", "-b:a", "128k", ...mux, "-y", partialPath]
-          : ["-hide_banner", "-loglevel", "error", "-i", videoPath, "-i", audioPath, "-c:v", "copy", "-c:a", "copy", ...mux, "-y", partialPath];
+        : ["-hide_banner", "-loglevel", "error", "-i", videoPath, "-i", audioPath, "-c:v", "copy", "-c:a", "copy", ...mux, "-y", partialPath];
     try {
       await run(ffmpeg, assembleArgs, { maxBuffer: 64 << 20, ...signalOption });
       // Última chance de cancelar: depois do rename o arquivo final existe e o export está feito.

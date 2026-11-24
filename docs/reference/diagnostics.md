@@ -6,6 +6,7 @@ Gerado por `node scripts/generate-reference.ts` a partir do código. Não edite 
 |---|---|---|
 | `E_AMBIGUOUS_CLIP` | erro | edição |
 | `E_ATTRIBUTE_INVALID` | erro | edição |
+| `E_AUDIO_TRUE_PEAK` | erro | render |
 | `E_AUTHORING` | erro | render |
 | `E_BATCH_INVALID` | erro | render |
 | `E_BLOCK_UNKNOWN` | erro | studio |

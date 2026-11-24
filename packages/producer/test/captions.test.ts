@@ -140,6 +140,20 @@ test("motion nas legendas: saída entra depois da última entrada; preset invál
   );
 });
 
+test("fonte padrão: proporcional à altura no 16:9 (inalterada) e à largura no vertical; sem transform de centralização", () => {
+  const segments = [{ start: 0, end: 1, text: "oi" }];
+  const fontOf = (html: string): string => /\.caption \{[^}]*?font-size: (\d+)px/.exec(html)![1]!;
+  assert.equal(fontOf(buildCaptionComposition(segments, { width: 1920, height: 1080 })), "59", "16:9 não muda: 1080 × 0,055");
+  assert.equal(fontOf(buildCaptionComposition(segments)), "59", "o padrão sem tamanho continua 1920×1080");
+  assert.equal(fontOf(buildCaptionComposition(segments, { width: 1080, height: 1920 })), "70", "vertical: 1080 × 0,065, não 1920 × 0,055 = 106");
+  assert.equal(fontOf(buildCaptionComposition(segments, { width: 1080, height: 1920, fontSize: 40 })), "40", "fontSize explícito manda");
+
+  const css = buildCaptionComposition(segments, { width: 1080, height: 1920 });
+  assert.match(css, /left: 0;\s*right: 0;\s*margin-inline: auto;/);
+  assert.match(css, /width: fit-content;\s*max-width: 84%;/);
+  assert.doesNotMatch(css, /left: 50%|translate/, "left:50% limita a caixa a 50% do quadro");
+});
+
 test("sem motion, a legenda sai exatamente como antes", () => {
   const html = buildCaptionComposition(karaoke);
   assert.ok(!html.includes("data-split") && !html.includes("data-unit") && !html.includes("data-enter"));

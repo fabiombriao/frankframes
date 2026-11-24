@@ -451,6 +451,14 @@ para a última terminar dentro da fala. A duração do preset é limitada à fal
 `D − dur`. O gerador passa o resultado pelo contrato: o que ainda não couber (mola curta demais para a fala,
 saída sem espaço depois da última entrada) falha na geração com o diagnóstico, nunca vira legenda inválida.
 
+**Legendas: layout (EDT-89).** A caixa `.caption` é centralizada por `left:0; right:0; margin-inline:auto;
+width:fit-content` e cresce até `max-width: 84%` do quadro (`box-sizing: border-box`, padding incluído). Não usa
+`left:50%` nem `transform`: uma caixa absoluta com `left:50%` encolhe até a largura que sobra a partir dali e
+parava em 50% do quadro (540 px no 1080×1920), e o `transform` colidiria com o `data-enter` do próprio bloco. A
+fonte padrão é `round(min(altura × 0,055, largura × 0,065))` (1920×1080 → 59 px, igual ao que sempre foi;
+1080×1920 → 70 px em vez de 106); `fontSize` explícito manda. `maxCharsPerLine` continua `largura × 0,84 ÷
+(fonte × 0,55)`, agora coerente com a caixa que de fato chega a 84%.
+
 **Limitações.** Em escritas cursivas (árabe) o modo `letter` perde a ligação entre letras, porque cada
 grafema vira uma caixa; use `word`. Ligaduras entre unidades vizinhas e o kerning entre elas se perdem. O
 resultado do `letter` depende da tabela Unicode do ICU: o teste de segmentação imprime a versão do Node e do
@@ -658,6 +666,23 @@ argumentos de saída; coberto por teste com `framemd5`). O disco só guarda o v�
   falhar em vez de fechar um vídeo curto.
 - **Repetição (EDT-72).** A repetição única de falha transiente do browser reinicia o pipe do zero: FFmpeg novo,
   nenhum frame duplicado. Falha do encode nunca é repetida nem classificada por texto como falha de browser.
+
+**Áudio de entrega: o true peak vale para o arquivo codificado (EDT-90).** O mix de entrega é normalizado em
+−14 LUFS com teto de −1 dBTP (`loudnorm`), mas o AAC (MP4) e o Opus (WebM) sobem os picos entre amostras, então o
+teto do PCM não garante o do arquivo. Por isso o `mixAudio` mede o **próprio arquivo codificado** (`loudnorm` em modo
+análise, a mesma medida do aceite) e a garantia é `true peak ≤ −1 dBTP` nesse arquivo, não no PCM:
+- Passou de −1 dBTP: calcula `ganho = −1 − medido − 0,2 dB` (a margem de 0,2 dB é fixa; cobre a variação do
+  re-encode), recodifica **uma única vez** a partir do mesmo grafo com `volume=<ganho>dB` depois do `loudnorm` e mede de
+  novo. Sem laço e sem segunda correção. O render avisa em `warnings`:
+  `true peak do arquivo codificado X dBTP acima do limite −1 dBTP; ganho de G dB aplicado e áudio recodificado (agora Y dBTP, Z LUFS)`.
+- Ainda acima de −1 dBTP depois da correção, ou medição ausente/ilegível: falha com **`E_AUDIO_TRUE_PEAK`**
+  (`stage: "audio"`), com a medida na mensagem e o hint (baixar `data-volume`, reduzir o pico de origem ou usar
+  `--no-loudness`). Nunca entrega arquivo acima do limite em silêncio.
+- WebM: o mix já sai em Opus 128 kb/s (`audio.opus`) e o mux copia o stream (`-c:a copy`); não há mais AAC → Opus em
+  duas gerações, e a medida vale para o que vai ao arquivo. MP4: AAC 192 kb/s, copiado no mux.
+- Não mudam: mix silencioso (`áudio silencioso: loudnorm não aplicado`, sem medida de pico), `--no-loudness`
+  (`loudness: false`, mix cru sem garantia) e o WAV do preview (PCM, sem codec com perdas). O loudness integrado
+  segue alvo −14 LUFS; a correção tira no máximo o excesso de pico (o `Z LUFS` do aviso mostra o valor final).
 
 ## 9. Determinismo esperado do runtime
 

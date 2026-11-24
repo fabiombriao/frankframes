@@ -94,9 +94,10 @@ test("previewAudioKey: mesma entrada, mesma chave; o que entra no mix muda a cha
   assert.notEqual(previewAudioKey([BASE], 2, { "C:/x/a.wav": { size: 11, mtimeMs: 1000 } }), key, "tamanho do arquivo");
 });
 
-test("codecArgs: aac para o render, pcm_s16le para o preview", () => {
+test("codecArgs: aac (MP4) e opus (WebM) para o render, pcm_s16le para o preview", () => {
   assert.deepEqual(codecArgs("aac"), ["-c:a", "aac", "-b:a", "192k"]);
   assert.deepEqual(codecArgs("wav"), ["-c:a", "pcm_s16le"]);
+  assert.deepEqual(codecArgs("opus"), ["-c:a", "libopus", "-b:a", "128k"]);
 });
 
 test("renderPreviewAudio sem clips de áudio devolve null", async () => {

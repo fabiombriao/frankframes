@@ -8,6 +8,7 @@ import { readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
+import { DELIVERY_LOUDNESS, measureLoudness } from "../src/audio.ts";
 import { renderComposition } from "../src/render.ts";
 import { tempDir } from "../../../scripts/test-support/temp.ts";
 
@@ -124,6 +125,30 @@ test("vp9 com áudio gera WebM com Opus", { timeout: 600_000 }, async (t) => {
   const probe = await run(FFPROBE, ["-v", "error", "-show_entries", "stream=codec_name", "-of", "default=nw=1", outPath]);
   assert.match(probe.stdout, /codec_name=vp9/);
   assert.match(probe.stdout, /codec_name=opus/, "WebM não aceita AAC; o áudio precisa ser Opus");
+});
+
+test("WebM com picos entre amostras: o Opus entregue mede ≤ −1 dBTP e o render avisa a correção (EDT-90)", { timeout: 600_000 }, async (t) => {
+  if (!(await ffmpegAvailable())) return t.skip("ffmpeg/ffprobe não encontrados");
+
+  const workspace = await tempDir(t, "ff-e2e-peak-");
+  const entry = join(workspace, "index.html");
+  await writeFile(entry, COMPOSITION.replace('data-duration="1.5" data-volume="0.4"', 'data-duration="3" data-volume="1"'));
+  // Cliques sobre um tom: o Opus sobe o pico entre amostras e estoura −1 dBTP sem a correção (ver audio.test.ts).
+  await run(FFMPEG, [
+    "-hide_banner", "-loglevel", "error",
+    "-f", "lavfi", "-i", "aevalsrc='0.26*sin(2*PI*440*t)+0.9*lt(mod(t,0.1),0.00003)':s=48000:d=3",
+    "-ac", "2", "-ar", "48000", "-y", join(workspace, "beep.wav"),
+  ]);
+
+  const outPath = join(workspace, "picos.webm");
+  const result = await renderComposition({ entry, outPath, ffmpeg: FFMPEG, ffprobe: FFPROBE, codec: "vp9", preset: "draft", workers: 1 });
+  assert.ok(result.warnings.some((warning) => /true peak do arquivo codificado .* ganho de -\d+\.\d{2} dB aplicado/.test(warning)), JSON.stringify(result.warnings));
+
+  const probe = await run(FFPROBE, ["-v", "error", "-select_streams", "a:0", "-show_entries", "stream=codec_name", "-of", "default=nw=1", outPath]);
+  assert.match(probe.stdout, /codec_name=opus/);
+  const measured = await measureLoudness(FFMPEG, outPath);
+  assert.ok(measured !== null);
+  assert.ok(Number(measured.tp) <= DELIVERY_LOUDNESS.truePeakDbtp, `WebM entregue mede ${measured.tp} dBTP, limite ${DELIVERY_LOUDNESS.truePeakDbtp}`);
 });
 
 test("faixa em silêncio digital: o render termina com áudio e avisa que o loudnorm não foi aplicado", { timeout: 600_000 }, async (t) => {

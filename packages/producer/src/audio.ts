@@ -81,6 +81,28 @@ export interface GraphOptions {
   duck?: DuckOptions | false;
   loudness?: Loudness;
   measured?: MeasuredLoudness;
+  /** Ganho em dB aplicado DEPOIS do loudnorm (correção de true peak do arquivo codificado, EDT-90). */
+  postGainDb?: number;
+}
+
+/** Código do true peak do arquivo entregue (entra no `docs/reference/diagnostics.md` via RENDER_ERROR_CODES). */
+export const AUDIO_ERROR_CODES = ["E_AUDIO_TRUE_PEAK"] as const;
+
+/** O arquivo codificado ficou acima do limite de true peak e a correção única não resolveu (ou não deu para medir). */
+export class AudioTruePeakError extends Error {
+  readonly code: (typeof AUDIO_ERROR_CODES)[number] = "E_AUDIO_TRUE_PEAK";
+  readonly hint: string;
+  /** True peak medido no arquivo codificado (dBTP); `null` quando a medição não veio. */
+  readonly measuredDbtp: number | null;
+  readonly limitDbtp: number;
+
+  constructor(message: string, hint: string, measuredDbtp: number | null, limitDbtp: number) {
+    super(message);
+    this.name = "AudioTruePeakError";
+    this.hint = hint;
+    this.measuredDbtp = measuredDbtp;
+    this.limitDbtp = limitDbtp;
+  }
 }
 
 /** Monta `if(lt(t,...))` encadeado a partir de pontos ordenados (t, ganho). */
@@ -267,7 +289,8 @@ export function buildAudioGraph(
     const labels = clips.map((_, index) => `[a${index}]`).join("");
     lines.push(
       `${labels}amix=inputs=${clips.length}:duration=longest:dropout_transition=0:normalize=0,volume=${fmt(masterGain)},atrim=0:${fmt(total)},asetpts=PTS-STARTPTS` +
-        `${options.loudness === undefined ? "" : `,${loudnormFilter(options.loudness, options.measured)}`}[out]`,
+        `${options.loudness === undefined ? "" : `,${loudnormFilter(options.loudness, options.measured)}`}` +
+        `${options.loudness !== undefined && options.postGainDb !== undefined ? `,volume=${fmt(options.postGainDb)}dB` : ""}[out]`,
     );
   }
 
@@ -284,19 +307,97 @@ export interface MixOptions {
   duck?: DuckOptions | false;
   /** `false` entrega o mix cru, sem normalizar. */
   loudness?: Loudness | false;
-  /** `aac` (padrão, entrega) ou `wav` PCM 16 bits (preview: o navegador decodifica sem custo). */
+  /**
+   * `aac` (padrão, entrega MP4), `opus` (entrega WebM: o mix já sai em Opus e o mux só copia o stream) ou `wav`
+   * PCM 16 bits (preview: o navegador decodifica sem custo). Em `aac`/`opus` com loudness ligado, o true peak do
+   * ARQUIVO codificado é medido e garantido (EDT-90).
+   */
   format?: AudioFormat;
   /** Cancela o FFmpeg em andamento. */
   signal?: AbortSignal;
+  /** Só para teste: troca a medição do arquivo codificado (padrão: `measureLoudness` com o mesmo FFmpeg). */
+  measureEncoded?: (file: string, signal?: AbortSignal) => Promise<MeasuredLoudness | null>;
   /** Só para teste: troca a remoção do workspace (padrão: `rm` recursivo, sem force). */
   removeWorkspace?: (path: string) => Promise<void>;
 }
 
-export type AudioFormat = "aac" | "wav";
+export type AudioFormat = "aac" | "opus" | "wav";
 
 /** Argumentos de codec do mix final: o resto do grafo é idêntico entre render e preview. */
 export function codecArgs(format: AudioFormat): string[] {
-  return format === "wav" ? ["-c:a", "pcm_s16le"] : ["-c:a", "aac", "-b:a", "192k"];
+  if (format === "wav") return ["-c:a", "pcm_s16le"];
+  if (format === "opus") return ["-c:a", "libopus", "-b:a", "128k"];
+  return ["-c:a", "aac", "-b:a", "192k"];
+}
+
+/**
+ * Margem fixa (dB) abaixo do limite na correção de true peak: o re-encode não escala os picos de forma
+ * perfeitamente linear (o quantizador do AAC/Opus reage ao nível), e 0,2 dB cobre essa variação nos sinais testados (com 0,1 dB um sinal de teste ficou 0,03 dB acima).
+ * Fixa de propósito: nada de laço que vai apertando até passar.
+ */
+export const TRUE_PEAK_MARGIN_DB = 0.2;
+
+/** Ganho (dB, ≤ 0) que leva o pico medido ao limite menos a margem fixa. */
+export function truePeakCorrectionDb(measuredDbtp: number, limitDbtp: number): number {
+  return limitDbtp - measuredDbtp - TRUE_PEAK_MARGIN_DB;
+}
+
+const truePeakHint = "baixe o volume das faixas de áudio (data-volume), reduza o pico de origem ou renderize com --no-loudness";
+
+function peakOf(measured: MeasuredLoudness | null, limitDbtp: number, step: string): number {
+  if (measured === null) {
+    throw new AudioTruePeakError(
+      `não consegui medir o true peak do arquivo codificado (${step}); a garantia de ${limitDbtp} dBTP não pode ser confirmada`,
+      "rode `frankframes doctor` para conferir o FFmpeg e renderize de novo",
+      null,
+      limitDbtp,
+    );
+  }
+  const peak = /^-inf$/i.test(measured.tp.trim()) ? Number.NEGATIVE_INFINITY : Number(measured.tp);
+  if (Number.isNaN(peak)) {
+    throw new AudioTruePeakError(
+      `true peak ilegível na medição do arquivo codificado (${step}): "${measured.tp}"`,
+      "rode `frankframes doctor` para conferir o FFmpeg e renderize de novo",
+      null,
+      limitDbtp,
+    );
+  }
+  return peak;
+}
+
+/**
+ * Garante o true peak do arquivo codificado. Mede; se passar do limite, calcula o ganho pela medida,
+ * recodifica UMA vez (`reencode`) e mede de novo; se ainda passar, falha com `E_AUDIO_TRUE_PEAK`.
+ * Sem laço: no máximo uma recodificação e duas medições.
+ */
+export async function enforceTruePeak(args: {
+  limitDbtp: number;
+  measure: () => Promise<MeasuredLoudness | null>;
+  reencode: (gainDb: number) => Promise<void>;
+}): Promise<{ warnings: string[]; gainDb: number | null }> {
+  const { limitDbtp } = args;
+  const first = peakOf(await args.measure(), limitDbtp, "1ª medição");
+  if (first <= limitDbtp) return { warnings: [], gainDb: null };
+
+  const gainDb = truePeakCorrectionDb(first, limitDbtp);
+  await args.reencode(gainDb);
+  const secondMeasure = await args.measure();
+  const second = peakOf(secondMeasure, limitDbtp, "depois da correção");
+  if (second > limitDbtp) {
+    throw new AudioTruePeakError(
+      `true peak do arquivo codificado ${first.toFixed(2)} dBTP acima do limite ${limitDbtp} dBTP; depois do ganho de ${gainDb.toFixed(2)} dB e da recodificação ainda mede ${second.toFixed(2)} dBTP`,
+      truePeakHint,
+      second,
+      limitDbtp,
+    );
+  }
+  const lufs = secondMeasure !== null && Number.isFinite(Number(secondMeasure.i)) ? `, ${Number(secondMeasure.i).toFixed(1)} LUFS` : "";
+  return {
+    warnings: [
+      `true peak do arquivo codificado ${first.toFixed(2)} dBTP acima do limite ${limitDbtp} dBTP; ganho de ${gainDb.toFixed(2)} dB aplicado e áudio recodificado (agora ${second.toFixed(2)} dBTP${lufs})`,
+    ],
+    gainDb,
+  };
 }
 
 /** Mede o mix com `loudnorm` em modo análise. `null` quando o FFmpeg não devolve o JSON. */
@@ -413,20 +514,44 @@ export async function mixAudio(options: MixOptions): Promise<{ outPath: string; 
       ...(loudness !== undefined && normalize ? { loudness } : {}),
       ...(measured !== undefined ? { measured } : {}),
     });
-    const scriptPath = join(workspace, "filter.txt");
-    await writeFile(scriptPath, final.filter, "utf8");
-    await run(
-      options.ffmpeg,
-      [
-        "-hide_banner", "-loglevel", "error",
-        ...final.inputs.flatMap((input) => ["-i", input]),
-        scriptOption, scriptPath,
-        "-map", "[out]", "-vn", "-ac", "2", "-ar", String(sampleRate),
-        ...codecArgs(options.format ?? "aac"), "-y", options.outPath,
-      ],
-      { maxBuffer: 16 << 20, ...signalOption },
-    );
-    result = { outPath: options.outPath, warnings: [...initial.warnings, ...final.warnings] };
+    const format = options.format ?? "aac";
+    const encode = async (graph: AudioGraph, scriptName: string): Promise<void> => {
+      const scriptPath = join(workspace, scriptName);
+      await writeFile(scriptPath, graph.filter, "utf8");
+      await run(
+        options.ffmpeg,
+        [
+          "-hide_banner", "-loglevel", "error",
+          ...graph.inputs.flatMap((input) => ["-i", input]),
+          scriptOption, scriptPath,
+          "-map", "[out]", "-vn", "-ac", "2", "-ar", String(sampleRate),
+          ...codecArgs(format), "-y", options.outPath,
+        ],
+        { maxBuffer: 16 << 20, ...signalOption },
+      );
+    };
+    await encode(final, "filter.txt");
+    const warnings = [...initial.warnings, ...final.warnings];
+
+    // EDT-90: o loudnorm limita o PCM; o AAC/Opus sobe os picos entre amostras. A garantia vale para o arquivo entregue.
+    if (loudness !== undefined && normalize && format !== "wav") {
+      const measureEncoded = options.measureEncoded ?? ((file: string, signal?: AbortSignal) => measureLoudness(options.ffmpeg, file, signal));
+      const guard = await enforceTruePeak({
+        limitDbtp: loudness.truePeakDbtp,
+        measure: () => measureEncoded(options.outPath, options.signal),
+        reencode: async (gainDb) => {
+          const corrected = buildAudioGraph(options.clips, options.totalSeconds, options.masterGain ?? 1, {
+            duck: options.duck,
+            loudness,
+            ...(measured !== undefined ? { measured } : {}),
+            postGainDb: gainDb,
+          });
+          await encode(corrected, "filter-corrected.txt");
+        },
+      });
+      warnings.push(...guard.warnings);
+    }
+    result = { outPath: options.outPath, warnings };
     return result;
   } finally {
     try {
