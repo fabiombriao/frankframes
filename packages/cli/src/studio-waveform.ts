@@ -1,10 +1,10 @@
 // FrankFrames — proprietário. Ver LICENSE na raiz.
 import { spawn } from "node:child_process";
 import type { ChildProcessByStdio } from "node:child_process";
-import { mkdir, readFile, rename, stat, unlink, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import type { Readable } from "node:stream";
-import { assetPath, fileDigest } from "@frankframes/engine";
+import { assetPath, fileDigest, warnCleanup } from "@frankframes/engine";
 
 /** Picos de 10 ms: 8000 amostras/s ÷ 80 amostras por pico. */
 const SAMPLE_RATE = 8000;
@@ -166,7 +166,8 @@ async function writeCache(path: string, waveform: Waveform): Promise<void> {
     await writeFile(tmp, JSON.stringify(waveform), "utf8");
     await rename(tmp, path);
   } catch (error) {
-    await unlink(tmp).catch(() => undefined);
+    // force: o tmp pode não existir (o writeFile falhou antes de criá-lo); outras falhas aparecem no stderr.
+    await rm(tmp, { force: true }).catch((cleanupError: unknown) => warnCleanup(tmp, cleanupError));
     throw new WaveformError("E_WAVEFORM_FAILED", `não foi possível gravar o cache de waveform: ${(error as Error).message}`, "confira o espaço e a permissão da pasta cache/waveform");
   }
 }

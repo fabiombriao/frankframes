@@ -1,10 +1,11 @@
 // FrankFrames — proprietário. Ver LICENSE na raiz.
 import { createServer } from "node:http";
-import { readdir, readFile, stat } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import { extname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { assetPath, injectEngine } from "@frankframes/engine";
 import { prepare } from "@frankframes/producer";
+import { statIfPresent } from "./fs-util.ts";
 import type { PreparedComposition } from "@frankframes/producer";
 import type { IncomingMessage, ServerResponse } from "node:http";
 
@@ -168,7 +169,7 @@ async function sendFile(res: ServerResponse, base: string, relative: string): Pr
     send(res, 403, "acesso negado\n", "text/plain; charset=utf-8");
     return true;
   }
-  const info = await stat(target).catch(() => undefined);
+  const info = await statIfPresent(target);
   if (info === undefined || !info.isFile()) return false;
   const body = await readFile(target);
   send(res, 200, body, MIME[extname(target).toLowerCase()] ?? "application/octet-stream");
@@ -196,6 +197,7 @@ export async function startGallery(options: { root?: string; port?: number } = {
   async function mediaDirs(): Promise<string[]> {
     const dirs: string[] = [];
     for (const pending of prepared.values()) {
+      // ignora-erro: a falha do preparo já chega a quem aguardou este mesmo pending e load() já tirou o item do cache
       const result = await pending.catch(() => undefined);
       if (result?.mediaDir !== undefined) dirs.push(resolve(result.mediaDir));
     }
@@ -254,7 +256,7 @@ export async function startGallery(options: { root?: string; port?: number } = {
         send(res, 403, "acesso negado\n", "text/plain; charset=utf-8");
         return;
       }
-      const info = await stat(file).catch(() => undefined);
+      const info = await statIfPresent(file);
       if (info === undefined || !info.isFile()) {
         send(res, 404, "thumb não encontrada\n", "text/plain; charset=utf-8");
         return;
@@ -275,7 +277,7 @@ export async function startGallery(options: { root?: string; port?: number } = {
         send(res, 403, "acesso negado\n", "text/plain; charset=utf-8");
         return;
       }
-      const info = await stat(entry).catch(() => undefined);
+      const info = await statIfPresent(entry);
       if (info === undefined || !info.isFile()) {
         send(res, 404, "bloco não encontrado\n", "text/plain; charset=utf-8");
         return;
@@ -300,8 +302,8 @@ export async function startGallery(options: { root?: string; port?: number } = {
   }
 
   const server = createServer((req, res) => {
-    handle(req, res).catch(() => {
-      if (!res.headersSent) send(res, 500, "erro interno\n", "text/plain; charset=utf-8");
+    handle(req, res).catch((error: unknown) => {
+      if (!res.headersSent) send(res, 500, `erro interno: ${error instanceof Error ? error.message : String(error)}\n`, "text/plain; charset=utf-8");
       else res.end();
     });
   });

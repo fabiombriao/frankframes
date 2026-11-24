@@ -286,3 +286,25 @@ test("sem --keep nenhum PNG vai para o disco; com keepWorkDir os frames também 
     await rm(kept.workDir, { recursive: true, force: false });
   }
 });
+
+test("--keep guarda a pasta de trabalho também depois que o processo sai (o handler de exit não a apaga)", { timeout: 600_000 }, async (t) => {
+  if (!(await ffmpegAvailable())) return t.skip("ffmpeg/ffprobe não encontrados");
+
+  const { workspace, entry } = await cancelWorkspace(t, "ff-e2e-keep-exit-");
+  const renderUrl = new URL("../src/render.ts", import.meta.url).href;
+  // Processo separado: o handler de `exit` só dispara quando ele termina.
+  const script = `
+    import { renderComposition } from ${JSON.stringify(renderUrl)};
+    const r = await renderComposition({ entry: ${JSON.stringify(entry)}, outPath: ${JSON.stringify(join(workspace, "keep-exit.mp4"))},
+      ffmpeg: ${JSON.stringify(FFMPEG)}, ffprobe: ${JSON.stringify(FFPROBE)}, codec: "av1", preset: "draft", workers: 1, keepWorkDir: true });
+    console.log("WORKDIR=" + r.workDir);
+  `;
+  const child = await run(process.execPath, ["--input-type=module", "-e", script], { timeout: 300_000 });
+  const workDir = /^WORKDIR=(.+)$/m.exec(child.stdout)?.[1]?.trim();
+  assert.ok(workDir !== undefined, `o processo filho não informou o workDir: ${child.stdout}${child.stderr}`);
+  try {
+    assert.ok((await stat(join(workDir, "frames"))).isDirectory(), "a pasta guardada com --keep sumiu quando o processo saiu");
+  } finally {
+    await rm(workDir, { recursive: true, force: false });
+  }
+});

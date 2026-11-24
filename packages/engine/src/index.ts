@@ -32,3 +32,4 @@ export type { BrowserErrorCode, ClassifiedFailure, FailureKind } from "./failure
 export { openSession, openSessionFor } from "./capture.ts";
 export { browserSignalOptions, setHostOwnsSignals } from "./signals.ts";
 export type { Session, SessionOptions, SessionTimeouts } from "./capture.ts";
+export { cleanupWarning, removeOrWarn, removeTree, warnCleanup } from "./cleanup.ts";

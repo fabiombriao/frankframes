@@ -1,10 +1,10 @@
 // FrankFrames — proprietário. Ver LICENSE na raiz.
 import { execFile } from "node:child_process";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { promisify } from "node:util";
-import { assetPath, openSession, resolveChrome, startServer } from "@frankframes/engine";
+import { assetPath, openSession, removeOrWarn, resolveChrome, startServer } from "@frankframes/engine";
 import type { Session } from "@frankframes/engine";
 import type { GpuMode } from "@frankframes/engine";
 import { prepare } from "./render.ts";
@@ -135,6 +135,7 @@ export async function psnr(a: Buffer, b: Buffer): Promise<number> {
     if (match === null) throw new Error(`psnr: FFmpeg não devolveu a média: ${result.stderr.slice(-300)}`);
     return match[1] === "inf" ? Infinity : Number(match[1]);
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    // O PSNR já está calculado: falha ao remover vira aviso no stderr e não troca o erro do corpo.
+    await removeOrWarn(dir);
   }
 }

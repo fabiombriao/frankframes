@@ -9,12 +9,12 @@
  */
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { access, copyFile, mkdir, mkdtemp, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
+import { access, copyFile, mkdir, mkdtemp, readFile, readdir, rename, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import { FONT_CATALOG, PINNED_BROWSER, assetHome, checkPinnedBrowser, fileSha256, fontFileName } from "@frankframes/engine";
+import { FONT_CATALOG, PINNED_BROWSER, assetHome, checkPinnedBrowser, cleanupWarning, fileSha256, fontFileName, removeOrWarn, removeTree } from "@frankframes/engine";
 import { FFMPEG_BUILD } from "@frankframes/encode";
 
 const run = promisify(execFile);
@@ -39,7 +39,8 @@ async function download(url: string, destination: string, validate?: (bytes: Buf
   try {
     validate?.(bytes);
   } catch (error) {
-    await rm(staging, { force: true });
+    // O staging acabou de ser escrito, então sumir seria erro: sem force. Se a remoção falhar, aviso no stderr e a falha de validação sobe.
+    await removeOrWarn(staging, { recursive: false });
     throw error;
   }
   await rename(staging, destination);
@@ -69,14 +70,16 @@ export async function ensureFonts(options: { check?: boolean } = {}): Promise<St
   if (options.check === true) return { name: "fontes", state: "ausente", detail: `${missing.length} arquivo(s) faltando em ${dir}` };
 
   let bytes = 0;
+  // A licença OFL não bloqueia o render, mas a falha não some: vai para o detail do passo.
+  const licenseFailures: string[] = [];
   for (const family of FONT_CATALOG) {
     if (!present.has(`OFL-${family.slug}.txt`) && !missing.some((item) => item.pkg === family.pkg)) continue;
     const license = `OFL-${family.slug}.txt`;
     if (!present.has(license)) {
       try {
         bytes += await download(`https://cdn.jsdelivr.net/npm/@fontsource/${family.pkg}@${FONT_VERSION}/LICENSE`, join(dir, license));
-      } catch {
-        /* licença é opcional para o render */
+      } catch (error) {
+        licenseFailures.push(`${license}: ${(error as Error).message}`);
       }
     }
   }
@@ -86,7 +89,8 @@ export async function ensureFonts(options: { check?: boolean } = {}): Promise<St
       if (buffer.subarray(0, 4).toString("latin1") !== "wOF2") throw new Error(`${item.file} não é woff2`);
     });
   }
-  return { name: "fontes", state: "instalado", detail: `${missing.length} arquivo(s), ${(bytes / 1024).toFixed(0)} KB` };
+  const warning = licenseFailures.length > 0 ? `; aviso: ${licenseFailures.length} licença(s) OFL não baixada(s) (${licenseFailures.join("; ")})` : "";
+  return { name: "fontes", state: "instalado", detail: `${missing.length} arquivo(s), ${(bytes / 1024).toFixed(0)} KB${warning}` };
 }
 
 /** FFmpeg LGPL pinado, com licença e oferta de fonte. */
@@ -106,12 +110,15 @@ export async function ensureFfmpeg(options: { check?: boolean } = {}): Promise<S
     if (options.check === true) {
       return { name: "ffmpeg", state: "falhou", detail: `binário não confere com o manifesto (${digest.slice(0, 16)}…); rode \`frankframes setup\`` };
     }
-    await rm(join(dir, "bin"), { recursive: true, force: true });
+    // O setup segue dependendo desta remoção para reinstalar: se falhar, é erro com o caminho (sem force; o binário existe).
+    const stale = await removeTree(join(dir, "bin"));
+    if (stale !== undefined) throw new Error(`binário que não confere em ${join(dir, "bin")} e não consegui removê-lo: ${stale.message}`);
   }
   if (options.check === true) return { name: "ffmpeg", state: "ausente", detail: `rode \`frankframes setup\`` };
 
   await mkdir(join(dir, "bin"), { recursive: true });
   const work = await mkdtemp(join(tmpdir(), "ff-vendor-"));
+  let result: StepResult;
   try {
     const archive = join(work, FFMPEG_BUILD.archive);
     const bytes = await download(FFMPEG_BUILD.url, archive);
@@ -155,10 +162,15 @@ export async function ensureFfmpeg(options: { check?: boolean } = {}): Promise<S
         "O FrankFrames executa o FFmpeg como processo separado; nada é linkado.",
       ].join("\n"),
     );
-    return { name: "ffmpeg", state: "instalado", detail: `${FFMPEG_BUILD.version}, ${(bytes / 1024 / 1024).toFixed(0)} MB` };
-  } finally {
-    await rm(work, { recursive: true, force: true });
+    result = { name: "ffmpeg", state: "instalado", detail: `${FFMPEG_BUILD.version}, ${(bytes / 1024 / 1024).toFixed(0)} MB` };
+  } catch (error) {
+    // O corpo falhou: a limpeza que falhar vai para o stderr e o erro original sobe intacto.
+    await removeOrWarn(work);
+    throw error;
   }
+  // Instalou, mas o temporário não saiu: o aviso vai no detail (o passo continua "instalado").
+  const leftover = await removeTree(work);
+  return leftover === undefined ? result : { ...result, detail: `${result.detail}; aviso: ${cleanupWarning(work, leftover)}` };
 }
 
 /** Shell headless pinado por digest. */

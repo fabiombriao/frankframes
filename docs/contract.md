@@ -600,6 +600,12 @@ andamento, derruba os workers de captura (as sessões do Chrome fecham), apaga t
 `E_CANCELED` no estágio em que estava; qualquer falha depois do abort vira `E_CANCELED`. `E_CANCELED` é código de
 render e não é repetido.
 
+**Limpeza nunca é engolida (EDT-83).** Temporários (`ff-render-*`, o workspace `ff-audio-*` do mix) saem em `finally`, sem
+`force`. Se o render ou o mix já terminou e a remoção falha (Windows: `EBUSY`), o resultado vale e o aviso
+`não consegui remover <caminho>: <motivo>` entra em `warnings`; se o corpo já tinha falhado, o aviso vai para o
+stderr com o prefixo `[frankframes]` e o erro original sobe intacto. `--keep` guarda a pasta de trabalho também
+depois que o processo sai.
+
 **Captura e encode andam juntos (EDT-62, H2+H3).** Os frames não vão para o disco: cada worker de captura entrega o
 PNG a um reordenador de buffer limitado (`orderedFeeder`, janela de `max(2, workers)` lotes de 8 frames, com
 backpressure) e ele empurra os frames **em ordem** para a entrada do FFmpeg (`-f image2pipe -c:v png -i -`) enquanto

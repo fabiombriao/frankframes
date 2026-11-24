@@ -2,6 +2,7 @@
 import { createHash } from "node:crypto";
 import { createServer } from "node:http";
 import { copyFile, mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
+import { statIfPresent } from "./fs-util.ts";
 import { extname, isAbsolute, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { IncomingMessage, ServerResponse } from "node:http";
@@ -113,7 +114,7 @@ export async function publishCatalog(destination: string): Promise<{ files: numb
     await mkdir(outputDir, { recursive: true });
     for (const file of FILES) {
       const source = join(blockDir, file);
-      const info = await stat(source).catch(() => undefined);
+      const info = await statIfPresent(source);
       if (!info?.isFile()) throw new Error(`${entry.slug}: arquivo obrigatório ausente no bloco: ${file}`);
       await copyFile(source, join(outputDir, file));
       files += 1;
@@ -188,8 +189,8 @@ export interface CatalogServer {
 export async function serveCatalog(root: string, port = 0): Promise<CatalogServer> {
   const base = resolve(root);
   const server = createServer((req, res) => {
-    handle(base, req, res).catch(() => {
-      if (!res.headersSent) send(res, 500, "erro interno\n", "text/plain; charset=utf-8");
+    handle(base, req, res).catch((error: unknown) => {
+      if (!res.headersSent) send(res, 500, `erro interno: ${error instanceof Error ? error.message : String(error)}\n`, "text/plain; charset=utf-8");
       else res.end();
     });
   });

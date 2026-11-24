@@ -1,7 +1,8 @@
 // FrankFrames — proprietário. Ver LICENSE na raiz.
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, rename, rm, stat } from "node:fs/promises";
+import { mkdir, rename, stat } from "node:fs/promises";
 import { join, relative, resolve } from "node:path";
+import { removeOrWarn } from "@frankframes/engine";
 import { DEFAULT_DUCK, DELIVERY_LOUDNESS, mixAudio } from "./audio.ts";
 import type { AudioClip } from "./audio.ts";
 import { timedClips } from "./render.ts";
@@ -145,7 +146,9 @@ export async function renderPreviewAudio(
     await rename(partial, file);
     return { key, file, cached: false, warnings: mixed.warnings };
   } catch (error) {
-    await rm(partial, { force: true });
+    // missingOk: o mix pode ter falhado antes de criar o arquivo (ENOENT esperado). Outra falha de remoção vai ao
+    // stderr e não troca o erro do mix.
+    await removeOrWarn(partial, { recursive: false, missingOk: true });
     if (error instanceof PreviewAudioError) throw error;
     const cancelled = options.signal?.aborted === true;
     const stderr = String((error as { stderr?: string }).stderr ?? "").trim();

@@ -625,7 +625,10 @@ async function main(): Promise<void> {
       if (timer.handle) clearTimeout(timer.handle);
       void server
         .close()
-        .catch(() => {})
+        .catch((error: unknown) => {
+          // Falha ao fechar não impede o encerramento, mas aparece.
+          process.stderr.write(`[frankframes] falha ao fechar o servidor: ${error instanceof Error ? error.message : String(error)}\n`);
+        })
         .finally(() => stop.resolve(code));
     };
     process.on("SIGINT", () => shutdown(0));

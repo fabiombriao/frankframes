@@ -26,14 +26,26 @@ export function decideUpgrade(current: string, latest: string | null): UpgradeDe
   return "atualizado";
 }
 
-async function latestPublished(): Promise<string | null> {
-  const response = await fetch("https://registry.npmjs.org/@frankframes%2Fcli/latest", {
-    headers: { accept: "application/json" },
-  }).catch(() => null);
-  if (response === null || response.status === 404) return null;
+const REGISTRY_URL = "https://registry.npmjs.org/@frankframes%2Fcli/latest";
+
+/**
+ * Última versão no npm. `null` só quando o registro diz 404 (pacote ainda não publicado). Falha de rede, HTTP de
+ * erro ou resposta sem versão lançam: "não consegui perguntar" não pode virar "não publicado".
+ */
+export async function latestPublished(fetchImpl: typeof fetch = fetch): Promise<string | null> {
+  let response: Response;
+  try {
+    response = await fetchImpl(REGISTRY_URL, { headers: { accept: "application/json" } });
+  } catch (error) {
+    const cause = (error as Error).cause;
+    const detail = cause instanceof Error ? `${(error as Error).message} (${cause.message})` : (error as Error).message;
+    throw new Error(`sem resposta do registro npm (${REGISTRY_URL}): ${detail}; confira a conexão ou o proxy e tente de novo`);
+  }
+  if (response.status === 404) return null;
   if (!response.ok) throw new Error(`registro npm respondeu HTTP ${response.status}`);
   const body = (await response.json()) as { version?: string };
-  return body.version ?? null;
+  if (typeof body.version !== "string") throw new Error("registro npm respondeu sem o campo version");
+  return body.version;
 }
 
 export async function runUpgrade(options: { apply: boolean }): Promise<number> {

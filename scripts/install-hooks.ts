@@ -9,5 +9,5 @@ const hooks = join(root, ".git", "hooks");
 await mkdir(hooks, { recursive: true });
 const hook = join(hooks, "pre-push");
 await writeFile(hook, "#!/bin/sh\nset -e\nexec node scripts/ci.ts --fast\n");
-await chmod(hook, 0o755).catch(() => {});
+await chmod(hook, 0o755);
 process.stdout.write(`hook instalado: ${hook}\n`);

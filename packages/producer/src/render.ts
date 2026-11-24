@@ -1,7 +1,7 @@
 // FrankFrames — proprietário. Ver LICENSE na raiz.
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rename, writeFile } from "node:fs/promises";
 import { rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, extname, join, resolve } from "node:path";
@@ -10,7 +10,7 @@ import { loadComposition } from "@frankframes/contract";
 import type { Composition, Diagnostic, RawClip, ResolvedClip } from "@frankframes/contract";
 import { buildFramePipeArgs, buildMuxArgs, containerFor } from "@frankframes/encode";
 import type { Preset, VideoCodec } from "@frankframes/encode";
-import { BrowserError, assetPath, captureFramesInParallel, defaultWorkerCount, extractFramesCached, probeDuration, reorderWindow, retryOnceIfTransient, startServer } from "@frankframes/engine";
+import { BrowserError, assetPath, captureFramesInParallel, cleanupWarning, defaultWorkerCount, extractFramesCached, probeDuration, removeTree, reorderWindow, retryOnceIfTransient, startServer, warnCleanup } from "@frankframes/engine";
 import type { MediaManifest } from "@frankframes/engine";
 import { annotateCompiled, materializeClipIds, mergeSubCompositions } from "./compile.ts";
 import { resolveFfmpeg } from "./ffmpeg.ts";
@@ -382,11 +382,17 @@ async function renderPipeline(
 
   // Ctrl+C não executa `finally`: o handler de exit remove o diretório de frames e a saída parcial.
   const cleanup = (): void => {
+    // force:true: ENOENT é esperado aqui (o finally normal ou o rename final já podem ter removido). Outra falha
+    // vai para o stderr com o caminho; num handler de exit não há mais para onde propagar.
     try {
       rmSync(workDir, { recursive: true, force: true });
+    } catch (error) {
+      warnCleanup(workDir, error);
+    }
+    try {
       rmSync(partialPath, { force: true });
-    } catch {
-      /* já removido */
+    } catch (error) {
+      warnCleanup(partialPath, error);
     }
   };
   process.once("exit", cleanup);
@@ -394,6 +400,7 @@ async function renderPipeline(
   // O FFmpeg do encode por pipe: precisa estar morto antes de o diretório de trabalho ser removido (no Windows,
   // arquivo aberto não se apaga).
   let encoding: EncodeRun<Map<number, string>> | undefined;
+  let completed = false;
   try {
     // Encode enquanto captura: os PNGs vão direto para o stdin do FFmpeg, sem passar por disco.
     // Só com `keepWorkDir` (--keep) eles também são gravados em `frames/`, para inspeção.
@@ -500,11 +507,14 @@ async function renderPipeline(
       await publishOutput(partialPath, outPath);
     } catch (error) {
       // Falha ou cancelamento nunca deixa `.partial` nem toca num arquivo antigo; o erro segue para o chamador.
-      await rm(partialPath, { force: true }).catch(() => undefined);
+      // force:true: o .partial pode nem ter sido criado. Falha de remoção vai ao stderr e não troca o erro original.
+      const removal = await removeTree(partialPath, { recursive: false, missingOk: true });
+      if (removal !== undefined) warnCleanup(partialPath, removal);
       throw error;
     }
     progress("assemble", 100, outPath);
 
+    completed = true;
     return {
       outPath,
       frames: totalFrames,
@@ -518,9 +528,17 @@ async function renderPipeline(
     };
   } finally {
     await encoding?.kill();
+    // Chegou ao finally: o handler de exit (só para Ctrl+C) acabou. Com --keep ele também não pode ficar, senão apaga
+    // a pasta guardada quando o processo sai.
+    process.removeListener("exit", cleanup);
     if (options.keepWorkDir !== true) {
-      process.removeListener("exit", cleanup);
-      await rm(workDir, { recursive: true, force: true });
+      // O render já terminou: falha ao remover o workDir não derruba o resultado. Com sucesso vira item em
+      // `warnings` (o mesmo array devolvido); com o corpo falho vai ao stderr e o erro original sobe.
+      const removal = await removeTree(workDir);
+      if (removal !== undefined) {
+        if (completed) warnings.push(cleanupWarning(workDir, removal));
+        else warnCleanup(workDir, removal);
+      }
     }
   }
 }

@@ -2,7 +2,7 @@
 import { after, before, test } from "node:test";
 import type { TestContext } from "node:test";
 import assert from "node:assert/strict";
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { mkdir, mkdtemp, readdir, rm, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -216,4 +216,39 @@ test("cancelamentos em paralelo, com o FFmpeg escrevendo, não deixam .tmp- nem 
     await Promise.all(Array.from({ length: 12 }, (_, i) => cancelOne(round * 12 + i)));
   }
   assert.deepEqual(await readdir(cacheRoot), [], "nada sobra no cache depois de todos os cancelamentos");
+});
+
+test("evicção: remoção que falha avisa no stderr com o caminho e não conta como removida (EDT-83)", async (t) => {
+  // Falha de remoção portátil não existe: no Windows um diretório que é o cwd de um processo vivo dá EBUSY.
+  // Em POSIX seria preciso chmod/root, que varia entre ambientes; fica sem teste lá, de forma explícita.
+  if (process.platform !== "win32") return t.skip("simulação de falha de remoção só implementada para Windows (cwd de processo vivo)");
+  const root = await tempDir(t, "ff-evict-falha-");
+  for (const [name, seconds] of [["preso", 1_000_000], ["livre", 1_100_000]] as const) {
+    await mkdir(join(root, name), { recursive: true });
+    await writeFile(join(root, name, "frame.jpg"), Buffer.alloc(4096));
+    await utimes(join(root, name), new Date(seconds * 1000), new Date(seconds * 1000));
+  }
+  const holder = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { cwd: join(root, "preso"), stdio: "ignore" });
+  await new Promise((resolve) => setTimeout(resolve, 500));
+
+  const original = process.stderr.write;
+  let stderr = "";
+  process.stderr.write = ((chunk: string | Uint8Array): boolean => {
+    stderr += String(chunk);
+    return true;
+  }) as typeof process.stderr.write;
+  let removed: number;
+  try {
+    removed = await evictCache(root, 4096);
+  } finally {
+    process.stderr.write = original;
+    // O processo solta o diretório antes de o `tempDir` apagá-lo (os hooks `t.after` rodam na ordem de registro).
+    holder.kill();
+    await new Promise((resolve) => holder.once("exit", resolve));
+  }
+
+  // O mais antigo ("preso") não saiu: não conta nem desconta; a evicção segue e tira o "livre".
+  assert.equal(removed, 1);
+  assert.deepEqual(await readdir(root), ["preso"]);
+  assert.ok(stderr.includes("[frankframes] não consegui remover") && stderr.includes(join(root, "preso")), `stderr sem aviso com o caminho: ${JSON.stringify(stderr)}`);
 });

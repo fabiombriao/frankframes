@@ -1,7 +1,8 @@
 // FrankFrames — proprietário. Ver LICENSE na raiz.
 import { watch } from "node:fs";
 import type { FSWatcher } from "node:fs";
-import { readFile, rename, stat, unlink, writeFile } from "node:fs/promises";
+import { readFile, rename, rm, stat, unlink, writeFile } from "node:fs/promises";
+import { statIfPresent } from "./fs-util.ts";
 import { createServer } from "node:http";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
@@ -9,7 +10,7 @@ import { basename, dirname, extname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describePresets, listPresets, loadComposition, parseComposition, parseMotionValue } from "@frankframes/contract";
 import type { MotionKind, MotionSource, ResolvedClip } from "@frankframes/contract";
-import { assetPath, injectEngine, probeDuration } from "@frankframes/engine";
+import { assetPath, injectEngine, probeDuration, warnCleanup } from "@frankframes/engine";
 import type { PreviewAudioConfig } from "@frankframes/engine";
 import {
   applyPatches,
@@ -342,6 +343,7 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
   /** Uma escrita por vez: leitura-modificação-escrita do mesmo arquivo não pode intercalar. */
   const serial = <T>(task: () => Promise<T>): Promise<T> => {
     const run = mutations.then(task, task);
+    // ignora-erro: o erro volta a quem chamou por `run` (retornado); aqui só a fila segue para a próxima escrita
     mutations = run.catch(() => undefined);
     return run;
   };
@@ -391,7 +393,8 @@ data: ${JSON.stringify(job)}
       await writeFile(tmp, content, "utf8");
       await rename(tmp, target);
     } catch (error) {
-      await unlink(tmp).catch(() => undefined);
+      // force: o tmp pode não existir (o writeFile falhou antes de criá-lo); outras falhas aparecem no stderr.
+      await rm(tmp, { force: true }).catch((cleanupError: unknown) => warnCleanup(tmp, cleanupError));
       throw error;
     }
   };
@@ -485,7 +488,7 @@ data: ${JSON.stringify(job)}
       send(res, 403, "fora da raiz\n", "text/plain; charset=utf-8");
       return;
     }
-    const info = await stat(target).catch(() => undefined);
+    const info = await statIfPresent(target);
     if (info === undefined || !info.isFile()) {
       send(res, 404, "não encontrado\n", "text/plain; charset=utf-8");
       return;

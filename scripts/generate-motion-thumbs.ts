@@ -13,7 +13,7 @@ import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import { openSession, startServer } from "@frankframes/engine";
+import { openSession, removeOrWarn, startServer } from "@frankframes/engine";
 import type { Session } from "@frankframes/engine";
 import { listPresets } from "@frankframes/contract";
 import type { PresetDef } from "@frankframes/contract";
@@ -211,7 +211,7 @@ const presets = listPresets();
 const only = process.argv[2];
 const selected = only === undefined ? presets : presets.filter((p) => p.kind === only || p.name === only);
 if (selected.length === 0) throw new Error(`nenhum preset com tipo ou nome "${only}"`);
-const work = await mkdtemp(join(tmpdir(), "frankframes-motion-thumbs-"));
+const work = await mkdtemp(join(tmpdir(), "ff-motion-thumbs-"));
 try {
   await mkdir(target, { recursive: true });
   const { ffmpeg } = await resolveFfmpeg();
@@ -231,5 +231,5 @@ try {
   const total = results.reduce((sum, r) => sum + r.bytes, 0);
   process.stdout.write(`${selected.length} miniaturas · ${(total / 1024).toFixed(0)} KB no total\n`);
 } finally {
-  await rm(work, { recursive: true, force: true });
+  await removeOrWarn(work);
 }

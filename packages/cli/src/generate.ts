@@ -2,6 +2,7 @@
 import { existsSync } from "node:fs";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
+import { cleanupWarning, removeOrWarn, removeTree } from "@frankframes/engine";
 import { RenderError, inspectFrames, renderComposition, resolveFfmpeg } from "@frankframes/producer";
 import type { FramesReport, RenderOptions, RenderResult } from "@frankframes/producer";
 import { buildContextDir, buildPrompt, checkGeneratedHtml, validateRequest, writeRepairFiles } from "./generate-context.ts";
@@ -138,9 +139,16 @@ export async function runGenerate(options: GenerateOptions): Promise<GenerateRep
   const attempts: AttemptRecord[] = [];
   const formatInfo = { width: options.format.width, height: options.format.height, fps: options.format.fps };
   let wroteEntry = false;
+  let contextReleased = false;
+  // Apaga a pasta de contexto (criada por nós: sem force). Devolve a falha para quem decide virar aviso.
+  const releaseContext = async (): Promise<Error | undefined> => {
+    contextReleased = true;
+    return options.keepContext ? undefined : await removeTree(context.dir);
+  };
 
   const exhausted = async (failure: GenerateError): Promise<never> => {
     // Sem entrega: não deixa `index.html`/`draft.mp4` de uma tentativa que não passou.
+    // force: index.html e draft.mp4 podem não existir (a tentativa pode ter falhado antes de gravar/renderizar); ENOENT é esperado.
     if (wroteEntry) {
       await rm(entry, { force: true });
       await rm(draft, { force: true });
@@ -245,6 +253,9 @@ export async function runGenerate(options: GenerateOptions): Promise<GenerateRep
       }
 
       if (delivered) {
+        // A pasta de contexto sai antes de gravar o relatório: se não sair, o aviso entra em `warnings` (e em generate.json).
+        const leftover = await releaseContext();
+        const cleanup: GenerateDiagnostic[] = leftover === undefined ? [] : [{ code: "W_GEN_CLEANUP", severity: "warning", message: cleanupWarning(context.dir, leftover), hint: "apague a pasta à mão" }];
         diagnostics = [...diagnostics, ...blankDiagnostics];
         attempts.push({ n, ms, ok: true, diagnostics });
         emit({ kind: "attempt-end", n, ms, ok: true, diagnostics });
@@ -257,7 +268,7 @@ export async function runGenerate(options: GenerateOptions): Promise<GenerateRep
           entry,
           render: rendered !== undefined ? { outPath: rendered.result.outPath, frames: rendered.result.frames, durationSeconds: rendered.result.durationSeconds } : null,
           frames: rendered?.report.frames.map((f) => ({ t: f.t, uniform: f.uniform, meanLuma: f.meanLuma, png: f.png })) ?? [],
-          warnings: blankDiagnostics,
+          warnings: [...blankDiagnostics, ...cleanup],
           ...(options.keepContext ? { contextDir: context.dir } : {}),
         };
         await writeReport(outDir, report);
@@ -281,6 +292,7 @@ export async function runGenerate(options: GenerateOptions): Promise<GenerateRep
       ),
     );
   } finally {
-    if (!options.keepContext) await rm(context.dir, { recursive: true, force: true });
+    // Falha/esgotamento: a remoção que falhar vai para o stderr e o erro original sobe intacto.
+    if (!contextReleased && !options.keepContext) await removeOrWarn(context.dir);
   }
 }

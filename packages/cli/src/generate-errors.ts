@@ -13,8 +13,8 @@ export const GENERATE_ERROR_CODES = [
 ] as const;
 export type GenerateCode = (typeof GENERATE_ERROR_CODES)[number];
 
-/** Diagnósticos de reparo: não encerram o comando, voltam ao agente na tentativa seguinte. */
-export const GENERATE_REPAIR_CODES = ["E_GEN_FORBIDDEN", "E_GEN_FORMAT_MISMATCH", "E_GEN_DURATION_MISMATCH", "W_GEN_FRAME_BLANK", "E_CODEX_OUTPUT"] as const;
+/** Diagnósticos que não encerram o comando: os de reparo voltam ao agente na tentativa seguinte; `W_GEN_CLEANUP` só avisa. */
+export const GENERATE_REPAIR_CODES = ["E_GEN_FORBIDDEN", "E_GEN_FORMAT_MISMATCH", "E_GEN_DURATION_MISMATCH", "W_GEN_FRAME_BLANK", "W_GEN_CLEANUP", "E_CODEX_OUTPUT"] as const;
 
 /** Diagnóstico de uma tentativa (mesma forma do `lint --json`, para o agente ler um só formato). */
 export interface GenerateDiagnostic {

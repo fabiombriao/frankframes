@@ -2,6 +2,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
+import { rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { buildAudioGraph, isSilentMeasurement, mixAudio } from "../src/audio.ts";
@@ -322,4 +324,83 @@ test("integração: silêncio misturado a um tom continua normalizado em -14 LUF
     outPath: join(workspace, "mix.m4a"),
   });
   assert.ok(!result.warnings.some((warning) => /silencioso/.test(warning)), "com tom no mix, a normalização segue ligada");
+});
+
+/** Roda `fn` capturando o que ela escreve no stderr (o aviso de limpeza vai para lá quando não há `warnings`). */
+async function captureStderr<T>(fn: () => Promise<T>): Promise<{ value?: T; error?: unknown; stderr: string }> {
+  const original = process.stderr.write;
+  let stderr = "";
+  process.stderr.write = ((chunk: string | Uint8Array): boolean => {
+    stderr += String(chunk);
+    return true;
+  }) as typeof process.stderr.write;
+  try {
+    return { value: await fn(), stderr };
+  } catch (error) {
+    return { error, stderr };
+  } finally {
+    process.stderr.write = original;
+  }
+}
+
+test("falha de remoção do workspace aparece nos warnings de mixAudio (EDT-83)", { timeout: 120_000 }, async (t) => {
+  if (!(await binaryAvailable(FFMPEG))) return t.skip("ffmpeg não encontrado");
+
+  const dir = await tempDir(t, "ff-audio-test-");
+  const tone = join(dir, "tom.wav");
+  await run(FFMPEG, ["-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "sine=frequency=440:duration=1", "-ac", "2", "-ar", "48000", "-y", tone]);
+
+  // A remoção simulada falha de propósito; o workspace real fica e o teste o apaga (sem force) ao fim.
+  let workspace: string | undefined;
+  t.after(async () => {
+    if (workspace !== undefined) await rm(workspace, { recursive: true, force: false });
+  });
+
+  const result = await mixAudio({
+    ffmpeg: FFMPEG,
+    clips: [clip({ clipId: "tom", file: tone })],
+    totalSeconds: 1,
+    outPath: join(dir, "mix.m4a"),
+    loudness: false,
+    removeWorkspace: async (path) => {
+      workspace = path;
+      throw new Error("EBUSY simulado");
+    },
+  });
+
+  assert.ok(workspace !== undefined, "a remoção injetada foi chamada");
+  const aviso = result.warnings.find((warning) => warning.startsWith("não consegui remover"));
+  assert.ok(aviso !== undefined, `warnings sem o aviso de limpeza: ${JSON.stringify(result.warnings)}`);
+  assert.ok(aviso.includes(workspace), "o aviso traz o caminho do workspace");
+  assert.ok(aviso.includes("EBUSY simulado"), "o aviso traz o motivo");
+  assert.match(workspace, /ff-audio-/);
+});
+
+test("mix que falha mantém o erro original quando a remoção do workspace também falha (EDT-83)", async (t) => {
+  let workspace: string | undefined;
+  t.after(async () => {
+    if (workspace !== undefined) await rm(workspace, { recursive: true, force: false });
+  });
+
+  // FFmpeg inexistente: o mix falha (ENOENT do spawn) antes de produzir qualquer saída.
+  const missing = join(tmpdir(), "ff-nao-existe", "ffmpeg");
+  const outcome = await captureStderr(() =>
+    mixAudio({
+      ffmpeg: missing,
+      clips: [clip({ clipId: "x", file: join(tmpdir(), "ff-nao-existe", "x.wav") })],
+      totalSeconds: 1,
+      outPath: join(tmpdir(), "ff-nao-existe", "mix.m4a"),
+      loudness: false,
+      removeWorkspace: async (path) => {
+        workspace = path;
+        throw new Error("EBUSY simulado");
+      },
+    }),
+  );
+
+  assert.ok(outcome.error instanceof Error, "o mix tinha de falhar");
+  assert.doesNotMatch(outcome.error.message, /EBUSY simulado/, "o erro da remoção não pode trocar o original");
+  assert.match(outcome.error.message, /ENOENT|ff-nao-existe/, "o erro original (FFmpeg não executou) sobe intacto");
+  assert.ok(workspace !== undefined, "a remoção injetada foi chamada");
+  assert.ok(outcome.stderr.includes(`[frankframes] não consegui remover ${workspace}: EBUSY simulado`), `stderr sem o aviso: ${JSON.stringify(outcome.stderr)}`);
 });

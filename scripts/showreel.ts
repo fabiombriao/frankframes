@@ -7,11 +7,12 @@
  * Blocos 9:16 entram pillarboxed em 1920×1080 com fundo escuro.
  */
 import { execFile } from "node:child_process";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
+import { removeOrWarn } from "@frankframes/engine";
 import { resolveFfmpeg, renderComposition } from "@frankframes/producer";
 import { listBlocks } from "@frankframes/catalog";
 import { mapPool } from "./pool.ts";
@@ -82,5 +83,6 @@ try {
   process.stdout.write(`\n${output}\n${stdout.trim()}\n`);
   process.stdout.write(`tempo total ${((Date.now() - started) / 1000).toFixed(0)}s\n`);
 } finally {
-  await rm(work, { recursive: true, force: true }).catch(() => {});
+  // Limpeza que falha não derruba o showreel pronto, mas aparece no stderr com o caminho.
+  await removeOrWarn(work);
 }

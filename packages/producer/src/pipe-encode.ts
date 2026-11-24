@@ -129,7 +129,7 @@ export function startPipeEncoder(options: PipeEncoderOptions): PipeEncoder {
       if (stdin.write(png)) return;
       // Buffer interno cheio: espera esvaziar (backpressure), ou o FFmpeg cair, ou o pipe quebrar.
       // O erro do pipe (EPIPE) já foi anotado em `stdinBroken` pelo ouvinte acima: a falha de verdade é lançada logo abaixo.
-      await Promise.race([once(stdin, "drain"), closedPromise]).catch(() => undefined);
+      await Promise.race([once(stdin, "drain"), closedPromise]).catch(() => undefined); // ignora-erro: EPIPE já marcou stdinBroken e a falha real é lançada logo abaixo
       if (failure !== undefined) throw failure;
       if (closed || stdinBroken) {
         await closedPromise;
@@ -204,6 +204,6 @@ export async function encodeWhileCapturing<T>(options: EncodeWhileCapturingOptio
 
   const encoded = encoder.end();
   // Quem chama só espera `encoded` depois do áudio: sem este ouvinte, uma falha nesse intervalo seria "não tratada".
-  encoded.catch(() => undefined);
+  encoded.catch(() => undefined); // ignora-erro: o chamador aguarda `encoded` depois e recebe a rejeição lá
   return { captured, encoded, kill: () => encoder.kill() };
 }

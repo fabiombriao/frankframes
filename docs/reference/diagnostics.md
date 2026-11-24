@@ -119,6 +119,7 @@ Gerado por `node scripts/generate-reference.ts` a partir do código. Não edite 
 | `E_WHISPER_FAILED` | erro | transcrição |
 | `E_WHISPER_MISSING` | erro | transcrição |
 | `E_WHISPER_OUTPUT` | erro | transcrição |
+| `W_GEN_CLEANUP` | aviso | geração |
 | `W_GEN_FRAME_BLANK` | aviso | geração |
 | `W_KEYFRAME_CURVE_IGNORED` | aviso | contrato |
 | `W_KEYFRAME_OUT_OF_RANGE` | aviso | contrato |

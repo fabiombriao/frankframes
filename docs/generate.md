@@ -134,6 +134,7 @@ Ctrl+C. Ctrl+C durante a geração encerra o Codex e toda a árvore de processos
 | `E_GEN_OUT_EXISTS` | já existe `index.html` na pasta de saída | `--force` ou outra pasta |
 | `E_GEN_EXHAUSTED` | as tentativas acabaram sem um vídeo válido | veja o último `attempt-N.html` e `generate.json`; `--attempts` maior |
 | `E_GEN_FORBIDDEN`, `E_GEN_FORMAT_MISMATCH`, `E_GEN_DURATION_MISMATCH`, `W_GEN_FRAME_BLANK` | diagnósticos de correção (aparecem em `generate.json`) | — |
+| `W_GEN_CLEANUP` | com o vídeo entregue, a pasta de contexto (`ff-generate-*`) não pôde ser removida; o aviso traz o caminho e o motivo, em `warnings` e em `generate.json` (em falha, o aviso vai para o stderr e o erro original é mantido) | apague a pasta indicada |
 
 ## Observação sobre a leitura do login
 

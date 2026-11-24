@@ -4,6 +4,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
+import { cleanupWarning, warnCleanup } from "@frankframes/engine";
 
 const run = promisify(execFile);
 
@@ -287,6 +288,8 @@ export interface MixOptions {
   format?: AudioFormat;
   /** Cancela o FFmpeg em andamento. */
   signal?: AbortSignal;
+  /** Só para teste: troca a remoção do workspace (padrão: `rm` recursivo, sem force). */
+  removeWorkspace?: (path: string) => Promise<void>;
 }
 
 export type AudioFormat = "aac" | "wav";
@@ -321,6 +324,7 @@ export async function measureLoudness(
       offset: parsed.target_offset ?? "",
     };
   } catch {
+    // JSON ilegível = sem medição; o chamador (mixAudio) registra "loudness não medido" nos warnings.
     return null;
   }
 }
@@ -357,6 +361,7 @@ function scriptOptionFor(ffmpeg: string): Promise<string> {
   })();
 
   scriptOptions.set(ffmpeg, probe);
+  // Invalida o cache se o probe rejeitar (a próxima chamada tenta de novo); quem aguarda `probe` recebe o erro.
   probe.catch(() => scriptOptions.delete(ffmpeg));
   return probe;
 }
@@ -371,7 +376,10 @@ export async function mixAudio(options: MixOptions): Promise<{ outPath: string; 
 
   const signalOption = options.signal !== undefined ? { signal: options.signal } : {};
   const workspace = await mkdtemp(join(tmpdir(), "ff-audio-"));
+  const removeWorkspace = options.removeWorkspace ?? ((path: string) => rm(path, { recursive: true }));
   const scriptOption = await scriptOptionFor(options.ffmpeg);
+  // Preenchido só quando o corpo termina bem; o `finally` acrescenta aos warnings dele se a remoção falhar.
+  let result: { outPath: string; warnings: string[] } | undefined;
   try {
     let measured: MeasuredLoudness | undefined;
     let normalize = true;
@@ -418,8 +426,15 @@ export async function mixAudio(options: MixOptions): Promise<{ outPath: string; 
       ],
       { maxBuffer: 16 << 20, ...signalOption },
     );
-    return { outPath: options.outPath, warnings: [...initial.warnings, ...final.warnings] };
+    result = { outPath: options.outPath, warnings: [...initial.warnings, ...final.warnings] };
+    return result;
   } finally {
-    await rm(workspace, { recursive: true, force: true }).catch(() => {});
+    try {
+      await removeWorkspace(workspace);
+    } catch (error) {
+      // Mix pronto: o aviso vai no resultado (mesmo array devolvido). Corpo falhou: stderr, e o erro original sobe.
+      if (result !== undefined) result.warnings.push(cleanupWarning(workspace, error));
+      else warnCleanup(workspace, error);
+    }
   }
 }

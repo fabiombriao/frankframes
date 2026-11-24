@@ -87,6 +87,19 @@ export function parseWhisperJson(raw: string): { text: string; segments: Segment
   return result;
 }
 
+/**
+ * Remove um temporário sem trocar o erro (ou o resultado) de quem chama: a falha vai ao stderr com o caminho.
+ * Cópia local do `removeOrWarn` do engine, porque este pacote não depende do engine.
+ */
+async function removeOrWarn(path: string, options: { recursive?: boolean } = {}): Promise<void> {
+  try {
+    await rm(path, { recursive: options.recursive ?? false });
+  } catch (error) {
+    process.stderr.write(`[frankframes] não consegui remover ${path}: ${error instanceof Error ? error.message : String(error)}
+`);
+  }
+}
+
 /** Roda `whisper.cpp` como processo, sem rede e sem modelo embutido. */
 export function createLocal(config: LocalConfig): Transcriber {
   return {
@@ -140,7 +153,8 @@ export function createLocal(config: LocalConfig): Transcriber {
         if (parsed.words) result.words = parsed.words;
         return result;
       } finally {
-        await rm(dir, { recursive: true, force: true });
+        // A transcrição já está pronta (ou o erro do corpo sobe): falha ao remover o diretório só avisa no stderr.
+        await removeOrWarn(dir, { recursive: true });
       }
     },
   };
@@ -185,7 +199,8 @@ export async function installLocalModel(options: InstallLocalModelOptions): Prom
     if (options.expectedSha256 === undefined || digest.toLowerCase() === options.expectedSha256.toLowerCase()) {
       return { path: options.destPath, bytes: await fileSize(options.destPath), sha256: digest, resumed: false };
     }
-    await rm(options.destPath, { force: true });
+    // O destino existe (fileSize > 0) e está corrompido: sem force. Se não sair, o erro sobe antes de baixar de novo.
+    await rm(options.destPath);
   }
 
   for (let attempt = 0; attempt < 2; attempt += 1) {
@@ -237,7 +252,8 @@ export async function installLocalModel(options: InstallLocalModelOptions): Prom
 
   const digest = await sha256File(partPath);
   if (options.expectedSha256 !== undefined && digest.toLowerCase() !== options.expectedSha256.toLowerCase()) {
-    await rm(partPath, { force: true });
+    // O `.part` acabou de ser lido: existe. Falha de remoção vai ao stderr e não troca o E_MODEL_HASH.
+    await removeOrWarn(partPath);
     throw new TranscribeError(
       "E_MODEL_HASH",
       `SHA-256 do modelo não confere: esperado ${options.expectedSha256}, obtido ${digest}.`,
@@ -247,6 +263,8 @@ export async function installLocalModel(options: InstallLocalModelOptions): Prom
   try {
     await rename(partPath, options.destPath);
   } catch {
+    // Rename sobre destino existente falha em alguns SO: apaga o destino e tenta de novo (o segundo rename falha alto).
+    // force:true: o primeiro rename pode ter falhado por outro motivo, com o destino ausente (ENOENT esperado).
     await rm(options.destPath, { force: true });
     await rename(partPath, options.destPath);
   }

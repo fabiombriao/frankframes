@@ -3,6 +3,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { mkdir, readdir, readFile, rename, rm, stat, utimes, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { removeOrWarn, removeTree, warnCleanup } from "./cleanup.ts";
 import { assetHome } from "./home.ts";
 import { extractFrames } from "./media.ts";
 import type { ExtractOptions } from "./media.ts";
@@ -64,7 +65,13 @@ export async function evictCache(root: string, maxBytes: number, inUse: Readonly
   let removed = 0;
   for (const item of sized) {
     if (total <= maxBytes) break;
-    await rm(item.path, { recursive: true, force: true }).catch(() => {});
+    // missingOk: outro processo pode ter evictado a mesma entrada entre o readdir e aqui (ENOENT esperado).
+    // Outra falha vai ao stderr com o caminho e a entrada NÃO conta como removida (o total não desce).
+    const failure = await removeTree(item.path, { missingOk: true });
+    if (failure !== undefined) {
+      warnCleanup(item.path, failure);
+      continue;
+    }
     total -= item.bytes;
     removed += 1;
   }
@@ -135,23 +142,27 @@ async function extractInto(
       ({ frameCount } = await extractFrames({ ...options, outDir: temp }));
       await writeFile(join(temp, ".complete"), String(frameCount), "utf8");
     } catch (error) {
-      await rm(temp, { recursive: true, force: true });
+      // missingOk: se a extração falhou antes de criar o diretório, o temporário nem existe. Falha de remoção vai
+      // ao stderr; o erro da extração sobe intacto.
+      await removeOrWarn(temp, { missingOk: true });
       throw error;
     }
 
     // Outro processo pode ter publicado o mesmo diretório enquanto extraíamos: se está completo, vale o dele.
     const existing = await readMarker(dir);
     if (existing !== undefined) {
-      await rm(temp, { recursive: true, force: true });
+      // O resultado (hit) não depende da remoção do temporário: falha vira aviso no stderr.
+      await removeOrWarn(temp);
       return { dir, frameCount: existing, hit: true };
     }
-    // Sem marcador, o que está lá é resto de extração interrompida.
+    // Sem marcador, o que está lá é resto de extração interrompida. force:true: normalmente não há nada (ENOENT
+    // esperado); se houver e a remoção falhar, o erro sobe, pois o rename abaixo dependeria dela.
     await rm(dir, { recursive: true, force: true });
     try {
       await rename(temp, dir);
     } catch (error) {
       const raced = await readMarker(dir);
-      await rm(temp, { recursive: true, force: true });
+      await removeOrWarn(temp);
       if (raced !== undefined) return { dir, frameCount: raced, hit: true };
       throw error;
     }

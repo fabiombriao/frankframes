@@ -5,7 +5,7 @@ import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { listPresets, loadComposition } from "@frankframes/contract";
 import { readBlock } from "@frankframes/catalog";
-import { probeDuration } from "@frankframes/engine";
+import { probeDuration, removeOrWarn } from "@frankframes/engine";
 import { resolveFfmpeg } from "@frankframes/producer";
 import { buildCatalogIndex } from "./catalog-server.ts";
 import { GenerateError } from "./generate-errors.ts";
@@ -189,7 +189,19 @@ async function buildMaterials(dir: string, projectJson: string | undefined): Pro
  * esta pasta existe: nada fora dela precisa ser mostrado, e o prompt manda ficar dentro.
  */
 export async function buildContextDir(options: BuildContextOptions = {}): Promise<ContextDir> {
+  const created = options.dir === undefined;
   const dir = options.dir ?? (await mkdtemp(join(tmpdir(), "ff-generate-")));
+  try {
+    return await fillContextDir(dir, options);
+  } catch (error) {
+    // Pasta criada aqui e que o chamador nunca recebeu: sem dono, some na falha. Em sucesso o dono é o chamador.
+    // Se a remoção também falhar, vai para o stderr e o erro original sobe intacto.
+    if (created) await removeOrWarn(dir);
+    throw error;
+  }
+}
+
+async function fillContextDir(dir: string, options: BuildContextOptions): Promise<ContextDir> {
   const files: string[] = [];
   const put = async (rel: string, content: string): Promise<void> => {
     const target = join(dir, ...rel.split("/"));
@@ -227,6 +239,7 @@ export async function buildContextDir(options: BuildContextOptions = {}): Promis
 
 /** Na tentativa de reparo: o HTML anterior e os diagnósticos ficam na pasta; sem reparo, somem. */
 export async function writeRepairFiles(dir: string, repair: { previous?: string; diagnostics: GenerateDiagnostic[] } | undefined): Promise<void> {
+  // force: previous.html e diagnostics.json podem não existir (primeira tentativa); ENOENT é esperado aqui.
   if (repair === undefined) {
     await rm(join(dir, "previous.html"), { force: true });
     await rm(join(dir, "diagnostics.json"), { force: true });
@@ -234,7 +247,7 @@ export async function writeRepairFiles(dir: string, repair: { previous?: string;
   }
   // Sem HTML aproveitável (resposta ilegível) só há diagnóstico; um previous.html velho não pode ficar para trás.
   if (repair.previous !== undefined) await writeFile(join(dir, "previous.html"), repair.previous);
-  else await rm(join(dir, "previous.html"), { force: true });
+  else await rm(join(dir, "previous.html"), { force: true }); // force: pode nunca ter existido
   await writeFile(join(dir, "diagnostics.json"), `${JSON.stringify(repair.diagnostics, null, 2)}\n`);
 }
 

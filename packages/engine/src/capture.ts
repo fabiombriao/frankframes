@@ -27,7 +27,7 @@ function trackBrowser(browser: Browser): void {
         try {
           tracked.process()?.kill("SIGKILL");
         } catch {
-          /* processo já morto */
+          /* ignora-erro: processo já morto (kill pode correr contra a saída) */
         }
       }
       liveBrowsers.clear();
@@ -152,7 +152,7 @@ function browserClosed(cause?: unknown): BrowserError {
 function watchBrowser(browser: Browser, options: SessionOptions): Watch {
   const closed = Promise.withResolvers<never>();
   // A rejeição chega a quem espera pela corrida em `guard`; sem espera pendente ela não pode ficar solta.
-  closed.promise.catch(() => {});
+  closed.promise.catch(() => {}); // ignora-erro: a rejeição é observada pelo Promise.race de `guard`
   let released = false;
   let gone: BrowserError | undefined;
 
@@ -173,7 +173,7 @@ function watchBrowser(browser: Browser, options: SessionOptions): Watch {
       let timer: NodeJS.Timeout | undefined;
       const work = operation();
       // Se a operação perder a corrida, a falha tardia dela não pode virar rejeição solta.
-      work.catch(() => {});
+      work.catch(() => {}); // ignora-erro: se a operação vence a corrida o erro sobe pelo race; se perde, o race já rejeitou por outro motivo
       const pieces: Array<Promise<T>> = [work, closed.promise];
       if (limit !== undefined) {
         pieces.push(
@@ -205,7 +205,7 @@ function killBrowserProcess(browser: Browser): void {
   try {
     browser.process()?.kill("SIGKILL");
   } catch {
-    /* processo já morto */
+    /* ignora-erro: processo já morto (kill pode correr contra a saída) */
   }
 }
 
