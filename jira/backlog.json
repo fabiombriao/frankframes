@@ -222,6 +222,20 @@
           ],
           "acceptance": "Comando gera composição de legenda com um clip por segmento, `data-start`/`data-duration` corretos e legenda que não estoura a largura segura.",
           "jiraKey": "EDT-21"
+        },
+        {
+          "summary": "Legendas geradas quebram cedo: caixa com left:50% só usa metade da largura",
+          "points": 2,
+          "labels": [
+            "bug",
+            "captions"
+          ],
+          "acceptance": [
+            "Visto no aceite do EDT-64 em 2026-11-24: em captions --size 1080x1920 a caixa .caption (left:50% + translateX(-50%)) encolhe até 540 px e quebra em muitas linhas; em 1920x1080 o teto real é 960 px, não os 84% declarados.",
+            "A caixa de legenda pode crescer até 84% da largura do quadro em qualquer proporção, centrada; tamanho de fonte padrão proporcional também à largura no vertical.",
+            "Teste em Chrome que falharia sem a mudança: legenda longa mede mais que 50% da largura em 1080x1920 e 1920x1080, sem passar de 84%; gate verde."
+          ],
+          "jiraKey": "EDT-89"
         }
       ],
       "jiraKey": "EDT-18"
@@ -267,6 +281,21 @@
           ],
           "acceptance": "Uma composição cujas faixas de áudio são todas silêncio digital (o loudnorm mede `measured_I=-inf`) renderiza e passa no preview. A saída tem silêncio, sem tentar normalizar, e o relatório traz um aviso explícito. Sem esse caso tratado, `mixAudio` falha com \"Result too large\" em AAC e em WAV. Há um teste com faixa de silêncio gerada por FFmpeg que falharia sem a correção.",
           "jiraKey": "EDT-66"
+        },
+        {
+          "summary": "Entrega garante true peak ≤ −1 dBTP no arquivo codificado, não só no PCM",
+          "points": 3,
+          "labels": [
+            "bug",
+            "audio"
+          ],
+          "acceptance": [
+            "Visto no aceite do EDT-64 em 2026-11-24: o MP4 exportado mede −0,77 dBTP (limite do aceite −0,9). O loudnorm limita o mix PCM a TP=−1 e o AAC a 192k (e o Opus no WebM) sobe os picos entre amostras; nada mede o arquivo codificado.",
+            "Depois de codificar, o mix de entrega é medido no próprio arquivo codificado; se o true peak passar de −1 dBTP, aplica correção de ganho calculada pela medida e mede de novo; se ainda passar, falha com código registrado e hint (sem retry cego).",
+            "Loudness integrado continua dentro da tolerância de −14 LUFS; aviso no resultado quando a correção foi aplicada.",
+            "Spec em docs/contract.md no mesmo commit; teste que falharia sem a mudança (sinal sintético que estoura o pico depois do AAC); gate verde."
+          ],
+          "jiraKey": "EDT-90"
         }
       ],
       "jiraKey": "EDT-22"
