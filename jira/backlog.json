@@ -437,6 +437,23 @@
             "Gate completo verde."
           ],
           "jiraKey": "EDT-78"
+        },
+        {
+          "summary": "Teste de cache deixa .tmp- sobrando ao cancelar a extração sob carga",
+          "points": 1,
+          "labels": [
+            "bug",
+            "robustez",
+            "engine"
+          ],
+          "acceptance": [
+            "Visto em 2026-11-24 no gate completo do EDT-59: packages/engine/test/cache.test.ts 'cancelar no meio da extração…' falhou porque sobrou um arquivo .tmp- no cache; passou 3/3 isolado e no gate seguinte.",
+            "Causa diagnosticada e registrada no item (ordem entre abort, fim do FFmpeg e remoção do tmp; ou o teste confere antes da limpeza assíncrona terminar).",
+            "Correção na causa: o cancelamento só resolve depois de o .tmp- ser removido, ou o teste espera o evento certo (nada de sleep).",
+            "Teste que reproduz sob carga (ex.: várias extrações canceladas em paralelo) e falharia sem a correção.",
+            "Gate completo verde."
+          ],
+          "jiraKey": "EDT-79"
         }
       ],
       "jiraKey": "EDT-26"
