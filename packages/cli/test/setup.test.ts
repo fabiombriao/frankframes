@@ -167,6 +167,57 @@ test("ffmpeg: instala de um zip (Windows)", { skip: process.platform === "win32"
   });
 });
 
+/** PSModulePath de um PowerShell 7 (o que um `pwsh` pai entrega ao `powershell` 5.1 filho); `undefined` sem pwsh. */
+async function pwshModulePath(): Promise<string | undefined> {
+  try {
+    const { stdout } = await exec("pwsh", ["-NoProfile", "-Command", "$env:PSModulePath"]);
+    return stdout.trim() || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+test(
+  "ffmpeg: zip extrai mesmo com o PSModulePath de um PowerShell 7 herdado (Expand-Archive falhava sem erro e sem extrair)",
+  { skip: process.platform === "win32" ? false : "Expand-Archive só no Windows" },
+  async (t) => {
+    const modules = await pwshModulePath();
+    if (modules === undefined) {
+      t.skip("sem pwsh (PowerShell 7) instalado: não há PSModulePath de PS7 para herdar");
+      return;
+    }
+    const previous = process.env.PSModulePath;
+    await withHome(async (home) => {
+      await withTempDir("ff-arch-", async (work) => {
+        const { build, bytes } = await fakeBuild(work, "zip", "win64");
+        process.env.PSModulePath = modules;
+        try {
+          const step = await withFfmpegFetch(build.url, bytes, () => ensureFfmpeg({ build }));
+          assert.equal(step.state, "instalado", step.detail);
+          assert.equal(await readFile(join(home, "ffmpeg", "bin", "ffmpeg.exe"), "utf8"), "ffmpeg win64");
+        } finally {
+          if (previous === undefined) delete process.env.PSModulePath;
+          else process.env.PSModulePath = previous;
+        }
+      });
+    });
+  },
+);
+
+test("ffmpeg: arquivo que extrai sem criar a pasta do pin falha com a pasta esperada, não com ENOENT no copyFile", async () => {
+  await withHome(async (home) => {
+    await withTempDir("ff-arch-", async (work) => {
+      const { build, bytes } = await fakeBuild(work, "tar.xz", "linux64");
+      const errado = { ...build, root: "pasta-que-o-arquivo-nao-cria" };
+      await assert.rejects(
+        withFfmpegFetch(build.url, bytes, () => ensureFfmpeg({ build: errado })),
+        /pasta-que-o-arquivo-nao-cria não apareceu/,
+      );
+      assert.equal(await readFile(join(home, "ffmpeg", "bin", "ffmpeg")).then(() => true, () => false), false);
+    });
+  });
+});
+
 test("ffmpeg: plataforma sem pin vira passo 'falhou' com o código, nunca instala o de outra", async () => {
   const platform = Object.getOwnPropertyDescriptor(process, "platform");
   Object.defineProperty(process, "platform", { value: "darwin" });

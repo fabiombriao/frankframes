@@ -113,7 +113,15 @@ export async function extractArchive(format: FfmpegBuild["format"], archive: str
       throw new Error(`não consegui extrair ${archive} com unzip (instalado?): ${(unzipError as Error).message}`, { cause: unzipError });
     }
     try {
-      await run("powershell", ["-NoProfile", "-Command", `Expand-Archive -LiteralPath '${join(work, archive)}' -DestinationPath '${work}' -Force`]);
+      // O Windows PowerShell 5.1 herda o PSModulePath de um PowerShell 7 pai e carrega o módulo Archive do 7, que falha em
+      // ExtractToDirectory com erro NÃO terminante: sem `Stop` o comando sai com 0 e não extrai nada. Sem PSModulePath,
+      // o 5.1 recalcula o seu; com `Stop`, qualquer erro vira código de saída diferente de zero.
+      const env = Object.fromEntries(Object.entries(process.env).filter(([name]) => name.toLowerCase() !== "psmodulepath"));
+      await run(
+        "powershell",
+        ["-NoProfile", "-Command", `$ErrorActionPreference = 'Stop'; Expand-Archive -LiteralPath '${join(work, archive)}' -DestinationPath '${work}' -Force`],
+        { env },
+      );
     } catch (powershellError) {
       throw new Error(
         `não consegui extrair ${archive}: unzip (${(unzipError as Error).message}); PowerShell (${(powershellError as Error).message})`,
@@ -176,6 +184,11 @@ export async function ensureFfmpeg(options: { check?: boolean; build?: FfmpegBui
     }
     await extractArchive(build.format, build.archive, work);
     const extracted = join(work, build.root);
+    // Extração que "deu certo" sem criar a pasta do pin é falha, não um ENOENT obscuro no copyFile.
+    if (!(await exists(extracted))) {
+      const found = (await readdir(work)).filter((name) => name !== build.archive);
+      throw new Error(`o arquivo ${build.archive} foi extraído, mas a pasta ${build.root} não apareceu em ${work} (encontrado: ${found.join(", ") || "nada"})`);
+    }
     await copyFile(join(extracted, "bin", `ffmpeg${exe}`), binary);
     await copyFile(join(extracted, "bin", `ffprobe${exe}`), join(dir, "bin", `ffprobe${exe}`));
     await copyFile(join(extracted, "LICENSE.txt"), join(dir, "LICENSE.txt"));
