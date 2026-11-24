@@ -71,6 +71,7 @@ import { fitPlayerBox, playerViewport } from "/player-fit.js";
   const snapGuideEl = document.getElementById("snapGuide");
   const importButton = document.getElementById("importButton");
   const importInput = document.getElementById("importInput");
+  const insertTextButton = document.getElementById("insertTextButton");
   const splitButton = document.getElementById("splitButton");
   const deleteButton = document.getElementById("deleteButton");
   const undoButton = document.getElementById("undoButton");
@@ -667,6 +668,7 @@ import { fitPlayerBox, playerViewport } from "/player-fit.js";
     splitButton.disabled = state.busy || splittable() === null;
     deleteButton.disabled = state.busy || deletable() === null;
     importButton.disabled = state.busy;
+    insertTextButton.disabled = state.busy;
     updateExportButton();
   }
 
@@ -1976,18 +1978,18 @@ import { fitPlayerBox, playerViewport } from "/player-fit.js";
     }
   }
 
+  /* Bloco do catálogo (EDT-88): o servidor copia o bloco para o projeto e insere o próprio bloco (sub-composição) no playhead. */
   async function insertBlock(block, button) {
-    const name = String(block.name ?? block.slug ?? "");
-    const template = /subt[ií]tulo|subtitle/i.test(name + " " + String(block.slug ?? "")) ? "subtitle" : "title";
-    const duration = asNumber(block.durationSeconds);
-    if (duration === null || duration <= 0) {
-      renderDiagnostics(blocksDiagnostics, [{ severity: "error", message: "Bloco sem duração válida: " + name }]);
+    const slug = typeof block.slug === "string" ? block.slug : "";
+    const name = String(block.name ?? slug);
+    if (!slug) {
+      renderDiagnostics(blocksDiagnostics, [{ severity: "error", message: "Bloco sem slug: " + name }]);
       return;
     }
     const start = toFrame(Math.max(0, state.playhead));
     button.disabled = true;
     try {
-      const result = await mutate("POST", "/api/clips", { template, start, duration });
+      const result = await mutate("POST", "/api/blocks", { slug, start });
       if (result.payload && result.payload.history) applyHistory(result.payload.history);
       if (!result.ok) {
         renderDiagnostics(blocksDiagnostics, result.diagnostics);
@@ -2000,11 +2002,35 @@ import { fitPlayerBox, playerViewport } from "/player-fit.js";
       }
       const diagnostics = result.diagnostics.length
         ? result.diagnostics
-        : [{ severity: "info", message: "Bloco inserido em " + formatSeconds(start) + "." }];
+        : [{ severity: "info", message: "Bloco " + name + " inserido em " + formatSeconds(start) + " (arquivos em " + payloadDir(result.payload.src) + ")." }];
       renderDiagnostics(blocksDiagnostics, diagnostics);
     } finally {
       button.disabled = false;
     }
+  }
+
+  function payloadDir(src) {
+    const text = typeof src === "string" ? src : "";
+    const cut = text.lastIndexOf("/");
+    return cut > 0 ? text.slice(0, cut + 1) : text;
+  }
+
+  /* Texto simples no playhead: o único template do servidor; nunca substitui um bloco do catálogo. */
+  async function insertText() {
+    const start = toFrame(Math.max(0, state.playhead));
+    return runTool(async () => {
+      const result = await mutate("POST", "/api/clips", { template: "text", start, duration: 3 });
+      if (result.payload && result.payload.history) applyHistory(result.payload.history);
+      if (!result.ok) {
+        renderDiagnostics(toolDiagnostics, result.diagnostics);
+        return;
+      }
+      state.inspectorDirty = false;
+      await refreshComposition();
+      const id = typeof result.payload.id === "string" ? result.payload.id : null;
+      if (id && findClip(id)) selectClip(id);
+      renderDiagnostics(toolDiagnostics, [{ severity: "info", message: "Texto inserido em " + formatSeconds(start) + "." }]);
+    });
   }
 
   /* Mutação */
@@ -2252,6 +2278,7 @@ import { fitPlayerBox, playerViewport } from "/player-fit.js";
     importInput.value = "";
     importFiles(files);
   });
+  insertTextButton.addEventListener("click", () => insertText());
   splitButton.addEventListener("click", () => splitSelected());
   deleteButton.addEventListener("click", () => deleteSelected());
   undoButton.addEventListener("click", () => travel("undo"));

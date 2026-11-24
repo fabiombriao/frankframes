@@ -496,7 +496,7 @@ test("estúdio grava faixa e início num PATCH só: um passo no histórico, um d
 test("clip de título novo nasce na faixa de cima e posicionado (EDT-44)", () =>
   withStudio(async (server, _dir, entry) => {
     await writeFile(entry, LAYERED, "utf8");
-    const inserted = await post(`${server.url}api/clips`, { template: "title", start: 0, duration: 1 });
+    const inserted = await post(`${server.url}api/clips`, { template: "text", start: 0, duration: 1 });
     assert.equal(inserted.status, 200, JSON.stringify(inserted.json));
     const source = await readFile(entry, "utf8");
     const clip = loadComposition(source).clips.find((item) => item.id === inserted.json.id)!;

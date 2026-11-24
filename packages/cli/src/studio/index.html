@@ -13,8 +13,9 @@
       <h1 id="fileName" class="file-name">index.html</h1>
     </div>
     <div class="toolbar" role="toolbar" aria-label="Edição">
-      <button id="importButton" type="button" class="tool-button" title="Importar vídeo, áudio ou imagem no playhead (ou arraste o arquivo para a janela)">Importar mídia</button>
-      <input id="importInput" type="file" multiple hidden accept="video/*,audio/*,image/*,.mov,.mkv,.m4a,.opus,.flac">
+      <button id="importButton" type="button" class="tool-button" title="Importar vídeo, áudio, imagem ou uma sub-composição .html no playhead (ou arraste o arquivo para a janela)">Importar</button>
+      <input id="importInput" type="file" multiple hidden accept="video/*,audio/*,image/*,.mov,.mkv,.m4a,.opus,.flac,.html,.htm,text/html">
+      <button id="insertTextButton" type="button" class="tool-button" title="Criar um texto simples editável no playhead (não é um bloco do catálogo)">Inserir texto</button>
       <button id="compositionButton" type="button" class="tool-button" title="Editar a composição: duração, largura, altura e fps da raiz">Composição</button>
       <button id="splitButton" type="button" class="tool-button" title="Dividir o clip selecionado no playhead (S)" disabled>Dividir</button>
       <button id="deleteButton" type="button" class="tool-button" title="Excluir o clip selecionado, sem mover o resto (Delete)" disabled>Excluir</button>

@@ -37,12 +37,15 @@ e gravada no HTML preservando formatação e comentários; erro de contrato não
 
 Na barra do topo:
 
-- **Importar mídia** (ou arraste o arquivo para a janela): vídeo, áudio ou imagem vai para `assets/` e entra
-  como clip no playhead, com a duração medida. Vários arquivos de uma vez entram em sequência.
+- **Importar** (ou arraste o arquivo para a janela): vídeo, áudio ou imagem vai para `assets/` e entra
+  como clip no playhead, com a duração medida. Vários arquivos de uma vez entram em sequência. Um `.html`
+  (por exemplo `legendas.html`) entra como sub-composição, com a duração da raiz do arquivo.
+- **Blocos** (painel lateral): clicar num bloco do catálogo o insere no playhead como sub-composição; a pasta do
+  bloco é copiada para `blocks/<slug>/` (igual a `blocks add`). **Inserir texto** cria um `<div>` com "Texto".
 - **Dividir** (tecla `S`): corta o clip selecionado no playhead em dois, sem mover o resto da timeline.
 - **Desfazer / Refazer** (`Ctrl+Z`, `Ctrl+Shift+Z` ou `Ctrl+Y`): vale para toda edição feita no Studio
   nesta sessão. Se você editar o arquivo em outro programa, o histórico é descartado em vez de sobrescrever.
-  Desfazer uma importação tira o clip, mas o arquivo continua em `assets/`.
+  Desfazer uma importação tira o clip, mas o arquivo continua em `assets/` (bloco: em `blocks/<slug>/`; `.html`: em `compositions/`).
 
 ## 4. Ver antes de renderizar
 

@@ -1,5 +1,6 @@
 // FrankFrames — proprietário. Ver LICENSE na raiz.
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { cp } from "node:fs/promises";
 import { isAbsolute, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -78,6 +79,28 @@ export function readBlock(slug: string, file = "index.html"): string {
     throw new Error(`arquivo inexistente no bloco "${slug}": ${JSON.stringify(file)}`);
   }
   return readFileSync(target, "utf8");
+}
+
+/** Bloco que o catálogo não tem (`E_BLOCK_UNKNOWN`): quem chama decide como responder, sem plano B. */
+export class UnknownBlockError extends Error {
+  readonly code = "E_BLOCK_UNKNOWN";
+  readonly hint = "rode `frankframes blocks list` para ver os slugs do catálogo";
+
+  constructor(slug: string) {
+    super(`bloco desconhecido: ${JSON.stringify(slug)}`);
+    this.name = "UnknownBlockError";
+  }
+}
+
+/**
+ * Copia o diretório do bloco (`index.html`, `meta.json`, miniatura) para `target`. É a mesma rotina do
+ * `frankframes blocks add <slug>` e do Studio (painel Blocos, EDT-88). Falha alto com `UnknownBlockError`.
+ */
+export async function installBlock(slug: string, target: string): Promise<BlockMeta> {
+  const block = listBlocks().find((candidate) => candidate.slug === slug);
+  if (block === undefined) throw new UnknownBlockError(slug);
+  await cp(block.dir, target, { recursive: true });
+  return block;
 }
 
 /** Diretório das miniaturas dos presets de motion (`<nome>.gif`, docs/motion.md). */

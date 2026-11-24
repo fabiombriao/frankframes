@@ -83,7 +83,7 @@ test("estúdio lê, edita, insere clips e serve a prévia", async (t) => {
     const inserted = await fetch(`${server.url}api/clips`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ template: "title", start: 0, duration: 0.75 }),
+      body: JSON.stringify({ template: "text", start: 0, duration: 0.75 }),
     });
     assert.equal(inserted.status, 200);
     const insertedBody = (await inserted.json()) as { ok: boolean; id: string };

@@ -8,6 +8,7 @@ Gerado por `node scripts/generate-reference.ts` a partir do código. Não edite 
 | `E_ATTRIBUTE_INVALID` | erro | edição |
 | `E_AUTHORING` | erro | render |
 | `E_BATCH_INVALID` | erro | render |
+| `E_BLOCK_UNKNOWN` | erro | studio |
 | `E_BODY_INVALID` | erro | studio |
 | `E_BODY_TOO_LARGE` | erro | studio |
 | `E_BROWSER_CLOSED` | erro | render |

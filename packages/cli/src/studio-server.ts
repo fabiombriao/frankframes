@@ -19,6 +19,7 @@ import {
   EditError,
   explicitClipIds,
   mergeKeyframePoints,
+  compileComposition,
   prepare,
   PreviewAudioError,
   renderPreviewAudio,
@@ -30,11 +31,23 @@ import {
   trimClipStart,
 } from "@frankframes/producer";
 import type { ClipPatch, CompositionPatch, FfmpegPair, KeyframeRequest, PreparedComposition } from "@frankframes/producer";
-import { listBlocks, motionThumbPath } from "@frankframes/catalog";
+import { UnknownBlockError, installBlock, listBlocks, motionThumbPath } from "@frankframes/catalog";
 import { ExportError, createExporter } from "./studio-export.ts";
 import { HistoryStaleError, StudioHistory } from "./studio-history.ts";
 import { WaveformError, waveformFor } from "./studio-waveform.ts";
-import { IMAGE_SECONDS, MediaUploadError, measureMedia, mediaKind, mediaMarkup, storeMedia, supportedExtensions } from "./studio-media.ts";
+import {
+  BLOCKS_DIR,
+  COMPOSITIONS_DIR,
+  IMAGE_SECONDS,
+  MediaUploadError,
+  isSubCompositionFile,
+  measureMedia,
+  mediaKind,
+  mediaMarkup,
+  storeMedia,
+  subCompositionMarkup,
+  supportedExtensions,
+} from "./studio-media.ts";
 
 export interface StudioServer {
   url: string;
@@ -638,8 +651,12 @@ data: ${JSON.stringify(job)}
   const insertClip = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
     const body = objectBody(await bodyJson(req));
     const template = body.template;
-    if (template !== "title" && template !== "subtitle") {
-      throw new ReplyError(400, "E_TEMPLATE_INVALID", 'template precisa ser "title" ou "subtitle"');
+    // EDT-88: sem plano B. Só existe o texto simples; bloco do catálogo é `POST /api/blocks` e nunca vira texto.
+    if (template !== "text") {
+      const message = `template desconhecido: ${JSON.stringify(template)}`;
+      throw new ReplyError(400, "E_TEMPLATE_INVALID", message, [
+        { code: "E_TEMPLATE_INVALID", severity: "error", message, hint: 'o único template é "text" (texto simples); para um bloco do catálogo use POST /api/blocks' },
+      ]);
     }
     const start = numeric(body, "start");
     const duration = numeric(body, "duration");
@@ -651,24 +668,126 @@ data: ${JSON.stringify(job)}
       throw new ReplyError(400, "E_ROOT_NOT_FOUND", "elemento com data-composition-id não encontrado");
     }
     const id = nextClipId(source);
-    // Clip novo nasce na faixa de cima (EDT-44): uma acima da maior faixa visual da raiz, 0 se não há nenhuma.
-    const visualTracks = loadComposition(source)
-      .clips.filter((clip) => clipKind(clip) !== "audio")
-      .map((clip) => clip.track);
-    const track = visualTracks.length === 0 ? 0 : Math.max(...visualTracks) + 1;
+    const track = topTrack(source);
     // `position:absolute` porque a camada (`z-index`, §4) só vale em elemento posicionado.
     const style = "position:absolute;left:0;right:0;top:45%;text-align:center";
     const markup = `\n  <div data-clip-id="${id}" data-start="${start}" data-duration="${duration}" data-track="${track}" class="clip" style="${style}">Texto</div>\n`;
     const next = source.slice(0, root.index) + markup + source.slice(root.index);
 
     validated(next, "o clip novo deixaria o contrato inválido");
-    await commit(`inserir ${template}`, source, next);
+    await commit("inserir texto", source, next);
     sendJson(res, 200, { ok: true, id, history: history.state() });
+  };
+
+  /** Faixa de um clip visual novo (EDT-44): uma acima da maior faixa visual da raiz, 0 se não há nenhuma. */
+  const topTrack = (source: string): number => {
+    const visualTracks = loadComposition(source)
+      .clips.filter((clip) => clipKind(clip) !== "audio")
+      .map((clip) => clip.track);
+    return visualTracks.length === 0 ? 0 : Math.max(...visualTracks) + 1;
+  };
+
+  /**
+   * Valida a árvore inteira, sub-composições incluídas (`loadComposition` sozinho só lê o arquivo de entrada): id
+   * duplicado entre arquivos, raiz ausente ou duração sem resolver no arquivo inlinado barram a mutação.
+   */
+  const validatedTree = async (next: string, message: string): Promise<void> => {
+    const compiled = await compileComposition({ entryHtml: next, entryDir, entryPath });
+    if (!compiled.composition.ok) throw new ReplyError(400, "E_CONTRACT_INVALID", message, compiled.composition.diagnostics);
+  };
+
+  /**
+   * `POST /api/blocks` com `{slug, start}` (EDT-88): copia o bloco do catálogo para `blocks/<slug>/` com a mesma rotina do
+   * `frankframes blocks add` e insere um host `data-composition-src` no tempo pedido, com a duração do bloco. Os arquivos
+   * copiados ficam no projeto mesmo se o clip for desfeito ou apagado; copiar de novo nunca sobrescreve edição sua.
+   */
+  const insertBlock = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
+    const body = objectBody(await bodyJson(req));
+    const slug = body.slug;
+    if (typeof slug !== "string" || slug === "") throw new ReplyError(400, "E_BODY_INVALID", '"slug" precisa ser texto');
+    const start = numeric(body, "start");
+    if (start < 0) throw new ReplyError(400, "E_BODY_INVALID", '"start" precisa ser >= 0');
+
+    let block: ReturnType<typeof listBlocks>[number] | undefined;
+    try {
+      block = listBlocks().find((candidate) => candidate.slug === slug);
+    } catch (error) {
+      throw new ReplyError(500, "E_CATALOG", (error as Error).message);
+    }
+    if (block === undefined) {
+      const unknown = new UnknownBlockError(slug);
+      throw new ReplyError(404, unknown.code, unknown.message, [
+        { code: unknown.code, severity: "error", message: unknown.message, hint: unknown.hint },
+      ]);
+    }
+
+    const source = await readFile(entryPath, "utf8");
+    const root = findRootClose(source);
+    if (root === null) throw new ReplyError(400, "E_ROOT_NOT_FOUND", "elemento com data-composition-id não encontrado");
+
+    const target = join(entryDir, BLOCKS_DIR, slug);
+    const reused = (await statIfPresent(target)) !== undefined;
+    if (!reused) await installBlock(slug, target);
+
+    const id = nextClipId(source);
+    const src = `${BLOCKS_DIR}/${slug}/index.html`;
+    const markup = `\n  ${subCompositionMarkup(id, src, start, block.durationSeconds, topTrack(source))}\n`;
+    const next = source.slice(0, root.index) + markup + source.slice(root.index);
+    await validatedTree(next, `o bloco ${slug} deixaria o contrato inválido`);
+    await commit(`inserir bloco ${slug}`, source, next);
+    sendJson(res, 200, { ok: true, id, slug, src, duration: block.durationSeconds, reused, history: history.state() });
+  };
+
+  /**
+   * `.html` local pelo Importar (EDT-88): vira sub-composição no tempo pedido, com a duração derivada da raiz do arquivo
+   * (§5). O arquivo vai para `compositions/`; se não for uma composição válida, é descartado e nada muda no projeto.
+   */
+  const importSubComposition = async (name: string, start: number, req: IncomingMessage, res: ServerResponse): Promise<void> => {
+    const source = await readFile(entryPath, "utf8");
+    const root = findRootClose(source);
+    if (root === null) throw new ReplyError(400, "E_ROOT_NOT_FOUND", "elemento com data-composition-id não encontrado");
+
+    let stored: Awaited<ReturnType<typeof storeMedia>>;
+    try {
+      stored = await storeMedia(req, entryDir, name, COMPOSITIONS_DIR);
+    } catch (error) {
+      if (error instanceof MediaUploadError) throw new ReplyError(error.status, error.code, error.message);
+      throw error;
+    }
+    const discard = async (): Promise<void> => {
+      if (stored.created) await unlink(stored.file);
+    };
+
+    try {
+      const inner = loadComposition(await readFile(stored.file, "utf8"));
+      if (!inner.ok) throw new ReplyError(400, "E_CONTRACT_INVALID", `${name} não é uma sub-composição válida`, inner.diagnostics);
+      if (inner.duration.kind === "unresolved") {
+        throw new ReplyError(400, "E_CONTRACT_INVALID", `${name} não tem duração resolvida`, [
+          { code: "E_DURATION_UNRESOLVED", severity: "error", message: "duração da sub-composição não resolvida", hint: "declare data-duration na raiz do arquivo" },
+        ]);
+      }
+      const duration = inner.duration.seconds;
+      const id = nextClipId(source);
+      const markup = `\n  ${subCompositionMarkup(id, stored.src, start, duration, topTrack(source))}\n`;
+      const next = source.slice(0, root.index) + markup + source.slice(root.index);
+      await validatedTree(next, `a sub-composição ${name} deixaria o contrato inválido`);
+      await commit(`importar ${stored.src}`, source, next);
+      sendJson(res, 200, { ok: true, id, src: stored.src, kind: "composition", duration, reused: !stored.created, history: history.state() });
+    } catch (error) {
+      await discard();
+      throw error;
+    }
   };
 
   /** `POST /api/media?name=<arquivo>&start=<s>` com o arquivo cru no corpo. */
   const importMedia = async (url: URL, req: IncomingMessage, res: ServerResponse): Promise<void> => {
     const name = url.searchParams.get("name") ?? "";
+    if (isSubCompositionFile(name)) {
+      const htmlStart = Number(url.searchParams.get("start") ?? "0");
+      if (!Number.isFinite(htmlStart) || htmlStart < 0) throw new ReplyError(400, "E_BODY_INVALID", '"start" precisa ser número >= 0');
+      await importSubComposition(name, htmlStart, req, res);
+      return;
+    }
     const kind = mediaKind(name);
     if (kind === undefined) {
       const message = `tipo de arquivo não suportado: ${name || "(sem nome)"}`;
@@ -1109,6 +1228,10 @@ data: ${JSON.stringify(job)}
       }
       if (pathname === "/api/composition") {
         await serial(() => patchComposition(req, res));
+        return;
+      }
+      if (pathname === "/api/blocks") {
+        await serial(() => insertBlock(req, res));
         return;
       }
       if (pathname === "/api/media") {

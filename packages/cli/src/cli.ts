@@ -2,7 +2,7 @@
 // FrankFrames — proprietário. Ver LICENSE na raiz.
 import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
-import { cp, writeFile } from "node:fs/promises";
+import { writeFile } from "node:fs/promises";
 import { watch } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { loadComposition } from "@frankframes/contract";
@@ -21,7 +21,7 @@ import {
 } from "@frankframes/producer";
 import type { PreviewAudioConfig } from "@frankframes/engine";
 import { installLocalModel, resolveProvider } from "@frankframes/transcribe";
-import { installBlockFromUrl, listBlocks, readBlock } from "@frankframes/catalog";
+import { UnknownBlockError, installBlock, installBlockFromUrl, listBlocks, readBlock } from "@frankframes/catalog";
 import { runBatchCommand } from "./batch-command.ts";
 import { buildCatalogIndex, publishCatalog, serveCatalog } from "./catalog-server.ts";
 import { runFramesCommand } from "./frames-command.ts";
@@ -496,12 +496,13 @@ async function main(): Promise<void> {
           return;
         }
       }
-      const block = listBlocks().find((candidate) => candidate.slug === slug);
-      if (!block) {
-        process.stderr.write(`bloco desconhecido: ${slug} (passe um slug local ou uma URL)\n`);
+      try {
+        await installBlock(slug, target);
+      } catch (error) {
+        if (!(error instanceof UnknownBlockError)) throw error;
+        process.stderr.write(`${error.code}: ${error.message} (passe um slug local ou uma URL; ${error.hint})\n`);
         process.exit(2);
       }
-      await cp(block.dir, target, { recursive: true });
       process.stdout.write(`${target} (${readBlock(slug).length} bytes de HTML)\n`);
       process.exit(0);
     }

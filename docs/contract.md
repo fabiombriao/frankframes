@@ -83,6 +83,10 @@ um clip comum não cria outro clip e avisa (`W_NESTED_START_IGNORED`, §7b.2).
 - Inline: `<template>` dentro do host **ou** filhos diretos do host. Um host de sub-composição é uma
   fronteira de escopo: o conteúdo interno é outra composição, com tempo local, e **não** vaza para a raiz.
 - Externa: `data-composition-src="card.html"`.
+- O compilador remove `data-composition-src` depois de inlinar o arquivo; por isso o host externo também leva
+  `data-composition-id` (é ele que o mantém como sub-composição, com o tempo interno isolado e a checagem de id
+  duplicado entre arquivos). Só o conteúdo da raiz interna entra no host: a classe e o `style` da raiz interna
+  não são copiados, e o `<style>`/`<script>` do `<head>` do arquivo valem para a página inteira.
 - Profundidade máxima 20; ids de clip são **únicos em toda a árvore** (referências atravessam escopos).
 - Duração do host: `data-duration` do host; senão `data-duration` da raiz interna; senão indefinida.
 
@@ -832,6 +836,26 @@ Qualquer outra falha de medição continua falhando alto.
 `frankframes studio` edita o HTML da entrada; toda escrita passa pelo contrato antes de ir para o disco
 (contrato inválido não grava, `E_CONTRACT_INVALID` com os diagnósticos) e preserva formatação e comentários.
 
+- **Bloco do catálogo** (`POST /api/blocks`, corpo `{slug, start}`; EDT-88). Clicar num bloco do painel "Blocos"
+  insere o bloco, não um texto. O Studio copia a pasta do bloco para `blocks/<slug>/` ao lado da entrada com a mesma
+  rotina do `frankframes blocks add <slug>` (`installBlock` em `@frankframes/catalog`) e insere no fim da raiz um host
+  de sub-composição (§5) `data-composition-src="blocks/<slug>/index.html"` com `data-start` no playhead,
+  `data-duration` do próprio bloco e faixa acima de todas as visuais; o preview e o export mostram o bloco. Resposta
+  `200 {ok, id, slug, src, duration, reused, history}`. Slug fora do catálogo é `404 E_BLOCK_UNKNOWN` (com `hint`
+  para `frankframes blocks list`); o `blocks add` local falha com o mesmo código. A árvore inteira é validada antes de
+  gravar (`compileComposition`): id de clip do bloco que já existe na composição, por exemplo inserir **o mesmo bloco
+  duas vezes** ou um bloco cujo id colide com o de um clip seu, é `400 E_CONTRACT_INVALID` com `E_DUPLICATE_ID`, e a
+  composição não muda. Desfazer remove o clip; **os arquivos copiados ficam em `blocks/<slug>/`** (como o arquivo
+  importado em `assets/`), e inserir de novo reaproveita a cópia sem sobrescrever edição sua (`reused: true`).
+- **Texto** (`POST /api/clips {template:"text", start}`; botão "Inserir texto"). É o único template: cria um
+  `<div>` com o texto "Texto" no playhead, e o botão diz isso. Qualquer outro `template` (inclusive o antigo
+  `title`/`subtitle`) é `400 E_TEMPLATE_INVALID` com `hint`; nada vira texto genérico em silêncio.
+- **Importar `.html`** (o mesmo "Importar", `POST /api/media?name=x.html&start=`). `.html`/`.htm` local entra como
+  sub-composição (§5) em vez de mídia: o arquivo vai para `compositions/` (mesma regra de nome seguro e de não
+  sobrescrever de `assets/`), o host recebe `data-start` no playhead e a `data-duration` **derivada da raiz do
+  arquivo** (`legendas.html` de `frankframes captions` traz a sua). Arquivo que não é uma composição válida
+  (`E_NO_ROOT` etc.), sem duração na raiz (`E_DURATION_UNRESOLVED`) ou cujo id colide com a composição é
+  `400 E_CONTRACT_INVALID` com os diagnósticos do contrato, é apagado se foi criado agora e nada muda no projeto.
 - **Importar mídia** (`POST /api/media?name=&start=`, arquivo cru no corpo). Vídeo (`.mp4 .m4v .mov .webm
   .mkv`), áudio (`.mp3 .wav .m4a .aac .ogg .opus .flac`) ou imagem (`.png .jpg .jpeg .webp .gif .svg`) é
   copiado para `assets/` ao lado da entrada com nome seguro (sem acento, espaço ou caminho). Conteúdo

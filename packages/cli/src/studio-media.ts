@@ -94,8 +94,13 @@ async function exists(file: string): Promise<boolean> {
  * igual a um arquivo já existente reaproveita o arquivo; nome igual com
  * conteúdo diferente ganha sufixo do hash em vez de sobrescrever.
  */
-export async function storeMedia(body: AsyncIterable<Buffer | string>, entryDir: string, name: string): Promise<StoredMedia> {
-  const dir = join(entryDir, ASSETS_DIR);
+export async function storeMedia(
+  body: AsyncIterable<Buffer | string>,
+  entryDir: string,
+  name: string,
+  dirName: string = ASSETS_DIR,
+): Promise<StoredMedia> {
+  const dir = join(entryDir, dirName);
   await mkdir(dir, { recursive: true });
   const fileName = safeMediaName(name);
   const tmp = join(dir, `.upload-${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}.tmp`);
@@ -130,11 +135,11 @@ export async function storeMedia(body: AsyncIterable<Buffer | string>, entryDir:
     const target = join(dir, candidate);
     if (!(await exists(target))) {
       await rename(tmp, target);
-      return { file: target, src: `${ASSETS_DIR}/${candidate}`, created: true, sha256 };
+      return { file: target, src: `${dirName}/${candidate}`, created: true, sha256 };
     }
     if ((await fileSha256(target)) === sha256) {
       await unlink(tmp);
-      return { file: target, src: `${ASSETS_DIR}/${candidate}`, created: false, sha256 };
+      return { file: target, src: `${dirName}/${candidate}`, created: false, sha256 };
     }
   }
   await unlink(tmp);
@@ -171,4 +176,22 @@ export function mediaMarkup(kind: MediaKind, id: string, src: string, start: num
   if (kind === "audio") return `<audio ${common}></audio>`;
   if (kind === "img") return `<img ${common} alt="" style="${FILL}">`;
   return `<video ${common} style="${FILL}"></video>`;
+}
+
+/** Pasta (relativa à entrada) onde o Studio guarda blocos do catálogo copiados (EDT-88). */
+export const BLOCKS_DIR = "blocks";
+/** Pasta onde o Studio guarda `.html` importados como sub-composição (EDT-88). */
+export const COMPOSITIONS_DIR = "compositions";
+
+/** `.html`/`.htm` importado entra como sub-composição, não como mídia. */
+export function isSubCompositionFile(name: string): boolean {
+  return /\.html?$/i.test(name);
+}
+
+/**
+ * Host de sub-composição (`data-composition-src`, docs/contract.md §5): ocupa o quadro (posicionado, para a camada
+ * `z-index` do §4 valer) e leva a duração própria; o conteúdo vem do arquivo copiado no projeto.
+ */
+export function subCompositionMarkup(id: string, src: string, start: number, duration: number, track: number): string {
+  return `<div data-clip-id="${escapeAttribute(id)}" data-composition-id="${escapeAttribute(id)}" data-composition-src="${escapeAttribute(src)}" data-start="${start}" data-duration="${duration}" data-track="${track}" style="position:absolute;inset:0;overflow:hidden"></div>`;
 }
