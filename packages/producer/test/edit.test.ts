@@ -1,7 +1,7 @@
 // FrankFrames — proprietário. Ver LICENSE na raiz.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { applyPatches, applyTransition, deleteClip, duplicateClip, EditError, splitClip, trimClipStart } from "../src/edit.ts";
+import { applyPatches, applyTransition, deleteClip, duplicateClip, editComposition, EditError, splitClip, trimClipStart } from "../src/edit.ts";
 import { loadComposition } from "@frankframes/contract";
 
 const SOURCE = `<!doctype html>
@@ -646,4 +646,67 @@ test("sub-composição por arquivo: a cópia leva a referência, não o outro ar
   const { source: out } = duplicateClip(source, { clipId: "sub", at: 3, newId: "clip-9" });
   assert.equal(out.match(/data-composition-src="parts\/card.html"/g)?.length, 2);
   assert.match(out, /data-clip-id="clip-9" data-composition-src="parts\/card.html" data-start="3" data-duration="3"/);
+});
+
+// EDT-84: edição da raiz (duração, largura, altura, fps) preservando o resto do arquivo.
+test("editComposition troca data-duration e preserva comentário e formatação", () => {
+  const out = editComposition(SOURCE, { duration: 68 });
+  assert.ok(out.includes('data-duration="68"'), "duração nova na raiz");
+  assert.ok(out.includes("<!-- comentário que precisa sobreviver -->"), "comentário preservado");
+  assert.equal(
+    out.replace('data-duration="68"', 'data-duration="4"'),
+    SOURCE,
+    "só o atributo da raiz muda; os clips ficam byte a byte iguais",
+  );
+  const c = loadComposition(out);
+  assert.equal(c.ok, true);
+  assert.deepEqual(c.duration, { kind: "authored", seconds: 68 });
+});
+
+test("editComposition com duration null REMOVE o atributo e a duração passa a ser derivada", () => {
+  const out = editComposition(SOURCE, { duration: null });
+  const rootTag = /<div [^>]*data-root="true"[^>]*>/.exec(out)?.[0] ?? "";
+  assert.ok(rootTag.length > 0, "raiz ainda existe");
+  assert.ok(!rootTag.includes("data-duration"), `data-duration deveria sair da raiz: ${rootTag}`);
+  assert.ok(out.includes('data-clip-id="a" data-start="0" data-duration="1"'), "clips intactos");
+  const c = loadComposition(out);
+  assert.equal(c.ok, true);
+  assert.deepEqual(c.duration, { kind: "derived", seconds: 3 });
+});
+
+test("editComposition cria largura, altura e fps ausentes e troca os existentes", () => {
+  const added = editComposition(SOURCE, { width: 1280, height: 720, fps: "30000/1001" });
+  assert.ok(added.includes('data-width="1280"'));
+  assert.ok(added.includes('data-height="720"'));
+  assert.ok(added.includes('data-fps="30000/1001"'));
+  assert.equal(loadComposition(added).ok, true);
+
+  const changed = editComposition(added, { width: 1920, height: 1080, fps: "60" });
+  assert.ok(changed.includes('data-width="1920"') && !changed.includes('data-width="1280"'));
+  assert.ok(changed.includes('data-height="1080"') && !changed.includes('data-height="720"'));
+  assert.ok(changed.includes('data-fps="60"') && !changed.includes("30000/1001"));
+  assert.equal(loadComposition(changed).ok, true);
+});
+
+test("editComposition recusa patch vazio, número inválido e fps vazio com E_ATTRIBUTE_INVALID", () => {
+  const codeOf = (patch: Parameters<typeof editComposition>[1]): string | undefined => {
+    try {
+      editComposition(SOURCE, patch);
+    } catch (error) {
+      assert.ok(error instanceof EditError, "erro tipado");
+      return error.code;
+    }
+    return undefined;
+  };
+  assert.equal(codeOf({}), "E_ATTRIBUTE_INVALID");
+  assert.equal(codeOf({ duration: Number.NaN }), "E_ATTRIBUTE_INVALID");
+  assert.equal(codeOf({ width: Number.POSITIVE_INFINITY }), "E_ATTRIBUTE_INVALID");
+  assert.equal(codeOf({ fps: "" }), "E_ATTRIBUTE_INVALID");
+});
+
+test("editComposition sem raiz falha com E_CLIP_NOT_FOUND", () => {
+  assert.throws(
+    () => editComposition("<!doctype html><html><body><p>nada</p></body></html>", { duration: 3 }),
+    (error: unknown) => error instanceof EditError && error.code === "E_CLIP_NOT_FOUND",
+  );
 });

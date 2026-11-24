@@ -33,6 +33,11 @@ export interface LoadOptions {
   mediaDurations?: Record<string, number>;
 }
 
+/** Tolerância (s) para ruído de ponto flutuante ao comparar fim do clip com fim da composição. */
+const PAST_END_EPSILON = 1e-6;
+
+const fmtSeconds = (s: number): string => String(Number(s.toFixed(3)));
+
 /**
  * Única porta de entrada do contrato: HTML -> composição resolvida.
  * Falha alto: qualquer diagnóstico `error` deixa `ok: false` e o render não começa.
@@ -45,6 +50,24 @@ export function loadComposition(html: string, options: LoadOptions = {}): Compos
   const clips = resolveClips(clipsWithMedia, diagnostics);
   const duration = resolveDuration(clips, raw.authoredDuration);
   const motion = resolveMotion(raw.motion, clips, duration, diagnostics);
+
+  // §7: `data-duration` da raiz vence e corta; clip de topo que termina depois dele é cortado em silêncio sem este aviso.
+  if (duration.kind === "authored") {
+    for (const clip of clips) {
+      if (clip.end === undefined || clip.end <= duration.seconds + PAST_END_EPSILON) continue;
+      diagnostics.push(
+        diag(
+          CODES.CLIP_PAST_END,
+          "warning",
+          `o clip "${clip.id}" termina em ${fmtSeconds(clip.end)} s, depois do fim da composição (${fmtSeconds(duration.seconds)} s): o trecho final não entra no render`,
+          {
+            clipId: clip.id,
+            hint: `aumente data-duration da raiz para ${fmtSeconds(clip.end)} s ou remova o atributo para derivar a duração dos clips`,
+          },
+        ),
+      );
+    }
+  }
 
   if (duration.kind === "unresolved" && raw.id !== "") {
     const why =

@@ -1,5 +1,7 @@
 import { MAX_PX_PER_FRAME, chooseStep, clampZoom, lastFrameTime, isFrameLevel, nextTrack, peakSlice, pxSpan, roundToFrame, snap as snapTarget, snapMove, snapToFrame, tickLabel, trackGroup, trackRows, zoomAround } from "/timeline-math.js";
 import { keyframeMarks, keyframePropsFor, renderKeyframeSection, renderMotionSection, renderTransitionSection } from "/motion.js";
+import { compositionFields, compositionPatch, pastEndNotice } from "/composition.js";
+import { displayNumber, numericChanges } from "/inspector.js";
 
 (() => {
   "use strict";
@@ -18,6 +20,20 @@ import { keyframeMarks, keyframePropsFor, renderKeyframeSection, renderMotionSec
   const fileNameEl = document.getElementById("fileName");
   const totalDurationEl = document.getElementById("totalDuration");
   const compositionFpsEl = document.getElementById("compositionFps");
+  const durationKindEl = document.getElementById("durationKind");
+  const compositionButton = document.getElementById("compositionButton");
+  const compositionForm = document.getElementById("compositionForm");
+  const compositionIdEl = document.getElementById("compositionId");
+  const compDuration = document.getElementById("compDuration");
+  const compDerived = document.getElementById("compDerived");
+  const compWidth = document.getElementById("compWidth");
+  const compHeight = document.getElementById("compHeight");
+  const compFps = document.getElementById("compFps");
+  const compositionNote = document.getElementById("compositionNote");
+  const compositionFormDiagnostics = document.getElementById("compositionFormDiagnostics");
+  const endNotice = document.getElementById("endNotice");
+  const endNoticeText = document.getElementById("endNoticeText");
+  const endNoticeButton = document.getElementById("endNoticeButton");
   const connectionEl = document.getElementById("connection");
   const player = document.getElementById("player");
   const playerFrame = document.getElementById("playerFrame");
@@ -87,6 +103,8 @@ import { keyframeMarks, keyframePropsFor, renderKeyframeSection, renderMotionSec
     clips: [],
     total: 0,
     fps: 30,
+    /* Raiz como o arquivo a declara (EDT-84): id, durationKind, duration, width, height, fps, contentEnd. */
+    composition: null,
     fileName: "index.html",
     selectedId: null,
     /* Área de transferência por referência: o id do clip copiado, não o conteúdo. */
@@ -144,9 +162,15 @@ import { keyframeMarks, keyframePropsFor, renderKeyframeSection, renderMotionSec
     return snapToFrame(value, state.fps);
   }
 
+  /* Só exibição (3 casas): o valor que vai para o HTML nunca sai daqui. */
   function formatNumber(value) {
-    if (value === null || value === undefined) return "";
-    return String(Math.round(value * 1000) / 1000);
+    return displayNumber(value);
+  }
+
+  /* Preenche um campo numérico e guarda o texto exibido: "Aplicar" só envia o que o usuário editou em cima dele. */
+  function showField(element, text) {
+    element.value = text;
+    element.dataset.shown = text;
   }
 
   function formatSeconds(value) {
@@ -244,7 +268,13 @@ import { keyframeMarks, keyframePropsFor, renderKeyframeSection, renderMotionSec
       }
       if (typeof value !== "object" || typeof value.message !== "string") return;
       const severity = value.severity === "warning" ? "warning" : value.severity === "info" ? "info" : forced || "error";
-      output.push({ severity, message: value.message, hint: typeof value.hint === "string" ? value.hint : undefined });
+      output.push({
+        severity,
+        message: value.message,
+        hint: typeof value.hint === "string" ? value.hint : undefined,
+        code: typeof value.code === "string" ? value.code : undefined,
+        clipId: typeof value.clipId === "string" ? value.clipId : undefined,
+      });
     };
     if (Array.isArray(payload)) {
       for (const entry of payload) add(entry);
@@ -280,6 +310,15 @@ import { keyframeMarks, keyframePropsFor, renderKeyframeSection, renderMotionSec
     const declared = asNumber(data.duration) ?? asNumber(data.seconds);
     const maxEnd = state.clips.reduce((max, clip) => (clip.end !== null && clip.end > max ? clip.end : max), 0);
     state.total = Math.max(0, declared !== null ? declared : maxEnd);
+    state.composition = {
+      id: typeof data.id === "string" ? data.id : "",
+      durationKind: data.durationKind === "authored" || data.durationKind === "derived" ? data.durationKind : "unresolved",
+      duration: declared,
+      width: asNumber(data.width),
+      height: asNumber(data.height),
+      fps: data.fps,
+      contentEnd: asNumber(data.contentEnd),
+    };
     state.playhead = clamp(state.playhead, 0, maxPlayhead());
     keepKeyframeSelection();
 
@@ -292,6 +331,8 @@ import { keyframeMarks, keyframePropsFor, renderKeyframeSection, renderMotionSec
     } else if (state.selectedId !== null) {
       updateSelectionStyles();
       if (!state.inspectorDirty) fillInspector();
+    } else if (!state.inspectorDirty) {
+      fillComposition();
     }
     checkLayerEffect();
   }
@@ -306,6 +347,7 @@ import { keyframeMarks, keyframePropsFor, renderKeyframeSection, renderMotionSec
         ? normalizeDiagnostics(payload.diagnostics)
         : normalizeDiagnostics(payload.composition ? payload.composition.diagnostics : []);
       renderDiagnostics(compositionDiagnostics, diagnostics);
+      renderEndNotice(pastEndNotice(diagnostics));
       setConnection("ao vivo", false);
     } catch (error) {
       setConnection("desconectado", true);
@@ -324,6 +366,98 @@ import { keyframeMarks, keyframePropsFor, renderKeyframeSection, renderMotionSec
     totalDurationEl.textContent = state.total > 0 ? formatSeconds(state.total) : "--";
     const fps = state.fps;
     compositionFpsEl.textContent = Number.isInteger(fps) ? fps + " fps" : fps.toFixed(2) + " fps";
+    const kind = state.composition === null ? "unresolved" : state.composition.durationKind;
+    durationKindEl.textContent = kind === "authored" ? "fixa (data-duration)" : kind === "derived" ? "derivada dos clips" : "";
+  }
+
+  /*
+   * Faixa sobre a timeline: o playhead e o preview param no fim autoral da raiz, então, se um clip passa dele,
+   * o Studio diz isso em vez de cortar em silêncio (W_CLIP_PAST_END, docs/contract.md §7).
+   */
+  function renderEndNotice(notice) {
+    endNotice.hidden = notice === null;
+    durationKindEl.classList.toggle("is-warning", notice !== null);
+    if (notice === null) {
+      endNoticeText.textContent = "";
+      endNotice.removeAttribute("title");
+      return;
+    }
+    const subject = notice.count === 1 && notice.ids.length === 1 ? 'o clip "' + notice.ids[0] + '" passa' : notice.count + " clips passam";
+    endNoticeText.textContent =
+      "A composição termina em " + formatSeconds(state.total) + " (data-duration fixo) e " + subject + " do fim: o excedente não entra no preview nem no render.";
+    endNotice.title = notice.message + (notice.hint ? " — " + notice.hint : "");
+  }
+
+  /* Inspetor de Composição (EDT-84): a raiz, quando nenhum clip está selecionado. */
+
+  function compositionNoteText(data) {
+    const end = data.contentEnd === null ? null : formatSeconds(data.contentEnd);
+    if (data.durationKind === "authored") {
+      return "Duração fixa pelo arquivo: clips depois dela não entram no preview nem no render." + (end === null ? "" : " Os clips vão até " + end + ".");
+    }
+    if (data.durationKind === "derived") return "Sem data-duration: a duração acompanha o fim do último clip (" + (end ?? "--") + ").";
+    return "Duração não resolvida: informe data-duration ou dê duração aos clips.";
+  }
+
+  function fillComposition() {
+    const data = state.composition;
+    if (data === null) return;
+    const fields = compositionFields(data);
+    compositionIdEl.textContent = data.id;
+    compDuration.value = fields.duration;
+    compDerived.checked = fields.derived;
+    compDuration.disabled = fields.derived;
+    compWidth.value = fields.width;
+    compHeight.value = fields.height;
+    compFps.value = fields.fps;
+    compositionNote.textContent = compositionNoteText(data);
+    compositionForm.hidden = false;
+    state.inspectorDirty = false;
+  }
+
+  /* Abre o inspetor de Composição (botão do topo e faixa de aviso): tira a seleção de clip e foca a duração. */
+  function openComposition() {
+    clearInspector();
+    fillComposition();
+    compositionForm.scrollIntoView({ block: "nearest" });
+    (compDuration.disabled ? compDerived : compDuration).focus();
+  }
+
+  function submitComposition() {
+    if (state.composition === null) return mutationQueue;
+    const { body, error } = compositionPatch(state.composition, {
+      duration: compDuration.value,
+      derived: compDerived.checked,
+      width: compWidth.value,
+      height: compHeight.value,
+      fps: compFps.value,
+    });
+    if (error !== null) {
+      renderDiagnostics(compositionFormDiagnostics, [{ severity: "error", message: error }]);
+      return mutationQueue;
+    }
+    if (body === null) {
+      state.inspectorDirty = false;
+      renderDiagnostics(compositionFormDiagnostics, [{ severity: "info", message: "Nada mudou na composição." }]);
+      return mutationQueue;
+    }
+    return queueComposition(body);
+  }
+
+  /* POST /api/composition: contrato inválido volta como E_CONTRACT_INVALID e o arquivo fica como estava. */
+  function queueComposition(body) {
+    mutationQueue = mutationQueue
+      .then(async () => {
+        const result = await mutate("POST", "/api/composition", body);
+        if (result.payload && result.payload.history) applyHistory(result.payload.history);
+        if (result.ok) state.inspectorDirty = false;
+        await refreshComposition();
+        renderDiagnostics(compositionFormDiagnostics, result.ok ? [] : result.diagnostics);
+      })
+      .catch((error) => {
+        renderDiagnostics(compositionFormDiagnostics, [{ severity: "error", message: "Falha ao salvar a composição: " + error.message }]);
+      });
+    return mutationQueue;
   }
 
   /* Inspector */
@@ -332,6 +466,7 @@ import { keyframeMarks, keyframePropsFor, renderKeyframeSection, renderMotionSec
     state.selectedId = null;
     state.inspectorDirty = false;
     inspector.hidden = true;
+    fillComposition();
     motionSection.hidden = true;
     transitionSection.hidden = true;
     keyframeSection.hidden = true;
@@ -349,14 +484,15 @@ import { keyframeMarks, keyframePropsFor, renderKeyframeSection, renderMotionSec
     }
     inspector.hidden = false;
     inspectorEmpty.hidden = true;
+    compositionForm.hidden = true;
     clipTagEl.textContent = clip.tag;
     clipIdEl.textContent = clip.id;
-    fieldStart.value = formatNumber(clip.start);
-    fieldDuration.value = formatNumber(clip.duration);
-    fieldOffset.value = formatNumber(clip.offset);
-    fieldVolume.value = formatNumber(clip.volume);
+    showField(fieldStart, formatNumber(clip.start));
+    showField(fieldDuration, formatNumber(clip.duration));
+    showField(fieldOffset, formatNumber(clip.offset));
+    showField(fieldVolume, formatNumber(clip.volume));
     fieldRole.value = clip.role ?? "";
-    fieldRate.value = formatNumber(clip.playbackRate);
+    showField(fieldRate, formatNumber(clip.playbackRate));
     fieldText.value = clip.text ?? "";
     state.inspectorDirty = false;
     renderDiagnostics(inspectorDiagnostics, []);
@@ -867,7 +1003,7 @@ import { keyframeMarks, keyframePropsFor, renderKeyframeSection, renderMotionSec
         let response;
         try {
           response = await fetch(
-            "/api/media?name=" + encodeURIComponent(file.name) + "&start=" + encodeURIComponent(formatNumber(start)),
+            "/api/media?name=" + encodeURIComponent(file.name) + "&start=" + encodeURIComponent(String(start)),
             { method: "POST", cache: "no-store", body: file, headers: { accept: "application/json" } },
           );
           payload = await readJson(response);
@@ -891,7 +1027,7 @@ import { keyframeMarks, keyframePropsFor, renderKeyframeSection, renderMotionSec
             (payload.reused ? ", arquivo idêntico reaproveitado" : ""),
         };
         lastId = typeof payload.id === "string" ? payload.id : lastId;
-        // Vários arquivos de uma vez entram em sequência, um depois do outro.
+        // Vários arquivos de uma vez entram em sequência, um depois do outro; o início segue exato (sem arredondar a ms).
         start = Math.round((start + duration) * 1e6) / 1e6;
       }
       state.inspectorDirty = false;
@@ -934,8 +1070,7 @@ import { keyframeMarks, keyframePropsFor, renderKeyframeSection, renderMotionSec
     const clip = state.selectedId === null ? null : findClip(state.selectedId);
     if (!clip) return;
 
-    const attributes = {};
-    const errors = [];
+    /* Só vai o campo que o usuário editou (texto diferente do exibido): o resto fica byte a byte no HTML. */
     const numericFields = [
       [fieldStart, "data-start"],
       [fieldDuration, "data-duration"],
@@ -943,21 +1078,16 @@ import { keyframeMarks, keyframePropsFor, renderKeyframeSection, renderMotionSec
       [fieldVolume, "data-volume"],
       [fieldRate, "data-playback-rate"],
     ];
-
-    for (const [element, key] of numericFields) {
-      const raw = element.value.trim();
-      const original = originalFor(clip, key);
-      if (raw === "") {
-        if (original !== null) attributes[key] = null;
-        continue;
-      }
-      const value = Number(raw);
-      if (!Number.isFinite(value)) {
-        errors.push({ severity: "error", message: key + " precisa ser um número." });
-        continue;
-      }
-      if (original === null || Math.abs(value - original) > 1e-9) attributes[key] = String(value);
-    }
+    const changes = numericChanges(
+      numericFields.map(([element, key]) => ({
+        key,
+        shown: element.dataset.shown ?? "",
+        text: element.value,
+        original: originalFor(clip, key),
+      })),
+    );
+    const attributes = changes.attributes;
+    const errors = changes.errors.map((message) => ({ severity: "error", message }));
 
     const role = fieldRole.value;
     if (role === "") {
@@ -1457,8 +1587,8 @@ import { keyframeMarks, keyframePropsFor, renderKeyframeSection, renderMotionSec
     positionKeyframeMarks(clip);
     scheduleWaveforms();
     if (!state.inspectorDirty) {
-      if (clip.start !== null) fieldStart.value = formatNumber(clip.start);
-      if (clip.duration !== null) fieldDuration.value = formatNumber(clip.duration);
+      if (clip.start !== null) showField(fieldStart, formatNumber(clip.start));
+      if (clip.duration !== null) showField(fieldDuration, formatNumber(clip.duration));
       clipIdEl.textContent = clip.id;
     }
   }
@@ -2190,6 +2320,24 @@ import { keyframeMarks, keyframePropsFor, renderKeyframeSection, renderMotionSec
     event.preventDefault();
     applyChanges();
   });
+
+  compositionForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    submitComposition();
+  });
+  compositionForm.addEventListener("input", () => {
+    state.inspectorDirty = true;
+  });
+  /* "Derivada" tira data-duration; ao desmarcar, a caixa já vem com o fim dos clips para não ficar vazia. */
+  compDerived.addEventListener("change", () => {
+    compDuration.disabled = compDerived.checked;
+    if (!compDerived.checked && compDuration.value === "" && state.composition !== null && state.composition.contentEnd !== null) {
+      compDuration.value = formatNumber(state.composition.contentEnd);
+    }
+    state.inspectorDirty = true;
+  });
+  compositionButton.addEventListener("click", openComposition);
+  endNoticeButton.addEventListener("click", openComposition);
 
   inspector.addEventListener("input", () => {
     state.inspectorDirty = true;

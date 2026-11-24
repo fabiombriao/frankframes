@@ -29,6 +29,7 @@ import { runGenerateCommand } from "./generate-command.ts";
 import { startGallery } from "./gallery.ts";
 import { openBrowser } from "./open-browser.ts";
 import { lintReport } from "./lint-report.ts";
+import { HELP, isCommand, wantsHelp } from "./help.ts";
 import { runDoctor, runInit, runSkillInstall } from "./onboarding.ts";
 import { defaultOutput, guardEncoder } from "./render-guard.ts";
 import { runSetup } from "./setup.ts";
@@ -36,51 +37,6 @@ import { runUpgrade } from "./upgrade.ts";
 import { startStudio } from "./studio-server.ts";
 import type { RenderStage } from "@frankframes/producer";
 import type { CliCode } from "./cli-errors.ts";
-
-const HELP = `frankframes — vídeo determinístico a partir de HTML
-
-uso:
-  frankframes --version | -v
-  frankframes lint <arquivo.html> [--json]
-  frankframes render <arquivo.html> [-o saida.mp4] [--codec av1|vp9|h264] [--preset draft|standard|high]
-                                    [--workers N] [--gpu auto|software|hardware] [--no-loudness]
-                                    [--keep] [--json]
-                                    (--keep guarda a pasta de trabalho e grava os frames em frames/*.png;
-                                     sem ele os frames vão direto ao FFmpeg, sem PNG em disco)
-  frankframes render a.html b.html [c.html…] -o <pasta>/ [--concurrency N] [opções de render]
-  frankframes render --batch lote.json [--concurrency N] [--json]
-  frankframes frames <video.mp4|.webm> [--at 10%,50%,90%|1.5,3] [-o pasta] [--json]
-                                    (extrai PNGs de instantes-chave e marca frames chapados: confira o render)
-  frankframes generate "<pedido>" [-o pasta] [--format 16:9|9:16|1:1] [--duration S] [--attempts N]
-                                    [--model M] [--timeout S] [--project pasta] [--no-render] [--no-studio]
-                                    [--force] [--keep-context] [--json]
-                                    (gera o vídeo a partir de texto com o Codex CLI; exige \`codex login\` com conta ChatGPT)
-  frankframes preview <arquivo.html> [--open]
-  frankframes studio <arquivo.html> [--port N]
-  frankframes transcribe <audio> [--provider local|groq|openai-compatible] [--language pt] [--json]
-  frankframes captions <audio> [-o legenda.html] [--size 1920x1080] [--language pt] [--motion "<preset de entrada>"]
-  frankframes models install whisper-large-v3-turbo
-  frankframes blocks list
-  frankframes blocks add <slug> [destino]
-  frankframes blocks index [--json]
-  frankframes blocks publish <destino>
-  frankframes blocks serve [raiz] [--port N]
-  frankframes gallery [--port N] [--root <dir>]
-  frankframes init [diretório]
-  frankframes doctor
-  frankframes setup [--check] [--fonts-only]
-  frankframes upgrade [--apply]
-  frankframes skill install [--cursor] [diretório]
-  frankframes browser check
-  frankframes browser install
-
-ambiente:
-  FFMPEG_PATH / FFPROBE_PATH     binários usados no render
-  FRANKFRAMES_FFMPEG_MODE        "distribution" bloqueia binário GPL; padrão "user-provided" (avisa)
-  FRANKFRAMES_ALLOW_H264=1       libera H.264 via libopenh264
-  FRANKFRAMES_CODEX              caminho do Codex CLI para o \`generate\` (padrão: \`codex\` no PATH)
-
-lint e render saem com código 1 em erro. Em lote, saem com 1 se algum job falhar; o relatório fica em batch-report.json.`;
 
 interface Cli {
   command: string;
@@ -117,7 +73,6 @@ function parseCli(argv: string[]): Cli {
     const arg = argv[i]!;
     if (arg === "--json") cli.json = true;
     else if (arg === "--keep") cli.keep = true;
-    else if (arg === "--help" || arg === "-h") cli.command = "help";
     else if (arg === "-o" || arg === "--out") {
       cli.out = argv[++i];
       cli.given.push("-o");
@@ -229,6 +184,12 @@ const CLI_VERSION_ERROR: CliCode = "E_VERSION_UNREADABLE";
 
 async function main(): Promise<void> {
   const argv = process.argv.slice(2);
+  // Ajuda antes de tudo (inclusive dos parsers próprios de `frames`/`generate`): nada é lido, criado ou iniciado.
+  if (wantsHelp(argv)) {
+    process.stdout.write(`${HELP}\n`);
+    process.exitCode = 0;
+    return;
+  }
   // `--version` antes de tudo: lê o `package.json` do pacote cli (no tarball do release ele fica ao lado de `src/`).
   if (argv[0] === "--version" || argv[0] === "-v") {
     try {
@@ -262,6 +223,11 @@ async function main(): Promise<void> {
   if (cli.command === "help" || cli.command === "") {
     process.stdout.write(`${HELP}\n`);
     process.exit(0);
+  }
+
+  if (!isCommand(cli.command)) {
+    process.stderr.write(`comando desconhecido: ${cli.command}\n\n${HELP}\n`);
+    process.exit(2);
   }
 
   if (cli.command === "browser") {

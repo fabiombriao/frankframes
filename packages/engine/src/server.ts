@@ -66,7 +66,7 @@ export interface ServerOptions {
   /** Preview: relógio em tempo real + recarga por SSE. */
   live?: boolean;
   /** Preview com barra de controle (fps e total de frames). */
-  preview?: { fps: { num: number; den: number }; frames: number; id?: string };
+  preview?: { fps: { num: number; den: number }; frames: number; id?: string; autoplay?: boolean };
   /** Áudio do preview injetado na página (veja `Injection.audio`). */
   audio?: PreviewAudioConfig;
   /** Diretório dos mixes de preview servido em `/__ff_audio/<sha256>.wav`. */

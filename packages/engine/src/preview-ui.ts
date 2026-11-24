@@ -1,9 +1,14 @@
 // FrankFrames — proprietário. Ver LICENSE na raiz.
+import { frameFromPointer, initialTransport } from "./preview-logic.ts";
+
 /**
  * Barra de controle do preview: play/pause, loop, scrub por frame e instante na URL.
  * Só é injetada quando o servidor está em modo `preview`; nunca no render.
+ * As contas do scrub e do estado inicial vêm de `preview-logic.ts` (testadas no Node) e entram pelo `toString()`.
  */
 export const PREVIEW_UI_SOURCE = `(() => {
+  const frameFromPointer = ${frameFromPointer.toString()};
+  const initialTransport = ${initialTransport.toString()};
   const meta = window.__ffPreviewMeta || { fps: { num: 30, den: 1 }, frames: 90 };
   const fps = meta.fps.num / meta.fps.den;
   const total = Math.max(1, meta.frames);
@@ -62,7 +67,7 @@ export const PREVIEW_UI_SOURCE = `(() => {
   range.max = String(total - 1);
   range.value = "0";
   range.setAttribute("data-ff-scrub", "");
-  range.style.cssText = "flex:1;accent-color:#ff2d55";
+  range.style.cssText = "flex:1;accent-color:#ff2d55;touch-action:none";
 
   const label = document.createElement("span");
   label.setAttribute("data-ff-time", "");
@@ -119,9 +124,34 @@ export const PREVIEW_UI_SOURCE = `(() => {
     paintLoop();
   });
 
+  // Teclado (setas, Home, End) segue o controle nativo; o ponteiro usa a conta própria, com as pontas em 0 e no último frame.
+  let scrubbing = false;
   range.addEventListener("input", () => {
+    if (scrubbing) return;
     goToFrame(Number(range.value));
   });
+  const scrubTo = (event) => {
+    const box = range.getBoundingClientRect();
+    const frame = frameFromPointer(event.clientX, box.left, box.width, total);
+    range.value = String(frame);
+    goToFrame(frame);
+  };
+  range.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0) return;
+    // Cancelar o pointerdown impede o arrasto nativo, que mapearia o ponteiro pela trilha encurtada pelo polegar.
+    event.preventDefault();
+    range.focus();
+    scrubbing = true;
+    scrubTo(event);
+  });
+  document.addEventListener("pointermove", (event) => {
+    if (scrubbing) scrubTo(event);
+  });
+  const endScrub = () => {
+    scrubbing = false;
+  };
+  document.addEventListener("pointerup", endScrub);
+  document.addEventListener("pointercancel", endScrub);
 
   // Instante salvo por composição, e sempre dentro da duração: abrir outro
   // arquivo (ou um arquivo mais curto) não pode herdar um tempo inválido.
@@ -196,13 +226,15 @@ export const PREVIEW_UI_SOURCE = `(() => {
   if (fromHash && !(isReload && savedMs !== null)) {
     goToFrame(Math.min(total - 1, Math.max(0, Number(fromHash[1]))));
     paint();
-  } else if (savedMs !== null && savedPlaying === false) {
-    // Estava parado: volta parado no mesmo instante.
-    window.__ff.stopLive();
-    window.__ff.seek(savedMs);
-    paint();
   } else {
-    window.__ff.startLive(savedMs === null ? 0 : savedMs);
+    // Preview avulso abre tocando; o Studio (autoplay false) abre pausado no 0 e só a recarga restaura o estado.
+    const entry = initialTransport({ savedMs, savedPlaying, isReload, autoplay: meta.autoplay !== false });
+    if (entry.playing) {
+      window.__ff.startLive(entry.ms);
+    } else {
+      window.__ff.stopLive();
+      window.__ff.seek(entry.ms);
+    }
     paint();
   }
   paintPlay();

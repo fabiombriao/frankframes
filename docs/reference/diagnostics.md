@@ -70,6 +70,7 @@ Gerado por `node scripts/generate-reference.ts` a partir do código. Não edite 
 | `E_KEYFRAME_PROP` | erro | edição |
 | `E_MEDIA_EMPTY` | erro | studio |
 | `E_MEDIA_PROBE` | erro | render |
+| `E_MEDIA_ROTATION` | erro | render |
 | `E_MEDIA_TOO_LARGE` | erro | studio |
 | `E_MEDIA_UNSUPPORTED` | erro | studio |
 | `E_MEMORY` | erro | render |
@@ -122,6 +123,7 @@ Gerado por `node scripts/generate-reference.ts` a partir do código. Não edite 
 | `E_WHISPER_FAILED` | erro | transcrição |
 | `E_WHISPER_MISSING` | erro | transcrição |
 | `E_WHISPER_OUTPUT` | erro | transcrição |
+| `W_CLIP_PAST_END` | aviso | contrato |
 | `W_GEN_CLEANUP` | aviso | geração |
 | `W_GEN_FRAME_BLANK` | aviso | geração |
 | `W_KEYFRAME_CURVE_IGNORED` | aviso | contrato |

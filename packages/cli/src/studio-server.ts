@@ -10,8 +10,8 @@ import { basename, dirname, extname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describePresets, listPresets, loadComposition, parseComposition, parseMotionValue } from "@frankframes/contract";
 import type { MotionKind, MotionSource, ResolvedClip } from "@frankframes/contract";
-import { assetPath, injectEngine, probeDuration, warnCleanup } from "@frankframes/engine";
-import type { PreviewAudioConfig } from "@frankframes/engine";
+import { MediaRotationError, assetPath, injectEngine, warnCleanup } from "@frankframes/engine";
+import type { PreviewAudioConfig, VideoOrientation } from "@frankframes/engine";
 import {
   applyPatches,
   applyTransition,
@@ -26,14 +26,15 @@ import {
   splitClip,
   deleteClip,
   duplicateClip,
+  editComposition,
   trimClipStart,
 } from "@frankframes/producer";
-import type { ClipPatch, FfmpegPair, KeyframeRequest, PreparedComposition } from "@frankframes/producer";
+import type { ClipPatch, CompositionPatch, FfmpegPair, KeyframeRequest, PreparedComposition } from "@frankframes/producer";
 import { listBlocks, motionThumbPath } from "@frankframes/catalog";
 import { ExportError, createExporter } from "./studio-export.ts";
 import { HistoryStaleError, StudioHistory } from "./studio-history.ts";
 import { WaveformError, waveformFor } from "./studio-waveform.ts";
-import { IMAGE_SECONDS, MediaUploadError, mediaKind, mediaMarkup, storeMedia, supportedExtensions } from "./studio-media.ts";
+import { IMAGE_SECONDS, MediaUploadError, measureMedia, mediaKind, mediaMarkup, storeMedia, supportedExtensions } from "./studio-media.ts";
 
 export interface StudioServer {
   url: string;
@@ -56,6 +57,8 @@ const STUDIO_FILES: Record<string, string> = {
   "/app.js": "app.js",
   "/timeline-math.js": "timeline-math.js",
   "/motion.js": "motion.js",
+  "/composition.js": "composition.js",
+  "/inspector.js": "inspector.js",
   "/style.css": "style.css",
 };
 const MEDIA_PREFIX = "/__ff_media/";
@@ -450,7 +453,8 @@ data: ${JSON.stringify(job)}
       live: true,
       ...(audio !== null ? { audio } : {}),
       // O Studio recarrega pelo próprio /api/events; a barra não abre /__ff_reload (404 aqui).
-      preview: { fps: prepared.fps, frames: prepared.totalFrames, id: prepared.composition.id, reload: false },
+      // `autoplay: false`: o Studio abre pausado no 0 (§9d); só a recarga pós-edição restaura o play.
+      preview: { fps: prepared.fps, frames: prepared.totalFrames, id: prepared.composition.id, reload: false, autoplay: false },
     }).replace(/<head[^>]*>/i, (head) => `${head}<base href="${SITE_PREFIX}">`);
     preview = { mtimeMs: current.mtimeMs, prepared, html };
     return { prepared, html };
@@ -517,6 +521,15 @@ data: ${JSON.stringify(job)}
       id: composition.id,
       fps: composition.fps,
       duration: composition.duration.kind === "unresolved" ? null : composition.duration.seconds,
+      // Raiz como o arquivo a declara (inspetor de Composição): `durationKind` diz se `data-duration` manda;
+      // `contentEnd` é o fim do último clip de topo, o que "derivada" daria.
+      width: composition.width ?? null,
+      height: composition.height ?? null,
+      durationKind: composition.duration.kind,
+      contentEnd: composition.clips.reduce<number | null>(
+        (latest, clip) => (clip.end === undefined ? latest : Math.max(latest ?? 0, clip.end)),
+        null,
+      ),
       clips: flattenClips(composition.clips).map(({ clip, parentId }) => ({
         id: clip.id,
         tag: clip.tag,
@@ -591,6 +604,36 @@ data: ${JSON.stringify(job)}
     });
   };
 
+  /**
+   * `POST /api/composition` com `{duration?, width?, height?, fps?}`; ver `editComposition`. `duration: null`
+   * remove `data-duration` (derivada). O contrato valida o resultado antes de ir ao arquivo e à história.
+   */
+  const patchComposition = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
+    const body = objectBody(await bodyJson(req));
+    const patch: CompositionPatch = {};
+    if (body.duration !== undefined) patch.duration = body.duration === null ? null : numeric(body, "duration");
+    if (body.width !== undefined) patch.width = numeric(body, "width");
+    if (body.height !== undefined) patch.height = numeric(body, "height");
+    if (body.fps !== undefined) {
+      // `30` (número) e `"30"` valem igual; racional só como texto.
+      if (typeof body.fps === "number" && Number.isFinite(body.fps)) patch.fps = String(body.fps);
+      else if (typeof body.fps === "string") patch.fps = body.fps;
+      else throw new ReplyError(400, "E_BODY_INVALID", '"fps" precisa ser texto ("30", "30000/1001") ou número');
+    }
+
+    const source = await readFile(entryPath, "utf8");
+    let next: string;
+    try {
+      next = editComposition(source, patch);
+    } catch (error) {
+      if (error instanceof EditError) throw new ReplyError(400, error.code, error.message);
+      throw error;
+    }
+    const composition = validated(next, "a edição da composição deixaria o contrato inválido");
+    if (next !== source) await commit("editar composição", source, next);
+    sendJson(res, 200, { ok: true, duration: durationOf(composition), diagnostics: composition.diagnostics, history: history.state() });
+  };
+
   const insertClip = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
     const body = objectBody(await bodyJson(req));
     const template = body.template;
@@ -651,11 +694,20 @@ data: ${JSON.stringify(job)}
     };
 
     let duration = IMAGE_SECONDS;
+    let orientation: VideoOrientation | undefined;
     if (kind !== "img") {
       try {
-        duration = Math.round((await probeDuration(await ffprobePath(), stored.file)) * 1e6) / 1e6;
+        const measured = await measureMedia(await ffprobePath(), stored.file, kind);
+        // Precisão do probe, sem arredondar: arredondar para cima encurtaria/estenderia a fonte (§9d).
+        duration = measured.duration;
+        orientation = measured.orientation;
       } catch (error) {
         await discard();
+        if (error instanceof MediaRotationError) {
+          throw new ReplyError(400, "E_MEDIA_ROTATION", error.message, [
+            { severity: "error", message: error.message, hint: error.hint },
+          ]);
+        }
         const message = `não foi possível medir ${name}: ${(error as Error).message}`;
         throw new ReplyError(400, "E_MEDIA_PROBE", message, [
           { severity: "error", message, hint: "confira se o arquivo abre num player; rode `frankframes doctor` se o ffprobe faltar" },
@@ -673,7 +725,7 @@ data: ${JSON.stringify(job)}
       throw error;
     }
     await commit(`importar ${stored.src}`, source, next);
-    sendJson(res, 200, { ok: true, id, src: stored.src, kind, duration, reused: !stored.created, history: history.state() });
+    sendJson(res, 200, { ok: true, id, src: stored.src, kind, duration, orientation, reused: !stored.created, history: history.state() });
   };
 
   const split = async (clipId: string, req: IncomingMessage, res: ServerResponse): Promise<void> => {
@@ -1052,6 +1104,10 @@ data: ${JSON.stringify(job)}
       }
       if (pathname === "/api/clips") {
         await serial(() => insertClip(req, res));
+        return;
+      }
+      if (pathname === "/api/composition") {
+        await serial(() => patchComposition(req, res));
         return;
       }
       if (pathname === "/api/media") {

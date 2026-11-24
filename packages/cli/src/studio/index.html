@@ -15,6 +15,7 @@
     <div class="toolbar" role="toolbar" aria-label="Edição">
       <button id="importButton" type="button" class="tool-button" title="Importar vídeo, áudio ou imagem no playhead (ou arraste o arquivo para a janela)">Importar mídia</button>
       <input id="importInput" type="file" multiple hidden accept="video/*,audio/*,image/*,.mov,.mkv,.m4a,.opus,.flac">
+      <button id="compositionButton" type="button" class="tool-button" title="Editar a composição: duração, largura, altura e fps da raiz">Composição</button>
       <button id="splitButton" type="button" class="tool-button" title="Dividir o clip selecionado no playhead (S)" disabled>Dividir</button>
       <button id="deleteButton" type="button" class="tool-button" title="Excluir o clip selecionado, sem mover o resto (Delete)" disabled>Excluir</button>
       <button id="undoButton" type="button" class="tool-button" title="Desfazer (Ctrl+Z)" disabled>Desfazer</button>
@@ -24,7 +25,7 @@
     <dl class="composition-meta">
       <div>
         <dt>Duração</dt>
-        <dd id="totalDuration">--</dd>
+        <dd><span id="totalDuration">--</span> <small id="durationKind" class="duration-kind"></small></dd>
       </div>
       <div>
         <dt>FPS</dt>
@@ -45,7 +46,39 @@
       <h2>Inspetor</h2>
       <div id="toolDiagnostics" class="diagnostics" role="status" aria-live="polite"></div>
       <div id="compositionDiagnostics" class="diagnostics" role="status" aria-live="polite"></div>
-      <p id="inspectorEmpty" class="panel-status">Selecione um clip na timeline.</p>
+      <p id="inspectorEmpty" class="panel-status">Selecione um clip na timeline para editá-lo.</p>
+
+      <form id="compositionForm" class="composition-form" hidden novalidate aria-label="Composição (raiz)">
+        <div class="clip-heading">
+          <span class="clip-tag">composição</span>
+          <code id="compositionId" class="clip-id"></code>
+        </div>
+        <div class="field-grid">
+          <label>
+            <span>data-duration (s)</span>
+            <input id="compDuration" name="duration" type="number" step="0.05" min="0" inputmode="decimal" placeholder="derivada">
+          </label>
+          <label class="check-field">
+            <span>derivada dos clips</span>
+            <input id="compDerived" name="derived" type="checkbox">
+          </label>
+          <label>
+            <span>data-width</span>
+            <input id="compWidth" name="width" type="number" step="1" min="1" inputmode="numeric" placeholder="vazio">
+          </label>
+          <label>
+            <span>data-height</span>
+            <input id="compHeight" name="height" type="number" step="1" min="1" inputmode="numeric" placeholder="vazio">
+          </label>
+          <label>
+            <span>data-fps</span>
+            <input id="compFps" name="fps" type="text" inputmode="decimal" placeholder="30 ou 30000/1001" spellcheck="false">
+          </label>
+        </div>
+        <p id="compositionNote" class="field-note"></p>
+        <button id="compositionApply" type="submit" class="primary-button" aria-label="Aplicar alterações à composição">Aplicar</button>
+        <div id="compositionFormDiagnostics" class="diagnostics" role="status" aria-live="polite"></div>
+      </form>
 
       <form id="inspector" hidden novalidate>
         <div class="clip-heading">
@@ -115,6 +148,10 @@
       <button id="zoomIn" type="button" class="zoom-button" title="Aumentar o zoom (=, ou Ctrl+roda), até 1 frame = 48 px" aria-label="Aumentar o zoom">+</button>
       <button id="zoomFit" type="button" class="zoom-button zoom-fit" title="Mostrar a composição inteira">Ajustar</button>
       <output id="zoomLevel" class="zoom-level" aria-live="polite"></output>
+      <p id="endNotice" class="end-notice" role="status" aria-live="polite" hidden>
+        <span id="endNoticeText"></span>
+        <button id="endNoticeButton" type="button" class="notice-button">Editar composição</button>
+      </p>
     </div>
     <div id="timelineScroll" class="timeline-scroll">
       <div id="timelineCanvas" class="timeline-canvas">

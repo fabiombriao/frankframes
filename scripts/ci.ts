@@ -35,10 +35,13 @@ const FAST_TESTS = [
   "packages/producer/test/keyframes-edit.test.ts",
   "packages/producer/test/preview-audio.test.ts",
   "packages/cli/test/timeline-math.test.ts",
+  "packages/cli/test/studio-composition.test.ts",
   "packages/cli/test/studio-export.test.ts",
+  "packages/cli/test/studio-inspector.test.ts",
   "packages/cli/test/temp-leaks.test.ts",
   "packages/engine/test/clock.test.ts",
   "packages/engine/test/motion-runtime.test.ts",
+  "packages/engine/test/preview-logic.test.ts",
 ];
 
 interface StageResult {

@@ -24,6 +24,7 @@ const SHORT = `<html><head><style>
 async function withShortPreview(
   t: TestContext,
   run: (session: Awaited<ReturnType<typeof openSession>>) => Promise<void>,
+  autoplay?: boolean,
 ): Promise<void> {
   try {
     await resolveChrome();
@@ -32,7 +33,7 @@ async function withShortPreview(
   }
   const dir = await tempDir(t, "ff-ui-short-");
   await writeFile(join(dir, "index.html"), SHORT);
-  const server = await startServer(dir, { live: true, preview: { fps: { num: 30, den: 1 }, frames: 15 } });
+  const server = await startServer(dir, { live: true, preview: { fps: { num: 30, den: 1 }, frames: 15, ...(autoplay === undefined ? {} : { autoplay }) } });
   const session = await openSessionFor(server, { url: server.url, viewport: { width: 480, height: 270 }, gpu: "auto" });
   try {
     await run(session);
@@ -200,3 +201,69 @@ test("barra do preview: pausa, scrub por frame e #f na URL", { timeout: 120_000 
     await server.close();
   }
 });
+
+/** Pointerdown sintético na barra, a `fraction` da largura (0 = ponta esquerda, 1 = ponta direita); `outside` px além da ponta. */
+function pointerDownAt(fraction: number, outside = 0): string {
+  return `(() => {
+    const range = document.querySelector("[data-ff-scrub]");
+    const box = range.getBoundingClientRect();
+    const x = box.left + box.width * ${fraction} + (${fraction} >= 1 ? ${outside} : -${outside});
+    range.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, cancelable: true, button: 0, clientX: x, clientY: box.top + box.height / 2 }));
+    document.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, clientX: x }));
+  })()`;
+}
+
+test("EDT-85: clique na borda esquerda da barra vai ao frame 0 e na direita ao último", { timeout: 60_000 }, (t) =>
+  withShortPreview(t, async (session) => {
+    await session.evaluate(`window.__ff.stopLive(); window.__ff.seek(200)`);
+
+    await session.evaluate(pointerDownAt(0.5));
+    const middle = await session.evaluate<number>("window.__ff.now()");
+    assert.ok(middle > 100 && middle < 400, `o meio da barra fica no meio, obtido ${Math.round(middle)} ms`);
+
+    await session.evaluate(pointerDownAt(1));
+    assert.ok(Math.abs((await session.evaluate<number>("window.__ff.now()")) - LAST_FRAME_MS) < 0.001, "borda direita = último frame");
+    assert.equal(await session.evaluate<string>("location.hash"), "#f=14");
+    assert.equal(await session.evaluate<string>(`document.querySelector("[data-ff-scrub]").value`), "14");
+
+    await session.evaluate(pointerDownAt(0));
+    assert.equal(await session.evaluate<number>("window.__ff.now()"), 0, "borda esquerda = frame 0, nunca o 1");
+    assert.equal(await session.evaluate<string>("location.hash"), "#f=0");
+    assert.equal(await session.evaluate<string>(`document.querySelector("[data-ff-scrub]").value`), "0");
+
+    // Soltar o ponteiro além das pontas também trava nelas.
+    await session.evaluate(pointerDownAt(1, 30));
+    assert.ok(Math.abs((await session.evaluate<number>("window.__ff.now()")) - LAST_FRAME_MS) < 0.001);
+    await session.evaluate(pointerDownAt(0, 30));
+    assert.equal(await session.evaluate<number>("window.__ff.now()"), 0);
+  }));
+
+test("EDT-85: Studio (autoplay false) abre pausado em 0 e fica parado", { timeout: 60_000 }, (t) =>
+  withShortPreview(
+    t,
+    async (session) => {
+      await sleep(600); // 500 ms de composição: se o relógio estivesse ligado, já teria chegado ao fim
+      assert.equal(await session.evaluate<boolean>("window.__ff.playing()"), false);
+      assert.equal(await session.evaluate<number>("window.__ff.now()"), 0);
+      assert.equal(await session.evaluate<string>(`document.querySelector("[data-ff-play]").textContent`), "play");
+      assert.deepEqual(await session.evaluate<string[]>("window.__ff.liveErrors"), []);
+    },
+    false,
+  ));
+
+test("EDT-85: Studio recarregado (edição) restaura o instante e o play salvos", { timeout: 60_000 }, (t) =>
+  withShortPreview(
+    t,
+    async (session) => {
+      await stopAtAndReload(session, 200);
+      await sleep(400);
+      const now = await session.evaluate<number>("window.__ff.now()");
+      assert.ok(Math.abs(now - 200) <= 1000 / 30, `a recarga mantém o instante, obtido ${Math.round(now)}`);
+      assert.equal(await session.evaluate<boolean>("window.__ff.playing()"), false);
+
+      await session.evaluate(`window.__ff.startLive(200)`);
+      await session.reload();
+      assert.equal(await session.evaluate<boolean>("window.__ff.playing()"), true, "tocando antes da recarga, toca depois");
+    },
+    false,
+  ));

@@ -252,6 +252,18 @@ textarea {
   font-weight: 600;
 }
 
+/* EDT-84: de onde vem a duração mostrada (fixa pelo arquivo ou derivada dos clips). */
+.duration-kind {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 400;
+}
+
+.duration-kind.is-warning {
+  color: var(--warning);
+  font-weight: 600;
+}
+
 .connection {
   min-width: 104px;
   color: var(--muted);
@@ -435,6 +447,59 @@ textarea {
   margin-top: 8px;
   color: var(--muted);
   font-size: 11px;
+}
+
+/* Inspetor de Composição (EDT-84). */
+.composition-form[hidden] {
+  display: none;
+}
+
+.composition-form .check-field {
+  align-content: end;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  column-gap: 6px;
+}
+
+.composition-form .check-field input {
+  width: auto;
+  order: -1;
+}
+
+.end-notice {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  margin: 0 0 0 10px;
+  color: var(--warning);
+  font-size: 12px;
+}
+
+.end-notice[hidden] {
+  display: none;
+}
+
+.end-notice span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.notice-button {
+  flex: none;
+  padding: 1px 8px;
+  border: 1px solid var(--warning);
+  border-radius: 3px;
+  background: transparent;
+  color: var(--warning);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.notice-button:hover {
+  background: #2a2410;
 }
 
 .primary-button {

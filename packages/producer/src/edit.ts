@@ -1,6 +1,6 @@
 // FrankFrames — proprietário. Ver LICENSE na raiz.
 import { parse } from "parse5";
-import { listPresets, loadComposition, MIN_DURATION_SECONDS, parseMotionValue } from "@frankframes/contract";
+import { ATTRS, findRoot, listPresets, loadComposition, MIN_DURATION_SECONDS, parseMotionValue } from "@frankframes/contract";
 import type { Composition, ResolvedClip } from "@frankframes/contract";
 
 interface P5Location {
@@ -116,6 +116,34 @@ function attributeText(patch: ClipPatch, name: string, value: string): string {
   return `${name}='${value.replace(/&/g, "&amp;").replace(/'/g, "&#39;")}'`;
 }
 
+/** Trocas que levam os atributos de `patch.attributes` para a tag de abertura (`null` remove, ausente acrescenta). */
+function attributeReplacements(
+  source: string,
+  startTag: { startOffset: number; endOffset: number },
+  attrs: P5Location["attrs"],
+  patch: ClipPatch,
+): Replacement[] {
+  const out: Replacement[] = [];
+  for (const [name, value] of Object.entries(patch.attributes ?? {})) {
+    if (!ATTRIBUTE_NAME.test(name)) throw new EditError("E_ATTRIBUTE_INVALID", `atributo inválido: ${name}`);
+    const range = attrs?.[name];
+    if (value === null) {
+      if (!range) continue;
+      // Remove o espaço anterior junto com "nome=valor".
+      const start = source[range.startOffset - 1] === " " ? range.startOffset - 1 : range.startOffset;
+      out.push({ start, end: range.endOffset, text: "" });
+    } else if (range) {
+      out.push({ start: range.startOffset, end: range.endOffset, text: attributeText(patch, name, value) });
+    } else {
+      // Elemento vazio `<img ... />`: o atributo entra antes do espaço e da barra, não depois dela.
+      let at = startTag.endOffset - 1;
+      if (source[at - 1] === "/") at = source[at - 2] === " " ? at - 2 : at - 1;
+      out.push({ start: at, end: at, text: ` ${attributeText(patch, name, value)}` });
+    }
+  }
+  return out;
+}
+
 /**
  * Edita atributos e texto mantendo o arquivo original intacto fora dos trechos
  * alterados — usa a localização do parse5 em vez de re-serializar o documento.
@@ -132,23 +160,7 @@ export function applyPatches(source: string, patches: ClipPatch[]): string {
     const location = node.sourceCodeLocation;
     if (!location?.startTag) throw new EditError("E_CLIP_NOT_FOUND", `clip "${patch.clipId}" sem localização no arquivo`);
 
-    for (const [name, value] of Object.entries(patch.attributes ?? {})) {
-      if (!ATTRIBUTE_NAME.test(name)) throw new EditError("E_ATTRIBUTE_INVALID", `atributo inválido: ${name}`);
-      const range = location.attrs?.[name];
-      if (value === null) {
-        if (!range) continue;
-        // Remove o espaço anterior junto com "nome=valor".
-        const start = source[range.startOffset - 1] === " " ? range.startOffset - 1 : range.startOffset;
-        replacements.push({ start, end: range.endOffset, text: "" });
-      } else if (range) {
-        replacements.push({ start: range.startOffset, end: range.endOffset, text: attributeText(patch, name, value) });
-      } else {
-        // Elemento vazio `<img ... />`: o atributo entra antes do espaço e da barra, não depois dela.
-        let at = location.startTag.endOffset - 1;
-        if (source[at - 1] === "/") at = source[at - 2] === " " ? at - 2 : at - 1;
-        replacements.push({ start: at, end: at, text: ` ${attributeText(patch, name, value)}` });
-      }
-    }
+    replacements.push(...attributeReplacements(source, location.startTag, location.attrs, patch));
 
     if (patch.text !== undefined) {
       const children = node.childNodes ?? [];
@@ -187,6 +199,53 @@ function flatten(clips: ResolvedClip[], into: ResolvedClip[] = []): ResolvedClip
 
 function parseSource(source: string): P5Node {
   return parse(source, { sourceCodeLocationInfo: true }) as unknown as P5Node;
+}
+
+/** Campos da raiz editáveis pelo inspetor de Composição (§9d). Campo ausente não é tocado. */
+export interface CompositionPatch {
+  /** Segundos. `null` remove `data-duration`: a duração passa a ser derivada dos clips (§7). */
+  duration?: number | null;
+  width?: number;
+  height?: number;
+  /** `"30"` ou racional exato `"30000/1001"`; o contrato valida. */
+  fps?: string;
+}
+
+/**
+ * Grava `data-duration`, `data-width`, `data-height` e `data-fps` na raiz, no mesmo ponto do arquivo e sem
+ * reformatar o resto. Aqui só o tipo do valor é conferido; faixa e formato (inteiro > 0, fps racional,
+ * duração > 0) são do contrato, que o chamador roda sobre o resultado antes de gravar.
+ */
+export function editComposition(source: string, patch: CompositionPatch): string {
+  const attributes: Record<string, string | null> = {};
+  if (patch.duration !== undefined) {
+    if (patch.duration !== null && !Number.isFinite(patch.duration)) {
+      throw new EditError("E_ATTRIBUTE_INVALID", '"duration" precisa ser número em segundos ou null (derivada)');
+    }
+    attributes[ATTRS.duration] = patch.duration === null ? null : seconds(patch.duration);
+  }
+  for (const [key, name] of [["width", ATTRS.width], ["height", ATTRS.height]] as const) {
+    const value = patch[key];
+    if (value === undefined) continue;
+    if (!Number.isFinite(value)) throw new EditError("E_ATTRIBUTE_INVALID", `"${key}" precisa ser número`);
+    attributes[name] = String(value);
+  }
+  if (patch.fps !== undefined) {
+    if (typeof patch.fps !== "string" || patch.fps.trim() === "") {
+      throw new EditError("E_ATTRIBUTE_INVALID", '"fps" precisa ser texto como "30" ou "30000/1001"');
+    }
+    attributes[ATTRS.fps] = patch.fps.trim();
+  }
+  if (Object.keys(attributes).length === 0) {
+    throw new EditError("E_ATTRIBUTE_INVALID", "nenhum campo da composição para editar (duration, width, height, fps)");
+  }
+
+  const root = findRoot(parseSource(source) as unknown as Parameters<typeof findRoot>[0]) as unknown as P5Node | undefined;
+  const location = root?.sourceCodeLocation;
+  if (root === undefined || !location?.startTag) {
+    throw new EditError("E_CLIP_NOT_FOUND", "raiz da composição (data-composition-id) não encontrada no arquivo");
+  }
+  return applyReplacements(source, attributeReplacements(source, location.startTag, location.attrs, { clipId: "", attributes }));
 }
 
 export interface ClipLocation {

@@ -2,7 +2,8 @@
 import { createHash } from "node:crypto";
 import { mkdir, open, rename, stat, unlink } from "node:fs/promises";
 import { extname, join } from "node:path";
-import { fileSha256 } from "@frankframes/engine";
+import { fileSha256, probeDuration, probeVideo } from "@frankframes/engine";
+import type { VideoOrientation } from "@frankframes/engine";
 
 export type MediaKind = "video" | "audio" | "img";
 
@@ -138,6 +139,24 @@ export async function storeMedia(body: AsyncIterable<Buffer | string>, entryDir:
   }
   await unlink(tmp);
   throw new Error(`não foi possível escolher nome para ${fileName} em ${dir}`);
+}
+
+export interface MeasuredMedia {
+  /** Segundos; imagem usa `IMAGE_SECONDS`. */
+  duration: number;
+  /** Só vídeo: rotação e dimensões de exibição (EDT-86), as mesmas que o render usa. */
+  orientation?: VideoOrientation;
+}
+
+/**
+ * Mede a mídia importada com o ffprobe. Vídeo devolve também a orientação de exibição; rotação que o preview e o
+ * render não aplicariam igual sobe como `MediaRotationError` (`E_MEDIA_ROTATION`), e o import deve recusar o arquivo.
+ */
+export async function measureMedia(ffprobe: string, file: string, kind: MediaKind): Promise<MeasuredMedia> {
+  if (kind === "img") return { duration: IMAGE_SECONDS };
+  if (kind === "audio") return { duration: await probeDuration(ffprobe, file) };
+  const { duration, rotation, mirrored, displayWidth, displayHeight } = await probeVideo(ffprobe, file);
+  return { duration, orientation: { rotation, mirrored, displayWidth, displayHeight } };
 }
 
 function escapeAttribute(value: string): string {

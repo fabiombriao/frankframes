@@ -278,3 +278,53 @@ test("id hifenizado inexistente continua sendo E_REF_UNKNOWN", () => {
   assert.match(unknown.message, /"clip-9"/, "cita o valor inteiro, não o id da leitura id − n");
   assert.match(unknown.hint ?? "", /nenhum clip "clip-9" nem "clip"; para deslocar, use espaços: "clip - 9"/);
 });
+
+// EDT-84: data-duration da raiz corta; clip de topo que passa do fim autoral avisa em vez de sumir calado.
+test("clip de topo além do fim autoral gera W_CLIP_PAST_END com o id e os dois instantes", () => {
+  const c = loadComposition(
+    root(
+      `
+      <div data-clip-id="curto" data-start="0" data-duration="2" class="clip"></div>
+      <div data-clip-id="longo" data-start="1" data-duration="67" class="clip"></div>
+    `,
+      'data-duration="4"',
+    ),
+  );
+  assert.deepEqual(c.duration, { kind: "authored", seconds: 4 });
+  const past = c.diagnostics.filter((d) => d.code === CODES.CLIP_PAST_END);
+  assert.equal(past.length, 1, "só o clip que passa do fim avisa");
+  const d = past[0]!;
+  assert.equal(d.code, "W_CLIP_PAST_END");
+  assert.equal(d.severity, "warning");
+  assert.equal(d.clipId, "longo");
+  assert.match(d.message, /68 s/, "fim do clip");
+  assert.match(d.message, /\b4 s/, "fim da composição");
+  assert.ok(d.hint, "hint acionável");
+  assert.equal(c.ok, true, "aviso não bloqueia o render");
+});
+
+test("W_CLIP_PAST_END não dispara no limite, com tolerância de ponto flutuante, sem data-duration nem em clip aninhado", () => {
+  const exact = loadComposition(
+    root('<div data-clip-id="a" data-start="1" data-duration="3" class="clip"></div>', 'data-duration="4"'),
+  );
+  assert.equal(exact.diagnostics.some((d) => d.code === CODES.CLIP_PAST_END), false, "fim == fim da composição");
+
+  const noise = loadComposition(
+    root('<div data-clip-id="a" data-start="0.1" data-duration="3.9000000001" class="clip"></div>', 'data-duration="4"'),
+  );
+  assert.equal(noise.diagnostics.some((d) => d.code === CODES.CLIP_PAST_END), false, "folga de 1 µs");
+
+  const derived = loadComposition(root('<div data-clip-id="a" data-start="0" data-duration="68" class="clip"></div>'));
+  assert.deepEqual(derived.duration, { kind: "derived", seconds: 68 });
+  assert.equal(derived.diagnostics.some((d) => d.code === CODES.CLIP_PAST_END), false, "derivada nunca passa do fim");
+
+  const nested = loadComposition(
+    root(
+      `<div data-clip-id="host" data-start="0" data-duration="3" class="clip">
+         <div data-clip-id="filho" data-start="0" data-duration="30" class="clip"></div>
+       </div>`,
+      'data-duration="4"',
+    ),
+  );
+  assert.equal(nested.diagnostics.some((d) => d.code === CODES.CLIP_PAST_END), false, "filho de sub-composição fica de fora");
+});

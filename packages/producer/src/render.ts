@@ -10,8 +10,8 @@ import { loadComposition } from "@frankframes/contract";
 import type { Composition, Diagnostic, RawClip, ResolvedClip } from "@frankframes/contract";
 import { buildFramePipeArgs, buildMuxArgs, containerFor } from "@frankframes/encode";
 import type { Preset, VideoCodec } from "@frankframes/encode";
-import { BrowserError, assetPath, captureFramesInParallel, cleanupWarning, defaultWorkerCount, extractFramesCached, probeDuration, removeTree, reorderWindow, retryOnceIfTransient, startServer, warnCleanup } from "@frankframes/engine";
-import type { MediaManifest } from "@frankframes/engine";
+import { BrowserError, MediaRotationError, assetPath, captureFramesInParallel, cleanupWarning, defaultWorkerCount, extractFramesCached, probeDuration, probeVideo, removeTree, reorderWindow, retryOnceIfTransient, startServer, warnCleanup } from "@frankframes/engine";
+import type { MediaManifest, VideoProbe } from "@frankframes/engine";
 import { annotateCompiled, materializeClipIds, mergeSubCompositions } from "./compile.ts";
 import { resolveFfmpeg } from "./ffmpeg.ts";
 import { mixAudio } from "./audio.ts";
@@ -202,17 +202,27 @@ export async function prepare(options: PrepareOptions): Promise<PreparedComposit
   const flat: RawClip[] = [];
   probeRaw(parsed.clips, flat);
   const mediaDurations: Record<string, number> = {};
+  // Todo `<video>` é sondado, com ou sem `data-duration`: a orientação de exibição (EDT-86) vale para a extração.
+  const videoProbes = new Map<string, VideoProbe>();
   for (const clip of flat) {
     if (clip.mediaSrc === undefined) continue;
     if (clip.tag !== "video" && clip.tag !== "audio") continue;
-    if (clip.authoredDuration !== undefined) continue;
+    if (clip.tag === "audio" && clip.authoredDuration !== undefined) continue;
     const file = resolve(entryDir, clip.mediaSrc);
     throwIfCanceled(signal, "probe");
     try {
-      mediaDurations[clip.id] = await probeDuration(ffprobe, file, signal);
+      if (clip.tag === "video") {
+        const info = await probeVideo(ffprobe, file, signal);
+        videoProbes.set(clip.id, info);
+        if (clip.authoredDuration === undefined) mediaDurations[clip.id] = info.duration;
+      } else {
+        mediaDurations[clip.id] = await probeDuration(ffprobe, file, signal);
+      }
     } catch (error) {
       // Abortar o ffprobe não é mídia ilegível: sobe como cancelamento.
       throwIfCanceled(signal, "probe");
+      // Rotação que preview e render não aplicariam igual: código próprio, com o hint na mensagem.
+      if (error instanceof MediaRotationError) throw new RenderError(error.code, "probe", error.message);
       throw new RenderError("E_MEDIA_PROBE", "probe", `não foi possível ler ${file}: ${(error as Error).message}`);
     }
   }
@@ -244,15 +254,25 @@ export async function prepare(options: PrepareOptions): Promise<PreparedComposit
       throwIfCanceled(signal, "extract");
       const dir = `${clip.id.replace(/[^A-Za-z0-9_-]/g, "_")}_${createHash("sha256").update(clip.id).digest("hex").slice(0, 6)}`;
       const clipDuration = clip.authoredDuration ?? Math.max(0, seconds - start);
-      const { frameCount, dir: cacheDir } = await extractFramesCached({
-        ffmpeg,
-        input: resolve(entryDir, clip.mediaSrc!),
-        outDir: join(mediaDir, dir),
-        fps,
-        offset: clip.offset,
-        duration: clipDuration * clip.playbackRate,
-        ...(signal !== undefined ? { signal } : {}),
-      });
+      const info = videoProbes.get(clip.id);
+      if (info === undefined) throw new Error(`vídeo ${clip.id} chegou à extração sem probe`);
+      let extracted: Awaited<ReturnType<typeof extractFramesCached>>;
+      try {
+        extracted = await extractFramesCached({
+          ffmpeg,
+          input: resolve(entryDir, clip.mediaSrc!),
+          outDir: join(mediaDir, dir),
+          fps,
+          offset: clip.offset,
+          duration: clipDuration * clip.playbackRate,
+          expectDisplay: { width: info.displayWidth, height: info.displayHeight },
+          ...(signal !== undefined ? { signal } : {}),
+        });
+      } catch (error) {
+        if (error instanceof MediaRotationError) throw new RenderError(error.code, "extract", error.message);
+        throw error;
+      }
+      const { frameCount, dir: cacheDir } = extracted;
       const cacheName = cacheDir.slice(mediaDir.length + 1);
       manifest.clips.push({
         clipId: clip.id,
@@ -262,6 +282,7 @@ export async function prepare(options: PrepareOptions): Promise<PreparedComposit
         playbackRate: clip.playbackRate,
         dir: cacheName,
         frameCount,
+        orientation: { rotation: info.rotation, mirrored: info.mirrored, displayWidth: info.displayWidth, displayHeight: info.displayHeight },
       });
     }
   }

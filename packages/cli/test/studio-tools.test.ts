@@ -539,3 +539,119 @@ test("exportar (EDT-46): GET /api/export traz os padrões; contrato quebrado à 
     assert.equal(idle.status, 409);
     assert.equal(idle.json.code, "E_EXPORT_IDLE");
   }));
+
+// EDT-84: inspetor de Composição. A raiz é editada pelo motor de edição e entra no histórico.
+type CompositionInfo = {
+  duration: number | null;
+  durationKind: string;
+  contentEnd: number | null;
+  width: number | null;
+  height: number | null;
+  fps: { num: number; den: number };
+  diagnostics: Array<{ code: string; severity: string; clipId?: string }>;
+};
+
+const readComposition = async (server: StudioServer): Promise<CompositionInfo> =>
+  (await (await fetch(`${server.url}api/composition`)).json()) as CompositionInfo;
+
+test("POST /api/composition troca duração, largura, altura e fps; desfaz e refaz byte a byte (EDT-84)", () =>
+  withStudio(async (server, _dir, entry) => {
+    const before = await readComposition(server);
+    assert.equal(before.durationKind, "authored");
+    assert.equal(before.duration, 2);
+    assert.equal(before.contentEnd, 2);
+    assert.equal(before.width, 640);
+    assert.equal(before.height, 360);
+
+    const edited = await post(`${server.url}api/composition`, { duration: 8, width: 1280, height: 720, fps: "60" });
+    assert.equal(edited.status, 200, JSON.stringify(edited.json));
+    assert.equal(edited.json.duration, 8);
+    assert.equal((edited.json.history as { undo: string }).undo, "editar composição");
+    const afterEdit = await readFile(entry, "utf8");
+    assert.ok(afterEdit.includes('data-duration="8"') && afterEdit.includes('data-width="1280"'));
+    assert.ok(afterEdit.includes('data-height="720"') && afterEdit.includes('data-fps="60"'));
+    assert.equal(loadComposition(afterEdit).ok, true);
+
+    const after = await readComposition(server);
+    assert.equal(after.duration, 8, "o preview passa a cobrir a duração nova");
+    assert.deepEqual(after.fps, { num: 60, den: 1 });
+    assert.equal(after.width, 1280);
+
+    const undone = await post(`${server.url}api/undo`, {});
+    assert.equal(undone.json.changed, true);
+    assert.equal(await readFile(entry, "utf8"), HTML, "desfazer volta ao arquivo original byte a byte");
+    const redone = await post(`${server.url}api/redo`, {});
+    assert.equal(redone.json.changed, true);
+    assert.equal(await readFile(entry, "utf8"), afterEdit, "refazer reaplica a edição");
+  }));
+
+test("POST /api/composition com duration null remove data-duration e a raiz passa a derivada (EDT-84)", () =>
+  withStudio(async (server, _dir, entry) => {
+    const edited = await post(`${server.url}api/composition`, { duration: null });
+    assert.equal(edited.status, 200, JSON.stringify(edited.json));
+    const source = await readFile(entry, "utf8");
+    const rootTag = /<div data-composition-id[^>]*>/.exec(source)?.[0] ?? "";
+    assert.ok(rootTag !== "" && !rootTag.includes("data-duration"), `atributo deveria sair: ${rootTag}`);
+    assert.ok(source.includes('data-clip-id="a" data-start="0" data-duration="1"'), "clips intactos");
+
+    const info = await readComposition(server);
+    assert.equal(info.durationKind, "derived");
+    assert.equal(info.duration, 2);
+    assert.equal(info.contentEnd, 2);
+
+    await post(`${server.url}api/undo`, {});
+    assert.equal(await readFile(entry, "utf8"), HTML);
+  }));
+
+test("POST /api/composition recusa contrato inválido com E_CONTRACT_INVALID sem gravar (EDT-84)", () =>
+  withStudio(async (server, _dir, entry) => {
+    for (const body of [{ duration: -3 }, { duration: 0 }, { width: 0 }, { height: 1.5 }, { fps: "abc" }, { fps: "0" }]) {
+      const refused = await post(`${server.url}api/composition`, body);
+      assert.equal(refused.status, 400, `${JSON.stringify(body)} => ${JSON.stringify(refused.json)}`);
+      assert.equal(refused.json.code, "E_CONTRACT_INVALID", JSON.stringify(body));
+      assert.ok(Array.isArray(refused.json.diagnostics), "diagnósticos do contrato junto");
+      assert.equal(await readFile(entry, "utf8"), HTML, `${JSON.stringify(body)}: arquivo intacto`);
+    }
+    const history = (await (await fetch(`${server.url}api/history`)).json()) as { canUndo: boolean };
+    assert.equal(history.canUndo, false, "recusa não entra no histórico");
+  }));
+
+test("POST /api/composition recusa corpo sem campo e tipo errado (EDT-84)", () =>
+  withStudio(async (server, _dir, entry) => {
+    const empty = await post(`${server.url}api/composition`, {});
+    assert.equal(empty.status, 400);
+    assert.equal(empty.json.code, "E_ATTRIBUTE_INVALID");
+    const text = await post(`${server.url}api/composition`, { duration: "muito" });
+    assert.equal(text.status, 400, JSON.stringify(text.json));
+    const bool = await post(`${server.url}api/composition`, { fps: true });
+    assert.equal(bool.status, 400, JSON.stringify(bool.json));
+    assert.equal(bool.json.code, "E_BODY_INVALID");
+    assert.equal(await readFile(entry, "utf8"), HTML, "arquivo intacto");
+  }));
+
+test("GET /api/composition entrega W_CLIP_PAST_END quando um clip passa do data-duration; subir o fim resolve (EDT-84)", () =>
+  withStudio(async (server) => {
+    await post(`${server.url}api/clips/b`, { attributes: { "data-duration": "9" } });
+    const info = await readComposition(server);
+    assert.equal(info.durationKind, "authored");
+    assert.equal(info.duration, 2, "a raiz manda: o preview segue em 2 s");
+    assert.equal(info.contentEnd, 10);
+    const warning = info.diagnostics.find((d) => d.code === "W_CLIP_PAST_END");
+    assert.ok(warning, JSON.stringify(info.diagnostics));
+    assert.equal(warning.severity, "warning");
+    assert.equal(warning.clipId, "b");
+
+    const fixed = await post(`${server.url}api/composition`, { duration: 10 });
+    assert.equal(fixed.status, 200, JSON.stringify(fixed.json));
+    const resolved = await readComposition(server);
+    assert.equal(resolved.duration, 10);
+    assert.equal(resolved.diagnostics.some((d) => d.code === "W_CLIP_PAST_END"), false);
+  }));
+
+test("o Studio serve composition.js como JavaScript (EDT-84)", () =>
+  withStudio(async (server) => {
+    const response = await fetch(`${server.url}composition.js`);
+    assert.equal(response.status, 200);
+    assert.match(response.headers.get("content-type") ?? "", /text\/javascript/);
+    assert.match(await response.text(), /export function compositionPatch/);
+  }));

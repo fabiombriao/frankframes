@@ -103,12 +103,39 @@ FFmpeg (§9). A `<img>` substituta:
 - é `position:fixed` na caixa medida do vídeo. Limite: motion num **ancestral** do `<video>` não move a
   `<img>`; ponha o motion no próprio `<video>` ou num elemento que não seja ancestral dele.
 
+**Rotação do contêiner (EDT-86).** Vídeo de celular em retrato costuma ser gravado em paisagem (ex.: 1920x1080)
+com uma Display Matrix de rotação (`-90`), e aparece em 1080x1920. A regra é uma só para todos os caminhos:
+
+- o probe (`probeVideo`) reporta as dimensões gravadas (`width`/`height`), a `rotation` (convenção do ffprobe:
+  anti-horário positivo, em [-180, 180); o retrato do celular dá `-90`), `mirrored` (espelhamento) e as
+  dimensões de exibição `displayWidth`/`displayHeight` (as gravadas, trocadas quando a rotação é ±90). O
+  manifesto de mídia leva essa `orientation` em cada clip;
+- as dimensões de exibição são as que valem onde dimensão importa; `object-fit`/`object-position` da `<img>`
+  agem sobre o tamanho já girado;
+- a extração usa `-autorotate` explícito e confere que o primeiro frame tem exatamente o tamanho de exibição;
+  render, `frankframes preview` e Studio mostram esses mesmos frames na `<img>` (o Chrome nunca decodifica o
+  vídeo), então a orientação é idêntica nos três;
+- só rotação de 0, 90, 180 ou 270 graus, com ou sem espelhamento, é aceita. Outro ângulo ou matriz com
+  cisalhamento falha alto com **`E_MEDIA_ROTATION`** (estágio `probe`; `extract` se o FFmpeg não aplicar a
+  rotação), com `hint`: o FFmpeg giraria com cantos pretos e o navegador ignoraria o ângulo, e preview e render
+  divergiriam. Vale mesmo com `data-duration` no `<video>`;
+- fora do escopo: proporção de pixel anamórfica (SAR) e a tag legada `rotate` do stream.
+
 ## 7. Duração da composição
 
 1. `data-duration` da raiz > 0 → `authored`.
 2. senão, se algum clip não tem início resolvível → `unresolved` (`invalid-start`).
 3. senão, se algum clip não tem duração → `unresolved` (`pending-clips`) com a lista.
 4. senão → `derived` = maior `start + duration`, com piso de `1/60` s.
+
+**`data-duration` da raiz manda e corta (EDT-84).** Em `authored` o fim da composição é o valor escrito, mesmo que
+um clip termine depois: o preview, o playhead e o render param ali. Para o corte nunca ser silencioso, todo clip de
+topo cujo fim (`start + duration`) passa do fim autoral gera o aviso **`W_CLIP_PAST_END`** (`warning`, não bloqueia o
+render: cortar na duração declarada é legítimo, por exemplo uma vinheta de 4 s sobre uma mídia longa), com o id do
+clip (`clipId`) e os dois instantes na mensagem (fim do clip × fim da composição) e um `hint` que aponta a saída:
+aumentar `data-duration` ou removê-lo para derivar do conteúdo. A tolerância é de 1 µs. Clips dentro de
+sub-composição não entram (o fim deles é local ao host); a raiz sem `data-duration` (`derived`) nunca dispara o
+aviso, porque a duração já acompanha o maior fim.
 
 ## 7b. Motion
 
@@ -770,6 +797,18 @@ em `__ff.liveErrors`, nunca vira 0 em silêncio. Na recarga o instante salvo val
 `__ff.transportHooks` recebe `start`, `stop`, `seek`, `end` e `loop`. Sem `__ff.setLiveBounds`
 o relógio ao vivo é ilimitado; a barra de controle sempre o chama.
 
+**Scrub da barra** (EDT-85). O clique ou arraste na barra mapeia a posição do ponteiro sobre a largura inteira da
+barra, e não sobre a trilha encurtada pela metade do polegar do controle nativo: há uma zona de borda de
+`max(12 px, 1% da largura)` em cada ponta, e o ponteiro dentro da zona esquerda dá sempre o **frame 0** e dentro da
+direita sempre o **último frame** (`frames − 1`); entre as zonas o mapa é linear e arredondado ao frame mais
+próximo. Teclado (setas, Home, End) segue o controle nativo. A conta é pura (`frameFromPointer`, em
+`packages/engine/src/preview-logic.ts`) e é a mesma que roda na página.
+
+**Estado inicial.** O `preview` abre **tocando** do 0 (ou do instante salvo, acima). O Studio injeta o preview com
+`autoplay: false`: a abertura (navegação nova do iframe) fica **pausada no frame 0**, sem avançar sozinha, e o
+playhead só anda depois de um Play. Recarga pelo próprio Studio (`location.reload()` depois de uma edição) continua
+restaurando instante e estado de play como descrito acima; só a abertura é pausada.
+
 **Áudio no preview** é o mesmo mix do render (mesmo grafo: volume, fades, `data-offset`,
 `data-playback-rate` com tom preservado, `data-keyframes`, ducking de `music` sob `voice` e loudnorm de
 entrega), feito pelo FFmpeg em WAV e guardado em `cache/preview-audio/<sha256>.wav`. A chave só muda quando
@@ -793,8 +832,17 @@ Qualquer outra falha de medição continua falhando alto.
   copiado para `assets/` ao lado da entrada com nome seguro (sem acento, espaço ou caminho). Conteúdo
   idêntico a um arquivo existente reaproveita o arquivo; nome igual com conteúdo diferente ganha sufixo
   `-<sha256[0:8]>` — nada é sobrescrito. O clip entra no fim da raiz com `data-start` no playhead e
-  `data-duration` medida pelo ffprobe (imagem: 3 s). Arquivo ilegível falha com `E_MEDIA_PROBE` e é
+  `data-duration` medida pelo ffprobe (imagem: 3 s), **gravada com a precisão do probe**, sem arredondar (nem para
+  cima): um vídeo de 68,164583 s vira `data-duration="68.164583"`; vários arquivos de uma vez entram em sequência com o
+  `data-start` também exato. Vídeo responde também com `orientation` (rotação e
+  dimensões de exibição, §6) e rotação que o render não honraria igual (`E_MEDIA_ROTATION`) é recusada e o
+  arquivo apagado. Arquivo ilegível falha com `E_MEDIA_PROBE` e é
   apagado; extensão fora da lista é `E_MEDIA_UNSUPPORTED`; teto de 4 GiB (`E_MEDIA_TOO_LARGE`).
+- **Inspetor de clip grava só o que o usuário mudou** (EDT-85). "Aplicar" compara cada campo com o **texto que o
+  inspetor mostrou** (o valor arredondado para exibir) e só envia os atributos cujo texto o usuário editou; os demais
+  atributos ficam como estão no HTML, byte a byte (`data-duration="68.164583"` não vira `68.165` ao trocar
+  `data-start`). Um valor derivado da fonte nunca é arredondado para cima por causa de outro campo. O inspetor de
+  Composição segue a mesma regra (`compositionPatch` só envia o que difere do que mostrou).
 - **Dividir** (`POST /api/clips/<id>/split {at}`). Só para clip de topo com `data-clip-id` explícito, sem
   `data-keyframes`, atributos de motion (§7b) nem filhos (`E_SPLIT_UNSUPPORTED`), e com `at` a mais de 1 ms das bordas
   (`E_SPLIT_OUT_OF_RANGE`). A primeira metade fica com `data-duration = at − início` e perde o
@@ -806,6 +854,25 @@ Qualquer outra falha de medição continua falhando alto.
   200 versões completas do arquivo, só em memória, e some quando o Studio fecha. Se o arquivo mudou fora
   do Studio, desfazer/refazer recusa com `409 E_HISTORY_STALE` e descarta o histórico em vez de
   sobrescrever a mudança. Desfazer uma importação remove o clip, não o arquivo em `assets/`.
+- **Inspetor de Composição** (`POST /api/composition`, corpo `{duration?, width?, height?, fps?}`; EDT-84). Edita a
+  raiz: `duration` (segundos, `> 0`; **`null` remove `data-duration`**, a duração passa a ser derivada dos clips, §7),
+  `width` e `height` (inteiros `> 0`) e `fps` (`"30"`, `"30000/1001"` ou número). Campo ausente não é tocado; corpo sem
+  nenhum campo é `E_ATTRIBUTE_INVALID`. A escrita muda só os atributos da raiz (`editComposition`, mesma
+  edição por posição das demais: formatação e comentários ficam), o resultado passa pelo contrato antes de gravar
+  (`E_CONTRACT_INVALID` com os diagnósticos, por exemplo `E_DURATION_INVALID`, `E_SIZE_INVALID`, `E_FPS_INVALID` ou
+  `E_DURATION_UNRESOLVED` ao pedir "derivada" sem clips que a derivem; arquivo intacto) e entra no histórico (Ctrl+Z
+  desfaz, inclusive a remoção de `data-duration`). `GET /api/composition` traz, além do que já trazia, `width`,
+  `height`, `durationKind` (`authored`, `derived` ou `unresolved`) e `contentEnd` (o maior fim entre os clips de
+  topo, o que "derivada" daria) e, em `diagnostics`, o `code` e o `clipId` de cada diagnóstico. A tela mostra o
+  formulário "Composição" quando nenhum clip está selecionado (e pelo botão "Composição" do topo); marcar
+  "derivada dos clips" envia `duration: null`. Depois de gravar, o arquivo muda, o Studio recarrega o preview pelo
+  `/api/events` e o preview e o playhead passam a cobrir a duração nova.
+- **Fim da composição visível.** Quando há `W_CLIP_PAST_END` (§7), a barra da timeline mostra a faixa "a composição
+  termina em X (data-duration fixo) e o clip "id" passa do fim", com o botão que abre o inspetor de Composição, e o
+  indicador de duração do topo diz `fixa (data-duration)` ou `derivada dos clips`: o playhead parar no fim autoral
+  nunca é silencioso. O Studio não estende o preview além do fim autoral; para isso se edita a composição.
+- **Abertura pausada** (EDT-85). O Studio abre com o preview **parado no frame 0**, com o botão no estado "play" e o
+  playhead em 0; nada avança até o primeiro Play ou clique na barra do preview (§9c, "Estado inicial").
 - **Playhead.** Vai de 0 ao início do último frame, `(frames − 1) / fps`, nunca ao fim da composição. A
   barra do preview no Studio não abre `/__ff_reload`: o Studio recarrega pelo próprio `/api/events`. Depois
   de qualquer edição que recarrega o preview (cortar, colar, duplicar, apagar, aparar, mover keyframe) o
@@ -1012,6 +1079,15 @@ Qualquer outra falha de medição continua falhando alto.
   rodando mostra o percentual e reabre o progresso. Substituir um arquivo pede confirmação no diálogo.
 
 As escritas são serializadas: duas edições nunca intercalam leitura e gravação do mesmo arquivo.
+
+## 9e. Linha de comando: ajuda
+
+`--help` e `-h` em **qualquer posição** da linha de comando de **qualquer** subcomando (`lint`, `render`, `frames`,
+`generate`, `preview`, `studio`, `transcribe`, `captions`, `models`, `blocks`, `gallery`, `init`, `doctor`, `setup`,
+`upgrade`, `skill`, `browser`, inclusive com ação, como `blocks add --help`) mostram a ajuda geral no stdout e saem
+com 0 **antes de qualquer efeito**: nenhum arquivo é criado ou alterado, nenhum servidor sobe, nenhuma rede é
+usada. A lista de subcomandos fica em `packages/cli/src/help.ts` (`COMMANDS`) e é a mesma que o despacho usa para
+reconhecer o comando; um teste varre essa lista e roda cada um com `--help` e `-h` num diretório vazio.
 
 ## 10. Compatibilidade
 
