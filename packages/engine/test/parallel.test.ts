@@ -5,38 +5,128 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { resolveChrome } from "../src/launch.ts";
 import { startServer } from "../src/server.ts";
-import { captureFramesInParallel, splitIntoChunks } from "../src/parallel.ts";
+import { captureFramesInParallel, orderedFeeder, splitIntoBatches } from "../src/parallel.ts";
 
 const FIXTURES = join(dirname(fileURLToPath(import.meta.url)), "fixtures");
 const FPS = { num: 30, den: 1 };
 const VIEWPORT = { width: 1280, height: 720 };
 
-function assertBalancedChunks(frames: number[], chunks: number[][], workers: number): void {
-  assert.ok(chunks.length <= workers, "usou mais blocos que workers");
-  assert.deepEqual(chunks.flat(), frames, "blocos não são contíguos ou não cobrem a entrada");
-  for (const chunk of chunks) assert.ok(chunk.length > 0, "bloco vazio");
-  const sizes = chunks.map((chunk) => chunk.length);
-  assert.ok(Math.max(...sizes) - Math.min(...sizes) <= 1, "blocos desequilibrados");
-}
-
-test("splitIntoChunks: 1 frame", () => {
-  const frames = [0];
-  const chunks = splitIntoChunks(frames, 1);
-  assert.equal(chunks.length, 1);
-  assert.deepEqual(chunks, [[0]]);
-});
-
-test("splitIntoChunks: 30 frames com 7 workers", () => {
-  const frames = [...Array(30).keys()];
-  const chunks = splitIntoChunks(frames, 7);
-  assertBalancedChunks(frames, chunks, 7);
-});
-
-test("splitIntoChunks: 1000 frames com 7 workers", () => {
+test("splitIntoBatches: deduplica, ordena e fatia em lotes contíguos", () => {
+  assert.deepEqual(splitIntoBatches([], 8), []);
+  assert.deepEqual(splitIntoBatches([0], 8), [[0]]);
+  assert.deepEqual(splitIntoBatches([5, 1, 3, 3, 0, 2, 4], 3), [[0, 1, 2], [3, 4, 5]]);
   const frames = [...Array(1000).keys()];
-  const chunks = splitIntoChunks(frames, 7);
-  assertBalancedChunks(frames, chunks, 7);
-  assert.equal(chunks.length, 7);
+  const batches = splitIntoBatches(frames, 8);
+  assert.equal(batches.length, 125);
+  assert.deepEqual(batches.flat(), frames, "os lotes não cobrem a entrada em ordem");
+  assert.deepEqual(splitIntoBatches([0, 1, 2], 0), [[0], [1], [2]], "tamanho inválido vira 1");
+});
+
+/** Pausa que deixa microtarefas e timers pendentes rodarem. */
+const tick = (ms = 5): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+
+test("orderedFeeder: empurra em ordem mesmo com chegada embaralhada", async () => {
+  const pushed: number[] = [];
+  const feeder = orderedFeeder<string>(async (index, data) => {
+    assert.equal(data, `d${index}`);
+    pushed.push(index);
+  }, 6, { maxBuffered: 6 });
+  for (const index of [3, 1, 0, 5, 2, 4]) await feeder.add(index, `d${index}`);
+  await feeder.finish();
+  assert.deepEqual(pushed, [0, 1, 2, 3, 4, 5]);
+});
+
+test("orderedFeeder: o que está à frente da janela espera até a cauda andar (buffer limitado)", async () => {
+  const release: Array<() => void> = [];
+  const pushed: number[] = [];
+  const feeder = orderedFeeder<number>(
+    (index) =>
+      new Promise<void>((resolve) => {
+        pushed.push(index);
+        release.push(resolve);
+      }),
+    10,
+    { maxBuffered: 3 },
+  );
+  await feeder.add(0, 0); // entra e já vai para o push (em voo, ainda conta na janela)
+  await feeder.add(2, 2);
+  let admitted = false;
+  const far = feeder.add(3, 3).then(() => {
+    admitted = true;
+  });
+  await tick();
+  assert.equal(admitted, false, "índice 3 com próximo=0 e janela 3 deveria esperar");
+  release.shift()?.(); // o push do 0 termina: próximo=1, janela cobre até 3
+  await far;
+  assert.equal(admitted, true);
+  await feeder.add(1, 1);
+  // o resto sai em ordem, um push por vez
+  for (let i = 0; i < 3; i += 1) {
+    await tick();
+    release.shift()?.();
+  }
+  await tick();
+  assert.deepEqual(pushed, [0, 1, 2, 3]);
+});
+
+test("orderedFeeder: falha do push derruba add, finish e quem esperava", async () => {
+  const boom = new Error("pipe quebrou");
+  const feeder = orderedFeeder<number>(async () => {
+    throw boom;
+  }, 4, { maxBuffered: 2 });
+  await feeder.add(0, 0);
+  await tick();
+  await assert.rejects(feeder.add(1, 1), (error) => error === boom);
+  await assert.rejects(feeder.finish(), (error) => error === boom);
+
+  const waiting = orderedFeeder<number>(() => new Promise<void>(() => undefined), 8, { maxBuffered: 2 });
+  await waiting.add(0, 0);
+  const blocked = waiting.add(5, 5);
+  await tick();
+  waiting.fail(new Error("capturou mal"));
+  await assert.rejects(blocked, /capturou mal/);
+});
+
+test("orderedFeeder: valida faixa, repetido e frame que nunca chega", async () => {
+  const feeder = orderedFeeder<number>(() => new Promise<void>(() => undefined), 3, { maxBuffered: 8 });
+  await assert.rejects(feeder.add(3, 3), RangeError);
+  await assert.rejects(feeder.add(-1, 0), RangeError);
+  await feeder.add(2, 2);
+  await assert.rejects(feeder.add(2, 2), /duas vezes/);
+
+  const missing = orderedFeeder<number>(async () => undefined, 3, { maxBuffered: 8 });
+  await missing.add(0, 0);
+  await missing.add(2, 2);
+  await assert.rejects(missing.finish(), /faltou o frame 1/);
+});
+
+test("orderedFeeder: com lotes pegos em ordem por vários workers não trava e respeita a janela", async () => {
+  const total = 200;
+  const batches = splitIntoBatches([...Array(total).keys()], 8);
+  const pushed: number[] = [];
+  let slowest = 0;
+  const feeder = orderedFeeder<number>(
+    async (index) => {
+      slowest = Math.max(slowest, index);
+      pushed.push(index);
+      if (index % 13 === 0) await tick(1);
+    },
+    total,
+    { maxBuffered: 16 },
+  );
+  let claimed = 0;
+  const worker = async (id: number): Promise<void> => {
+    while (claimed < batches.length) {
+      const batch = batches[claimed++] as number[];
+      for (const frame of batch) {
+        await tick(id % 3); // ritmos diferentes embaralham a chegada
+        await feeder.add(frame, frame);
+      }
+    }
+  };
+  await Promise.all([0, 1, 2, 3, 4, 5].map(worker));
+  await feeder.finish();
+  assert.deepEqual(pushed, [...Array(total).keys()]);
 });
 
 test("captureFramesInParallel: 1 worker e 3 workers produzem os mesmos hashes", { timeout: 900_000 }, async (t) => {
@@ -68,6 +158,7 @@ test("captureFramesInParallel: 1 worker e 3 workers produzem os mesmos hashes", 
       fps: FPS,
       frames: [...frames].reverse(),
       workers: 3,
+      batchSize: 4,
       onFrame: (frame, png) => {
         seen.set(frame, (seen.get(frame) ?? 0) + 1);
         assert.deepEqual([...png.subarray(0, 4)], [0x89, 0x50, 0x4e, 0x47], `PNG inválido no frame ${frame}`);

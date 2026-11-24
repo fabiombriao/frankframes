@@ -83,11 +83,18 @@ export function classifyFailure(error: unknown): ClassifiedFailure {
 /**
  * Repete uma vez somente se a falha for transiente ou timeout. `onRetry` recebe a causa da primeira
  * tentativa: a repetição nunca é silenciosa, e a segunda falha é a que chega ao chamador.
+ * `neverRetry` marca erros que a classificação por texto poderia confundir com falha do browser (ex.: a stderr
+ * do FFmpeg citando "timeout"): esses sobem direto, sem segunda tentativa.
  */
-export async function retryOnceIfTransient<T>(operation: () => Promise<T>, onRetry?: (cause: ClassifiedFailure) => void): Promise<T> {
+export async function retryOnceIfTransient<T>(
+  operation: () => Promise<T>,
+  onRetry?: (cause: ClassifiedFailure) => void,
+  neverRetry?: (error: unknown) => boolean,
+): Promise<T> {
   try {
     return await operation();
   } catch (error) {
+    if (neverRetry?.(error) === true) throw error;
     const cause = classifyFailure(error);
     if (!cause.retryable) throw error;
     onRetry?.(cause);

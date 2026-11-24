@@ -8,13 +8,15 @@ import { basename, dirname, extname, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { loadComposition } from "@frankframes/contract";
 import type { Composition, Diagnostic, RawClip, ResolvedClip } from "@frankframes/contract";
-import { buildFrameSequenceArgs, buildMuxArgs, containerFor } from "@frankframes/encode";
+import { buildFramePipeArgs, buildMuxArgs, containerFor } from "@frankframes/encode";
 import type { Preset, VideoCodec } from "@frankframes/encode";
-import { BrowserError, assetPath, captureFramesInParallel, extractFramesCached, probeDuration, retryOnceIfTransient, startServer } from "@frankframes/engine";
+import { BrowserError, assetPath, captureFramesInParallel, defaultWorkerCount, extractFramesCached, probeDuration, reorderWindow, retryOnceIfTransient, startServer } from "@frankframes/engine";
 import type { MediaManifest } from "@frankframes/engine";
 import { annotateCompiled, materializeClipIds, mergeSubCompositions } from "./compile.ts";
 import { resolveFfmpeg } from "./ffmpeg.ts";
 import { mixAudio } from "./audio.ts";
+import { PipeEncodeError, encodeWhileCapturing } from "./pipe-encode.ts";
+import type { EncodeRun } from "./pipe-encode.ts";
 import { audioClipsFor } from "./preview-audio.ts";
 import { VariableError, applyVariables } from "./variables.ts";
 
@@ -84,6 +86,11 @@ function throwIfCanceled(signal: AbortSignal | undefined, stage: RenderStage): v
  * Falha do runtime do motion durante a prontidão da página (conflito de posse, alvo
  * proibido, JSON inválido): sai com código próprio em vez de "erro interno".
  */
+/** Falha do FFmpeg alimentado por pipe: vira erro do estágio `encode` com a stderr dele na mensagem. */
+function encodeFailure(error: unknown): RenderError | undefined {
+  return error instanceof PipeEncodeError ? new RenderError("E_INTERNAL", "encode", error.message) : undefined;
+}
+
 function motionFailure(error: unknown): RenderError | undefined {
   const message = error instanceof Error ? error.message : String(error);
   const match = /E_MOTION_[A-Z_]+: [^\r\n]*/.exec(message);
@@ -296,6 +303,10 @@ export interface RenderOptions {
   codec?: VideoCodec;
   preset?: Preset;
   workers?: number;
+  /**
+   * Mantém a pasta de trabalho depois do render. Sem isso os frames vão direto ao FFmpeg e nunca tocam o disco;
+   * com isso eles também são gravados em `<pasta>/frames/frame_000001.png…` (EDT-62), para inspeção.
+   */
   keepWorkDir?: boolean;
   onProgress?: (stage: RenderStage, percent: number, message?: string) => void;
   /**
@@ -388,7 +399,17 @@ async function renderPipeline(
   };
   process.once("exit", cleanup);
 
+  // O FFmpeg do encode por pipe: precisa estar morto antes de o diretório de trabalho ser removido (no Windows,
+  // arquivo aberto não se apaga).
+  let encoding: EncodeRun<Map<number, string>> | undefined;
   try {
+    // Encode enquanto captura: os PNGs vão direto para o stdin do FFmpeg, sem passar por disco.
+    // Só com `keepWorkDir` (--keep) eles também são gravados em `frames/`, para inspeção.
+    const container = containerFor(codec);
+    const videoPath = join(workDir, container === "webm" ? "video.webm" : "video.mp4");
+    const framesDir = join(workDir, "frames");
+    const keepFrames = options.keepWorkDir === true;
+    if (keepFrames) await mkdir(framesDir, { recursive: true });
     throwIfCanceled(signal, "capture");
     progress("capture", 25);
     const server = await startServer(entryDir, {
@@ -397,38 +418,48 @@ async function renderPipeline(
       page: { path: basename(prepared.entry), html: prepared.compiledHtml },
     });
 
-    const framesDir = join(workDir, "frames");
-    await mkdir(framesDir, { recursive: true });
     const frames = [...Array(totalFrames).keys()];
-    let hashes: Map<number, string>;
+    const workers = options.workers ?? defaultWorkerCount();
     try {
-      hashes = await retryOnceIfTransient(
+      encoding = await retryOnceIfTransient(
         () => {
-          // O retry de falha transitória nunca recomeça uma captura já cancelada.
+          // O retry de falha transitória nunca recomeça uma captura já cancelada; cada tentativa sobe um FFmpeg novo.
           throwIfCanceled(signal, "capture");
-          return captureFramesInParallel({
-            url: `${server.url}${basename(prepared.entry)}`,
-            viewport,
-            gpu,
-            fps,
-            frames,
-            serverFailures: server.failures,
-            ...(options.workers !== undefined ? { workers: options.workers } : {}),
-            onFrame: async (frame, png) => {
-              // Lançar aqui derruba o worker; o `finally` do captureFramesInParallel fecha as sessões do Chrome.
-              throwIfCanceled(signal, "capture");
-              await writeFile(join(framesDir, `frame_${String(frame + 1).padStart(6, "0")}.png`), png);
-            },
+          return encodeWhileCapturing({
+            ffmpeg,
+            args: buildFramePipeArgs({ fps, codec, preset, outPath: videoPath }),
+            total: totalFrames,
+            maxBuffered: reorderWindow(workers),
+            ...signalOption,
+            capture: (deliver) =>
+              captureFramesInParallel({
+                url: `${server.url}${basename(prepared.entry)}`,
+                viewport,
+                gpu,
+                fps,
+                frames,
+                workers,
+                serverFailures: server.failures,
+                onFrame: async (frame, png) => {
+                  // Lançar aqui derruba o worker; o `finally` do captureFramesInParallel fecha as sessões do Chrome.
+                  throwIfCanceled(signal, "capture");
+                  if (keepFrames) await writeFile(join(framesDir, `frame_${String(frame + 1).padStart(6, "0")}.png`), png);
+                  await deliver(frame, png);
+                },
+              }),
           });
         },
         // A repetição é única e dita a causa; se a segunda tentativa falhar, é a falha dela que sobe.
         (cause) => progress("capture", 25, `repetindo a captura uma vez (${cause.code}): ${cause.message.split(/\r?\n/)[0]}`),
+        // Erro do FFmpeg (stderr pode citar "timeout") nunca é tratado como falha do browser.
+        (error) => error instanceof PipeEncodeError,
       );
     } catch (error) {
-      throw motionFailure(error) ?? fontFailure(error) ?? browserFailure(error) ?? error;
+      throw motionFailure(error) ?? fontFailure(error) ?? browserFailure(error) ?? encodeFailure(error) ?? error;
     } finally {
       await server.close();
     }
+    const hashes = encoding.captured;
     throwIfCanceled(signal, "capture");
     progress("capture", 75, `${totalFrames} frames`);
 
@@ -450,11 +481,14 @@ async function renderPipeline(
       warnings.push(...mixed.warnings);
     }
 
+    // O encode já vinha andando junto da captura: aqui só falta a cauda depois do último frame.
     throwIfCanceled(signal, "encode");
     progress("encode", 80);
-    const container = containerFor(codec);
-    const videoPath = join(workDir, container === "webm" ? "video.webm" : "video.mp4");
-    await run(ffmpeg, buildFrameSequenceArgs({ framesDir, fps, codec, preset, outPath: videoPath }), { maxBuffer: 64 << 20, ...signalOption });
+    try {
+      await encoding.encoded;
+    } catch (error) {
+      throw encodeFailure(error) ?? error;
+    }
     progress("encode", 90);
 
     throwIfCanceled(signal, "assemble");
@@ -491,6 +525,7 @@ async function renderPipeline(
       workDir,
     };
   } finally {
+    await encoding?.kill();
     if (options.keepWorkDir !== true && prepared.ownsWorkDir) {
       process.removeListener("exit", cleanup);
       await rm(workDir, { recursive: true, force: true });

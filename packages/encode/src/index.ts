@@ -13,6 +13,7 @@ export {
   containerFor,
   buildVideoArgs,
   buildMuxArgs,
+  buildFramePipeArgs,
   buildFrameSequenceArgs,
 } from "./policy.ts";
 export type { FfmpegFacts, Preset, VideoCodec, PolicyCode, CodecChoice } from "./policy.ts";

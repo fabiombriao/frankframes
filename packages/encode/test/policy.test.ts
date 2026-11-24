@@ -5,6 +5,7 @@ import {
   PRESETS,
   assertCodecAllowed,
   assertDistributionSafe,
+  buildFramePipeArgs,
   buildFrameSequenceArgs,
   buildMuxArgs,
   containerFor,
@@ -82,6 +83,20 @@ test("args de encode nunca citam encoder GPL e respeitam o container", () => {
   assert.equal(ntsc[ntsc.indexOf("-framerate") + 1], "30000/1001");
   assert.equal(ntsc[ntsc.indexOf("-r") + 1], "30000/1001");
   assert.ok(ntsc.includes("-xerror"));
+});
+
+test("encode por pipe: mesma saída que a sequência em disco, entrada em image2pipe", () => {
+  for (const codec of ["av1", "vp9", "h264"] as const) {
+    const common = { fps: { num: 30000, den: 1001 }, codec, preset: "standard", outPath: "o" } as const;
+    const pipe = buildFramePipeArgs(common);
+    const disk = buildFrameSequenceArgs({ ...common, framesDir: "f" });
+    const afterInput = (args: string[], marker: string): string[] => args.slice(args.indexOf(marker) + 1);
+    assert.deepEqual(afterInput(pipe, "-"), afterInput(disk, "f/frame_%06d.png"), "opções de vídeo/mux/saída divergem");
+    assert.deepEqual(pipe.slice(pipe.indexOf("-f"), pipe.indexOf("-") + 1), ["-f", "image2pipe", "-c:v", "png", "-i", "-"]);
+    assert.equal(pipe[pipe.indexOf("-framerate") + 1], "30000/1001");
+    assert.ok(pipe.includes("-xerror"));
+    assert.ok(!pipe.join(" ").match(/x264|x265/));
+  }
 });
 
 test("presets são monotônicos em qualidade", () => {

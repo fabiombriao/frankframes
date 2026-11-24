@@ -24,7 +24,8 @@ export type { ExtractOptions, MediaManifest, MediaManifestEntry } from "./media.
 export { MEDIA_SHIM_SOURCE } from "./media-shim.ts";
 export { PREVIEW_UI_SOURCE } from "./preview-ui.ts";
 export { PREVIEW_AUDIO_SOURCE } from "./preview-audio.ts";
-export { captureFramesInParallel, defaultWorkerCount, splitIntoChunks } from "./parallel.ts";
+export { DEFAULT_BATCH_SIZE, captureFramesInParallel, defaultWorkerCount, orderedFeeder, reorderWindow, splitIntoBatches } from "./parallel.ts";
+export type { OrderedFeeder } from "./parallel.ts";
 export type { ParallelCaptureOptions } from "./parallel.ts";
 export { BrowserError, classifyFailure, retryOnceIfTransient } from "./failures.ts";
 export type { BrowserErrorCode, ClassifiedFailure, FailureKind } from "./failures.ts";

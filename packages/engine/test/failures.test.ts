@@ -101,6 +101,25 @@ test("retryOnceIfTransient avisa a causa da primeira tentativa e a segunda falha
   assert.deepEqual(causes, ["E_FONT_LOAD"]);
 });
 
+test("retryOnceIfTransient não repete o que `neverRetry` marca, mesmo com texto de falha transiente (EDT-62)", async () => {
+  let calls = 0;
+  // A stderr do FFmpeg pode citar "Protocol error" ou "timeout"; só o tipo do erro decide, não o texto.
+  const ffmpegLike = new Error("FFmpeg terminou: Protocol error TargetCloseError");
+  await assert.rejects(
+    retryOnceIfTransient(
+      async () => {
+        calls += 1;
+        throw ffmpegLike;
+      },
+      undefined,
+      (error) => error === ffmpegLike,
+    ),
+    (error) => error === ffmpegLike,
+  );
+  assert.equal(calls, 1);
+  assert.equal(classifyFailure(ffmpegLike).retryable, true, "sem neverRetry a classificação por texto repetiria");
+});
+
 test("BrowserError carrega código e hint, e a mensagem começa pelo código", () => {
   const error = new BrowserError("E_BROWSER_TIMEOUT", "demorou", "aumente o prazo");
   assert.equal(error.code, "E_BROWSER_TIMEOUT");

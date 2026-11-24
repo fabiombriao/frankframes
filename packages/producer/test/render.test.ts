@@ -2,7 +2,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdtemp, readFile, readdir, stat, writeFile } from "node:fs/promises";
+import { readdirSync } from "node:fs";
+import { mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -231,4 +232,55 @@ test("cancelar no meio da captura (workers abertos): E_CANCELED e nada sobra", {
   await assert.rejects(stat(outPath), { code: "ENOENT" });
   const leftovers = (await readdir(workspace)).filter((name) => name.includes(".partial"));
   assert.deepEqual(leftovers, []);
+});
+
+test("sem --keep nenhum PNG vai para o disco; com keepWorkDir os frames também são gravados (EDT-62)", { timeout: 600_000 }, async (t) => {
+  if (!(await ffmpegAvailable())) return t.skip("ffmpeg/ffprobe não encontrados");
+
+  const { workspace, entry } = await cancelWorkspace("ff-e2e-keep-");
+  const before = new Set(await renderDirs());
+
+  // Sem keep: no fim da captura, com o diretório de trabalho ainda existindo, não há frames/ nem PNG nele.
+  const seen: string[][] = [];
+  const plain = await renderComposition({
+    entry,
+    outPath: join(workspace, "sem-keep.mp4"),
+    ffmpeg: FFMPEG,
+    ffprobe: FFPROBE,
+    codec: "av1",
+    preset: "draft",
+    workers: 2,
+    onProgress: (stage) => {
+      if (stage !== "encode") return;
+      for (const name of readdirSync(tmpdir())) {
+        if (name.startsWith("ff-render-") && !before.has(name)) seen.push(readdirSync(join(tmpdir(), name)));
+      }
+    },
+  });
+  assert.equal(plain.frames, 45);
+  assert.ok(seen.length > 0, "o teste não enxergou o diretório de trabalho durante o render");
+  for (const entries of seen) assert.ok(!entries.includes("frames"), `frames/ criado sem --keep: ${entries.join(", ")}`);
+  const probe = await run(FFPROBE, ["-v", "error", "-show_entries", "stream=nb_frames", "-of", "default=nw=1", plain.outPath]);
+  assert.match(probe.stdout, /nb_frames=45/, "o encode por pipe tem que fechar com todos os frames");
+
+  // Com keep: o vídeo é o mesmo caminho (pipe) e os PNGs também ficam, um por frame.
+  const kept = await renderComposition({
+    entry,
+    outPath: join(workspace, "com-keep.mp4"),
+    ffmpeg: FFMPEG,
+    ffprobe: FFPROBE,
+    codec: "av1",
+    preset: "draft",
+    workers: 2,
+    keepWorkDir: true,
+  });
+  try {
+    const pngs = (await readdir(join(kept.workDir, "frames"))).filter((name) => /^frame_\d{6}\.png$/.test(name));
+    assert.equal(pngs.length, 45, "um PNG por frame com --keep");
+    assert.ok(pngs.includes("frame_000001.png") && pngs.includes("frame_000045.png"));
+    const keptProbe = await run(FFPROBE, ["-v", "error", "-show_entries", "stream=nb_frames", "-of", "default=nw=1", kept.outPath]);
+    assert.match(keptProbe.stdout, /nb_frames=45/);
+  } finally {
+    await rm(kept.workDir, { recursive: true, force: true });
+  }
 });

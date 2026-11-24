@@ -173,14 +173,15 @@ export function buildMuxArgs(codec: VideoCodec): string[] {
   return container === "mp4" ? ["-movflags", "+faststart"] : [];
 }
 
-/** Args completos do encode de uma sequência de PNGs (`frame_%06d.png`). */
-export function buildFrameSequenceArgs(input: {
-  framesDir: string;
+type FrameEncodeInput = {
   fps: { num: number; den: number };
   codec: VideoCodec;
   preset: Preset;
   outPath: string;
-}): string[] {
+};
+
+/** Monta o comando: entrada (`inputArgs`) + as mesmas opções de vídeo, mux e saída para qualquer origem dos frames. */
+function buildEncodeArgs(input: FrameEncodeInput, inputArgs: string[]): string[] {
   const rate = input.fps.den === 1 ? String(input.fps.num) : `${input.fps.num}/${input.fps.den}`;
   return [
     "-hide_banner",
@@ -189,8 +190,7 @@ export function buildFrameSequenceArgs(input: {
     "-xerror",
     "-framerate",
     rate,
-    "-i",
-    `${input.framesDir}/frame_%06d.png`,
+    ...inputArgs,
     ...buildVideoArgs(input.codec, input.preset),
     "-r",
     rate,
@@ -200,4 +200,18 @@ export function buildFrameSequenceArgs(input: {
     "-y",
     input.outPath,
   ];
+}
+
+/** Args completos do encode de uma sequência de PNGs em disco (`frame_%06d.png`). */
+export function buildFrameSequenceArgs(input: FrameEncodeInput & { framesDir: string }): string[] {
+  return buildEncodeArgs(input, ["-i", `${input.framesDir}/frame_%06d.png`]);
+}
+
+/**
+ * Args do encode de PNGs concatenados no stdin (`image2pipe`), na ordem dos frames. Mesma saída que
+ * `buildFrameSequenceArgs`: o vídeo só muda se os bytes dos frames mudarem. O decoder é o `png` explícito
+ * para o FFmpeg não adivinhar o formato pelo primeiro pacote.
+ */
+export function buildFramePipeArgs(input: FrameEncodeInput): string[] {
+  return buildEncodeArgs(input, ["-f", "image2pipe", "-c:v", "png", "-i", "-"]);
 }

@@ -8,10 +8,15 @@
  *                                 [--scenario motion,video] [--out out/bench]
  *
  * Saída: `<out>/<label>-<AAAAMMDD-HHMM>.json` e uma tabela Markdown no stdout.
+ *
+ * Desde o H2+H3 (EDT-62) captura e encode rodam juntos: `s_capture` é o trecho em que ambos andam (e `captureFps`
+ * é a vazão dessa captura-com-encode), e `s_encode` é só a cauda que sobra depois do último frame (o FFmpeg
+ * terminando de fechar o vídeo). Medições anteriores ao H2+H3 tinham o encode inteiro depois da captura.
  * Rode com a máquina parada (nada de gate, outro render ou sincronização pesada ao mesmo tempo).
  */
-import { rm, mkdir, stat, writeFile, access } from "node:fs/promises";
-import { availableParallelism, totalmem } from "node:os";
+import { readdirSync } from "node:fs";
+import { rm, mkdir, stat, writeFile, access, readdir } from "node:fs/promises";
+import { availableParallelism, tmpdir, totalmem } from "node:os";
 import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import type { Preset } from "@frankframes/encode";
@@ -70,6 +75,43 @@ if (presets.length === 0 || gpus.length === 0 || scenarios.length === 0 || worke
 }
 
 /**
+ * Maior tamanho que o diretório de trabalho do render atinge, amostrado a cada 100 ms. Desde o EDT-62 os frames não
+ * vão para o disco (vão pelo pipe do FFmpeg), então o diretório só guarda vídeo e áudio: o pico não pode mais ser
+ * lido no fim do render, e `keepWorkDir` mudaria o que se mede. O diretório é achado pelo prefixo `ff-render-`.
+ * Só `ENOENT` (arquivo some entre o `readdir` e o `stat`) é ignorado; qualquer outro erro derruba a medição.
+ */
+function watchWorkDir(): { stop: () => Promise<number> } {
+  const known = new Set<string>();
+  let dir: string | undefined;
+  let peak = 0;
+  let failure: unknown;
+  let busy: Promise<void> = Promise.resolve();
+  // Leitura síncrona: o snapshot tem que existir antes de o render criar o diretório dele (uma leitura assíncrona
+  // podia terminar depois do `mkdtemp` do render e esconder o diretório novo entre os "já conhecidos").
+  for (const name of readdirSync(tmpdir())) if (name.startsWith("ff-render-")) known.add(name);
+  const sample = async (): Promise<void> => {
+    try {
+      dir ??= (await readdir(tmpdir())).find((name) => name.startsWith("ff-render-") && !known.has(name));
+      if (dir !== undefined) peak = Math.max(peak, await dirSize(join(tmpdir(), dir)));
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") failure ??= error;
+    }
+  };
+  const timer = setInterval(() => {
+    busy = busy.then(sample);
+  }, 100);
+  return {
+    async stop() {
+      clearInterval(timer);
+      await busy;
+      if (failure !== undefined) throw failure;
+      if (dir === undefined) throw new Error("não achei o diretório de trabalho ff-render-* durante o render: o pico de disco não foi medido");
+      return peak;
+    },
+  };
+}
+
+/**
  * Réplica da fórmula de `defaultWorkerCount` (packages/engine/src/parallel.ts, não exportada): só para
  * registrar quantos workers o `default` significa nesta máquina. Se a fórmula do motor mudar, atualize aqui.
  */
@@ -97,7 +139,7 @@ interface RunRecord {
   captureFps: number;
   sPerMinute: number;
   outputBytes: number;
-  /** Tamanho do workDir ao fim do render (frames PNG + vídeo + áudio): o pico de disco. */
+  /** Maior tamanho do workDir durante o render (amostrado): o pico de disco. Até o H4 incluía os frames PNG; desde o H2+H3 só vídeo e áudio. */
   peakWorkDirBytes: number;
   warnings: string[];
 }
@@ -167,6 +209,7 @@ for (const scenario of scenarios) {
 
           const outPath = join(tmpDir, `${scenario}-${effective}-${preset}-${run + 1}.mp4`);
           const marks: Array<{ stage: RenderStage; t: number }> = [];
+          const watcher = watchWorkDir();
           const started = performance.now();
           const result = await renderComposition({
             entry,
@@ -177,15 +220,10 @@ for (const scenario of scenarios) {
             ffmpeg: pair.ffmpeg,
             ffprobe: pair.ffprobe,
             ...(workers === "default" ? {} : { workers }),
-            // O workDir fica até eu medi-lo (depois do relógio parar) e só então é removido.
-            keepWorkDir: true,
             onProgress: (stage) => marks.push({ stage, t: performance.now() - started }),
           });
           const end = performance.now() - started;
-          // Os frames só saem do disco no fim do render, e o vídeo codificado entra por último: o tamanho final do
-          // workDir (frames + vídeo + áudio) é o pico de disco do render.
-          const peakWorkDirBytes = await dirSize(result.workDir);
-          await rm(result.workDir, { recursive: true, force: true });
+          const peakWorkDirBytes = await watcher.stop();
 
           if (scenario === "video") {
             // Confere que a chave de cache calculada aqui é a do render: sem isso "frio/quente" seria chute.
@@ -261,7 +299,7 @@ function stat3(values: number[], digits = 1): string {
 const lines = [
   `### ${label} — ${machine.cpu}, ${machine.logicalCores} threads, ${machine.ramGiB} GiB, GPU: ${machine.gpuRenderer}`,
   "",
-  "Mediana (mín–máx) das execuções. `captureFps` e `s_capture` incluem abrir o Chrome e a prontidão da página.",
+  "Mediana (mín–máx) das execuções. `captureFps` e `s_capture` incluem abrir o Chrome, a prontidão da página e (desde o H2+H3) o encode, que roda junto da captura; `s_encode` é só a cauda do encode depois do último frame.",
   "",
   "| cenário | GPU efetiva | workers | preset | cache | n | s_total | s_capture | captureFps | s/min | s_encode | pico workDir (MB) |",
   "|---|---|---|---|---|---|---|---|---|---|---|---|",

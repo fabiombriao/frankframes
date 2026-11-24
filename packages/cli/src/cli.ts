@@ -39,6 +39,8 @@ uso:
   frankframes render <arquivo.html> [-o saida.mp4] [--codec av1|vp9|h264] [--preset draft|standard|high]
                                     [--workers N] [--gpu auto|software|hardware] [--no-loudness]
                                     [--keep] [--json]
+                                    (--keep guarda a pasta de trabalho e grava os frames em frames/*.png;
+                                     sem ele os frames vão direto ao FFmpeg, sem PNG em disco)
   frankframes render a.html b.html [c.html…] -o <pasta>/ [--concurrency N] [opções de render]
   frankframes render --batch lote.json [--concurrency N] [--json]
   frankframes preview <arquivo.html> [--open]

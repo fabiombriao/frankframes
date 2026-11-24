@@ -29,7 +29,9 @@ Medido em 2026-11-23, sem outra carga de CPU/GPU na máquina durante as execuç�
 - **Estágios** carimbados pelo `onProgress` de `renderComposition` (compile 5, probe 10, extract 20, capture 25→75,
   audio 78, encode 80→90, assemble 92→100). `s_capture` vai do evento "capture 25" ao "capture 75" e
   **inclui subir o servidor, abrir o Chrome e a prontidão da página**; `captureFps = frames / s_capture`.
-  `s/min = s_total / (duração em min)`.
+  `s/min = s_total / (duração em min)`. **Desde o H2+H3 (`h23`)** captura e encode andam juntos: `s_capture`/`captureFps`
+  incluem o encode em andamento e `s_encode` é só a cauda depois do último frame; as tabelas anteriores ao `h23` têm o
+  encode inteiro depois da captura. O pico de disco passou a ser amostrado a cada 100 ms durante o render.
 - **Codec** AV1 nos três presets (`draft`, `standard`, `high`). 3 execuções por combinação; tabela em mediana (mín–máx).
 - **GPU**: `auto` e `software`. Composição com `<video>` força software em `auto` (contract §9), então para o cenário
   `video` `auto` ≡ `software` e a combinação duplicada é pulada (registrado no log).
@@ -83,7 +85,7 @@ Observações:
   do que um `<img>` de frame extraído.
 - Extração fria do vídeo: 1,55–1,82 s; quente: 0,03–0,06 s (≤ 1% do total nos dois casos).
 - `s_encode` por preset: `draft` 3,8–4,3 s, `standard` 4,5–5,5 s, `high` 5,5–8,2 s (12–25% do `s_total`),
-  hoje inteiramente **depois** da captura.
+  hoje inteiramente **depois** da captura (até o H1; desde o H2+H3 ele é só a cauda, veja a seção "H2 + H3").
 
 ## Baseline — `bench-frame` (ms por frame, mediana; 115 frames, `motion` 1080p)
 
@@ -116,7 +118,7 @@ Ordem a priori do plano: H0, H1, H2, H3, H4, H5, H6.
 | **H1** settle duplicado | Real, mas pequeno: o 2º settle custa ~33 ms de ~410 ms/frame (software) e ~290 ms (hardware), ≈ 8–11%. Juntar seek + settle num `evaluate` ganha ~1 ms. | ~8–11% do frame |
 | **H4** `optimizeForSpeed: true` | **Dominante.** `captureScreenshot` é 85–90% do custo por frame (363 ms software, 257 ms hardware) e a variante rápida cai para 113 / 97 ms (3,2× / 2,6×). Preço: PNG ~1,9–2,2× maior e bytes diferentes (goldens regenerados; checar PSNR ≥ 50 dB). | até ~65% do frame |
 | **H2** encode em série | Moderada: `s_encode` = 12–25% do `s_total` (3,8–8,2 s). Sobrepor captura e encode tende a `max(captura, encode)`; o ganho é o `s_encode` quase inteiro no `high`. | 12–25% do total |
-| **H3** PNG em disco | Não medido isoladamente; depende de H2. Com H4 o PNG fica maior, o que aumenta o peso do I/O. | a medir |
+| **H3** PNG em disco | Medido junto com H2 (seção "H2 + H3"): o pico de disco cai de 382/453 MB para < 1 MB e deixa de crescer com os frames. | disco, não tempo |
 | **H5** workers | **Não medido** (só `default` = 6). Precisa de varredura 2/4/6/8/12 por modo de GPU. Como a captura é CPU/GPU-bound no screenshot, a curva pode mudar depois de H4. | a medir |
 | **H6** BeginFrame | Fora de escopo: o settle não é o gargalo (H0 falsa). | — |
 
@@ -217,8 +219,84 @@ JSON: `h1-20261123-1938.json`, `frame-software-20261123-1949.json`, `frame-hardw
 | baseline | `baseline` | 13,3 / 9,6 | 159 / 164 / 167 (hw); 211 / 219 / 228 (sw) | este documento |
 | H4 | `h4` | 21,7 / 16,8 | 106 / 113 / 116 (hw); 132 / 137 / 153 (sw) | pixels idênticos; PNG ~2× maior |
 | H1 | `h1` | 22,1 / 18,8 | 104 / 106 / 112 (hw, igual); 119,5 / 122 / 130 (sw) | só software (EDT-77: hardware mantém 2 esperas) |
+| H2+H3 | `h23` | 22,2 / 16,6² | 83,3 / 87,5 / 89,6 (hw); 110,5 / 109,4 / 120,5 (sw) | encode junto da captura, sem PNG em disco; disco 382/453 MB → < 1 MB; vídeo sem ganho claro |
+
+² `captureFps` do `h23` inclui o encode rodando junto: não é comparável com as linhas anteriores (use `s/min`).
 
 Comandos do `h4`: os mesmos do baseline com `--label h4` e `bench-frame` nos dois modos (JSON
 `h4-20261123-1855.json`, `frame-software-20261123-1906.json`, `frame-hardware-20261123-1907.json`).
 
-Número final: a preencher ao fim do EDT-62 (passos 4–5).
+## H2 + H3 — encode enquanto captura, sem PNG em disco (entregue)
+
+Mudança: `packages/engine/src/parallel.ts` (fila dinâmica de lotes de 8 frames no lugar de `splitIntoChunks`;
+`orderedFeeder` com buffer de reordenação limitado e backpressure), `packages/encode/src/policy.ts`
+(`buildFramePipeArgs`, entrada `-f image2pipe -c:v png -i -`), `packages/producer/src/pipe-encode.ts` (FFmpeg vivo
+durante a captura, falha alta nos dois sentidos) e `packages/producer/src/render.ts`. Com `--keep` os PNG também são
+gravados em `frames/`. Spec em `docs/contract.md` §8 ("Captura e encode andam juntos").
+
+**Mudança de significado das colunas (leia antes de comparar com as tabelas acima).** Até o H1, `s_capture` era só a
+captura e `s_encode` o encode inteiro, depois dela. Agora os dois andam juntos: `s_capture` (e `captureFps`) é a captura
+**com o encode em andamento**, e `s_encode` é só a **cauda** depois do último frame (o FFmpeg fechando o vídeo).
+`s_encode` de 0,2–3,1 s não é mais "o custo do encode"; compare `s_total` e `s/min`, que continuam significando a
+mesma coisa. O estágio `capture 75` do `onProgress` passa a querer dizer "todos os frames entregues", e `encode 80→90`
+é a cauda.
+
+**Pixels e determinismo** (`examples/cena-dupla`, 240 frames, hash por frame; mesma sonda do H1)
+- Software: **240/240 hashes iguais** ao antes do H2+H3 (3 rodadas, 0 instáveis).
+- Hardware (`auto`, 6 workers): 24 frames instáveis em 5 rodadas, contra 74 na medição de referência feita logo antes
+  (37 no H1, 95 antes do H1). **Não piorou**; o ruído do EDT-77 continua e varia de uma medição para outra.
+- Vídeo decodificado: `pipe-encode.test.ts` compara `framemd5` do encode por pipe com o da sequência em disco, entregando
+  os frames fora de ordem: igual.
+- `determinism.test.ts` verde em `auto` e em `software`.
+
+**Velocidade** (3 execuções, workers = 6, mediana; `motion` 300 frames; "antes" = `h1`/`h4` das tabelas acima)
+
+| GPU | preset | captureFps antes → depois¹ | s_total antes → depois | s/min antes → depois | s_encode antes → depois |
+|---|---|---|---|---|---|
+| hardware | draft | 22,1 → 22,2 | 17,3 → 13,9 s | 104 → 83,3 | 3,8 → 0,2 |
+| hardware | standard | 22,4 → 21,2 | 17,7 → 14,6 s | 106 → 87,5 | 4,5 → 0,4 |
+| hardware | high | 22,8 → 21,5 | 18,7 → 14,9 s | 112 → 89,6 | 5,5 → 0,9 |
+| software | draft | 18,8 → 16,6 | 19,9 → 18,4 s | 119,5 → 110,5 | 3,8 → 0,2 |
+| software | standard | 18,8 → 16,8 | 20,4 → 18,2 s | 122 → 109,4 | 4,6 → 0,3 |
+| software | high | 18,9 → 15,9 | 21,7 → 20,1 s | 130 → 120,5 | 5,8 → 1,0 |
+| video (software), quente | draft | 25,1 → 19,5 | 15,9 → 15,9 s | 95,5 → 95,5 | 4,0 → 0,4 |
+| video (software), quente | standard | 24,8 → 17,2 | 16,9 → 18,5 s | 102 → 110,7 | 5,4 → 0,8 |
+| video (software), quente | high | 25,5 → 19,0 | 19,3 → 18,7 s | 116 → 112,4 | 8,1 → 2,7 |
+
+¹ `captureFps` agora inclui o encode rodando junto (ver acima); não é comparável linha a linha.
+
+Leitura:
+- **Hardware: −20% no `s_total`** nos três presets (a cauda de 3,8–5,5 s some; a captura em si não desacelera).
+- **Software: ganho de 8–11%**, bem menor que a cauda eliminada: a captura em software é CPU-bound com 6 workers e o
+  AV1 do FFmpeg disputa os mesmos núcleos enquanto ela roda (`s_capture` subiu de ~15,9 s para 17,8–18,9 s). O encode
+  deixou de ser serial, mas não deixou de custar CPU.
+- **Vídeo (software): sem ganho claro** (±: 15,9 → 15,9 s no `draft`, 16,9 → 18,5 s no `standard`, 19,3 → 18,7 s no
+  `high`; as faixas mín–máx das duas medições se sobrepõem). A captura desse cenário já era a mais rápida e o encode
+  compete com ela do mesmo jeito.
+- Esse é o ponto de partida do H5: com o encode no mesmo conjunto de núcleos, o número ótimo de workers pode ser
+  menor que 6 em software. Não foi mexido aqui.
+- Medição feita com a máquina de uso normal do titular ligada (CPU ~20–40% em amostras de 2 s antes de começar, sem
+  nenhum Chrome/FFmpeg meu rodando); trate diferenças de poucos por cento como ruído.
+
+**Disco** (pico do `workDir`, `motion` 1080p, 300 frames, draft; antes = frames PNG + vídeo + áudio lidos no fim do render
+com `keepWorkDir`; agora amostrado a cada 100 ms durante o render, sem `keepWorkDir`)
+
+| GPU | antes (H4) | depois | frames em disco |
+|---|---|---|---|
+| hardware | 382 MB | < 1 MB (vídeo + áudio) | nenhum |
+| software | 453 MB | < 1 MB | nenhum |
+| `motion` `high` | — | 1 MB | nenhum |
+| vídeo (software), `draft`/`standard`/`high` | — | 2 / 7 / 9 MB | nenhum |
+
+O pico deixa de crescer com o número de frames: a extrapolação do EDT-64 (~2,5–3 GB para ~2000 frames 1080p) cai para
+o tamanho do vídeo parcial. Em memória, o `orderedFeeder` segura no máximo `max(16, 6 × 8) = 48` frames PNG
+(~1,3–1,5 MB cada, ~70 MB) mais o que o pipe do FFmpeg bufferiza.
+
+JSON: `h23-20261123-2258.json` (`bench-capture`, `--label h23 --runs 3`).
+
+Comando: `node scripts/bench-capture.ts --label h23 --runs 3 --out C:/Users/rober/AppData/Local/Temp/ff-bench`.
+`scripts/bench-capture.ts` passou a medir o pico do `workDir` por amostragem (`ff-render-*` no temporário), porque os
+frames não existem mais ao fim do render nem o `keepWorkDir` pode ficar ligado sem mudar o que se mede.
+
+Número final do EDT-62 (hardware, `s/min`): **159 → 83,3** (draft) e **167 → 89,6** (high), cerca de −47% desde o baseline;
+software **211 → 110,5** (draft) e **228 → 120,5** (high), também cerca de −47%. Faltam H5 (workers) e, fora da 1.0, H6.

@@ -594,6 +594,22 @@ andamento, derruba os workers de captura (as sessões do Chrome fecham), apaga t
 `E_CANCELED` no estágio em que estava; qualquer falha depois do abort vira `E_CANCELED`. `E_CANCELED` é código de
 render e não é repetido.
 
+**Captura e encode andam juntos (EDT-62, H2+H3).** Os frames não vão para o disco: cada worker de captura entrega o
+PNG a um reordenador de buffer limitado (`orderedFeeder`, janela de `max(2, workers)` lotes de 8 frames, com
+backpressure) e ele empurra os frames **em ordem** para a entrada do FFmpeg (`-f image2pipe -c:v png -i -`) enquanto
+a captura continua. Os frames decodificados são os mesmos da sequência em disco (mesmos PNG, mesma ordem, mesmos
+argumentos de saída; coberto por teste com `framemd5`). O disco só guarda o vídeo parcial e o áudio; `--keep` (`keepWorkDir`) também grava os PNG em
+`<pasta de trabalho>/frames/frame_%06d.png` para inspeção. Consequências do contrato:
+- Estágios: `capture` 25→75 cobre a captura **com** o encode em andamento; o áudio (78) roda enquanto o FFmpeg
+  termina de fechar o vídeo; `encode` 80→90 é só essa cauda (esperar o FFmpeg depois do último frame); `assemble`
+  segue depois. Em `onProgress`, `capture 75` significa "todos os frames entregues", não "vídeo pronto".
+- **Falha alta nos dois sentidos.** Erro no pipe (`EPIPE`) ou FFmpeg que morre derruba a captura na hora (os workers
+  presos no backpressure são liberados) com a stderr do FFmpeg na mensagem: `E_INTERNAL`, `stage: "encode"`. Falha da
+  captura mata o FFmpeg. Cancelamento encerra os dois e não deixa `.partial`. Um frame que nunca chega faz o encode
+  falhar em vez de fechar um vídeo curto.
+- **Repetição (EDT-72).** A repetição única de falha transiente do browser reinicia o pipe do zero: FFmpeg novo,
+  nenhum frame duplicado. Falha do encode nunca é repetida nem classificada por texto como falha de browser.
+
 ## 9. Determinismo esperado do runtime
 
 O contrato promete isto ao autor, e o engine tem que cumprir:
