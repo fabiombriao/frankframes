@@ -67,6 +67,19 @@ Frames extraídos de vídeo ficam em cache: `<assetHome>/cache/frames`, com teto
 mais antigo primeiro. Dentro do repo, `<assetHome>` é `vendor/`; fora do repo, o cache fica em
 `~/.frankframes/cache/frames`.
 
+### Conferir frames
+
+Depois de renderizar, olhe o resultado antes de entregar:
+
+```bash
+node packages/cli/src/cli.ts frames out/video.mp4 --at 10%,50%,90% -o out/frames --json
+```
+
+Extrai um PNG por instante (`--at` aceita segundos e porcentagens da duração; o padrão é `10%,50%,90%`) e marca
+como `uniform: true` o frame **chapado** (cor única), sinal de clip que sumiu ou bloco que não entrou. Abra os PNGs e
+compare com o pedido. Erros: `E_FRAMES_INPUT` (arquivo inexistente ou que não é vídeo) e `E_FRAMES_TIME` (instante
+fora de `[0, duração)`).
+
 ### Lote e variáveis
 
 Marque no HTML o que muda (`<h1 data-var="titulo">Oferta</h1>`, `<img data-var-attr="src:foto">`) e liste as versões
@@ -129,6 +142,20 @@ node packages/cli/src/cli.ts blocks add title-card meu-video/abertura
 
 `catalog/README.md` é o índice dos 36 blocos (22 paisagem 16:9 + 14 vertical 9:16), gerado por
 `node scripts/generate-catalog.ts`; não edite à mão.
+
+## 8. Skills para agentes
+
+O repositório traz duas skills em `skills/`: `frankframes` (o contrato: atributos, tempo, motion, fontes) e
+`frankframes-generate` (o roteiro para gerar um vídeo inteiro a partir de um pedido em texto: escolhe blocos,
+monta o HTML de cenas, roda lint, renderiza em rascunho e confere os frames). Para instalar as duas no projeto atual:
+
+```bash
+node packages/cli/src/cli.ts skill install            # .claude/skills/<nome>/SKILL.md
+node packages/cli/src/cli.ts skill install --cursor    # .cursor/rules/<nome>.mdc
+```
+
+Quem edita `skills/` roda `node scripts/sync-skill.ts` para atualizar a cópia publicada em `packages/cli/skill/`
+(e a tabela de presets da skill de geração, que sai do código).
 
 ## Problemas comuns
 

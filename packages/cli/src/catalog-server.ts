@@ -5,12 +5,16 @@ import { copyFile, mkdir, readdir, readFile, stat, writeFile } from "node:fs/pro
 import { extname, isAbsolute, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { loadComposition } from "@frankframes/contract";
 
 export interface CatalogEntry {
   slug: string;
   name: string;
   summary: string;
   durationSeconds: number;
+  /** Dimensões da composição (`data-width`/`data-height` da raiz), para escolher 16:9 × 9:16 sem adivinhar pelo slug. */
+  width: number;
+  height: number;
   tags: string[];
   sha256: string;
   sizeBytes: number;
@@ -79,11 +83,16 @@ async function readEntry(slug: string): Promise<CatalogEntry> {
     );
   }
 
+  const { width, height } = loadComposition(html.toString("utf8"));
+  if (width === undefined || height === undefined) throw new Error(`${slug}: bloco sem data-width/data-height`);
+
   return {
     slug,
     name,
     summary,
     durationSeconds: raw.durationSeconds,
+    width,
+    height,
     tags: raw.tags as string[],
     sha256,
     sizeBytes: html.byteLength,

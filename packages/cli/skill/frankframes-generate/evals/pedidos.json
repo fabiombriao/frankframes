@@ -1,0 +1,32 @@
+[
+  {
+    "id": "abertura-relatorio",
+    "pedido": "abertura 16:9 de 6 s para o 'Relatório do 3º trimestre', subtítulo 'Resultados e próximos passos'",
+    "format": "16:9",
+    "durationSeconds": 6
+  },
+  {
+    "id": "dicas-celular",
+    "pedido": "vertical 9:16 de 15 s com 3 dicas para gravar com o celular",
+    "format": "9:16",
+    "durationSeconds": 15
+  },
+  {
+    "id": "grafico-vendas",
+    "pedido": "gráfico de barras 16:9 de 10 s: vendas jan 120, fev 150, mar 90, abr 180, título 'Vendas 2026'",
+    "format": "16:9",
+    "durationSeconds": 10
+  },
+  {
+    "id": "depoimento-cta",
+    "pedido": "depoimento 16:9 de 12 s de 'Ana, cliente desde 2024' e chamada final 'Agende uma demo'",
+    "format": "16:9",
+    "durationSeconds": 12
+  },
+  {
+    "id": "contagem-assinatura",
+    "pedido": "contagem regressiva vertical de 5 a 1 e assinatura 'FrankFrames', 8 s",
+    "format": "9:16",
+    "durationSeconds": 8
+  }
+]

@@ -4,7 +4,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { CODES } from "@frankframes/contract";
-import { RENDER_ERROR_CODES } from "@frankframes/producer";
+import { FRAMES_ERROR_CODES, RENDER_ERROR_CODES } from "@frankframes/producer";
 import { POLICY_CODES } from "@frankframes/encode";
 
 const target = fileURLToPath(new URL("../docs/reference/diagnostics.md", import.meta.url));
@@ -13,6 +13,7 @@ export function renderReference(): string {
   const rows: Array<[string, string]> = [
     ...Object.values(CODES).map((code): [string, string] => [code, "contrato"]),
     ...RENDER_ERROR_CODES.map((code): [string, string] => [code, "render"]),
+    ...FRAMES_ERROR_CODES.map((code): [string, string] => [code, "frames"]),
     ...POLICY_CODES.map((code): [string, string] => [code, "licença/encode"]),
     ["E_TRANSCRIBE_UNAVAILABLE", "transcrição"] as [string, string],
     ["E_WHISPER_MISSING", "transcrição"] as [string, string],

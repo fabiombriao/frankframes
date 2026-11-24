@@ -30,3 +30,5 @@ export { applyVariables, collectVariables, VariableError, VARIABLE_KEY } from ".
 export type { VariableErrorCode } from "./variables.ts";
 export { BatchError, assertBatchEntries, parseBatchFile, runBatch, workersPerJob } from "./batch.ts";
 export type { BatchJob, BatchJobReport, BatchRenderChoices, BatchReport, BatchSpec, GpuChoice, RunBatchOptions } from "./batch.ts";
+export { FRAMES_ERROR_CODES, FramesError, inspectFrames, lumaStats, parseFrameTimes } from "./frames.ts";
+export type { FrameStat, FramesCode, FramesReport, InspectFramesOptions } from "./frames.ts";

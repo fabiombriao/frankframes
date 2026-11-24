@@ -21,7 +21,17 @@ test("init cria uma composição que passa no contrato", async () => {
 test("skill install grava a skill no diretório do agente", async () => {
   const dir = await mkdtemp(join(tmpdir(), "ff-skill-"));
   await runSkillInstall("claude", dir);
-  const text = await readFile(join(dir, ".claude", "skills", "frankframes", "SKILL.md"), "utf8");
-  assert.match(text, /^---/);
-  assert.match(text, /frankframes/);
+  for (const name of ["frankframes", "frankframes-generate"]) {
+    const text = await readFile(join(dir, ".claude", "skills", name, "SKILL.md"), "utf8");
+    assert.match(text, new RegExp(`^---\\r?\\nname: ${name}\\r?\\n`), name);
+  }
+});
+
+test("skill install --cursor grava um .mdc por skill", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "ff-skill-cursor-"));
+  await runSkillInstall("cursor", dir);
+  for (const name of ["frankframes", "frankframes-generate"]) {
+    const text = await readFile(join(dir, ".cursor", "rules", `${name}.mdc`), "utf8");
+    assert.match(text, new RegExp(`^---\\r?\\nname: ${name}\\r?\\n`), name);
+  }
 });

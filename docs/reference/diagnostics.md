@@ -21,6 +21,8 @@ Gerado por `node scripts/generate-reference.ts` a partir do código. Não edite 
 | `E_FFMPEG_GPL` | erro | licença/encode |
 | `E_FONT_LOAD` | erro | render |
 | `E_FPS_INVALID` | erro | contrato |
+| `E_FRAMES_INPUT` | erro | frames |
+| `E_FRAMES_TIME` | erro | frames |
 | `E_GPL_ENCODER` | erro | licença/encode |
 | `E_H264_NOT_OPTED_IN` | erro | licença/encode |
 | `E_INTERNAL` | erro | render |

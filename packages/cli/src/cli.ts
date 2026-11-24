@@ -24,6 +24,7 @@ import { installLocalModel, resolveProvider } from "@frankframes/transcribe";
 import { installBlockFromUrl, listBlocks, readBlock } from "@frankframes/catalog";
 import { runBatchCommand } from "./batch-command.ts";
 import { buildCatalogIndex, publishCatalog, serveCatalog } from "./catalog-server.ts";
+import { runFramesCommand } from "./frames-command.ts";
 import { startGallery } from "./gallery.ts";
 import { runDoctor, runInit, runSkillInstall } from "./onboarding.ts";
 import { defaultOutput, guardEncoder } from "./render-guard.ts";
@@ -43,6 +44,8 @@ uso:
                                      sem ele os frames vão direto ao FFmpeg, sem PNG em disco)
   frankframes render a.html b.html [c.html…] -o <pasta>/ [--concurrency N] [opções de render]
   frankframes render --batch lote.json [--concurrency N] [--json]
+  frankframes frames <video.mp4|.webm> [--at 10%,50%,90%|1.5,3] [-o pasta] [--json]
+                                    (extrai PNGs de instantes-chave e marca frames chapados: confira o render)
   frankframes preview <arquivo.html> [--open]
   frankframes studio <arquivo.html> [--port N]
   frankframes transcribe <audio> [--provider local|groq|openai-compatible] [--language pt] [--json]
@@ -203,6 +206,11 @@ async function browserCommand(action: string): Promise<number> {
 
 async function main(): Promise<void> {
   const argv = process.argv.slice(2);
+  // `frames` tem parser próprio (`--at`): não passa por `parseCli`.
+  if (argv[0] === "frames") {
+    process.exitCode = await runFramesCommand(argv.slice(1));
+    return;
+  }
   let cli: Cli;
   try {
     cli = parseCli(argv);
@@ -433,7 +441,7 @@ async function main(): Promise<void> {
       } else {
         for (const block of index) {
           process.stdout.write(
-            `${block.slug.padEnd(20)} ${block.durationSeconds}s  ${(block.sizeBytes / 1024).toFixed(1)} KiB  ${block.sha256.slice(0, 12)}…  ${block.name}\n`,
+            `${block.slug.padEnd(20)} ${block.durationSeconds}s  ${block.width}x${block.height}  ${(block.sizeBytes / 1024).toFixed(1)} KiB  ${block.sha256.slice(0, 12)}…  ${block.name}\n`,
           );
         }
         const bytes = index.reduce((total, block) => total + block.sizeBytes, 0);

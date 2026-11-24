@@ -31,6 +31,11 @@ test("índice valida o sha256 do HTML de cada bloco", async () => {
   assert.ok(first.tags.length > 0);
   assert.ok(first.durationSeconds > 0);
   assert.match(first.sha256, /^[0-9a-f]{64}$/);
+  // A skill de geração filtra os blocos por formato: toda entrada precisa de largura e altura inteiras.
+  for (const entry of index) {
+    assert.ok(Number.isInteger(entry.width) && entry.width > 0, `${entry.slug}: width ${entry.width}`);
+    assert.ok(Number.isInteger(entry.height) && entry.height > 0, `${entry.slug}: height ${entry.height}`);
+  }
 });
 
 test("publica, serve e bloqueia path traversal", async () => {

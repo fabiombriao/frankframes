@@ -14,10 +14,10 @@ node packages/cli/src/cli.ts render examples/hello.html -o out/hello.mp4
 | `packages/encode` | ✅ presets AV1/VP9/openh264, guarda de licença (bloqueia GPL/x264) |
 | `packages/engine` | ✅ relógio virtual, seek, captura atômica, vídeo fora de banda, paralelismo, shell pinado, fontes, taxonomia de falha, limpeza de órfão |
 | `packages/producer` | ✅ pipeline completo: compile → probe → extract → capture → audio → encode → assemble |
-| `packages/cli` | ✅ `lint`, `render`, `preview`, `transcribe`, `captions`, `blocks`, `models`, `init`, `doctor`, `setup`, `upgrade`, `browser`, `skill` |
+| `packages/cli` | ✅ `lint`, `render`, `preview`, `transcribe`, `captions`, `blocks`, `models`, `init`, `doctor`, `setup`, `upgrade`, `browser`, `skill`, `frames` |
 | `packages/transcribe` | ✅ local (opt-in), Groq e OpenAI-compatible — nada baixa sem comando explícito |
 | `catalog/blocks` | ✅ 36 blocos prontos (22 paisagem 16:9 + 14 vertical 9:16) + `frankframes blocks add` |
-| `skills/frankframes` | ✅ skill de agente derivada de `docs/contract.md` |
+| `skills/` | ✅ duas skills de agente: `frankframes` (contrato) e `frankframes-generate` (pedido em texto → MP4 conferido) |
 
 Determinismo é teste, não promessa:
 
@@ -82,7 +82,7 @@ packages/catalog    leitura dos blocos do catálogo
 packages/cli        interface de linha de comando
 catalog/README.md    índice dos 48 blocos (gerado por scripts/generate-catalog.ts)
 catalog/blocks      48 composições prontas (28 paisagem 16:9 + 20 vertical 9:16)
-skills/frankframes  skill para agente de código
+skills/             skills para agente de código (frankframes, frankframes-generate)
 docs/getting-started.md  do zero ao MP4 em 5 minutos
 docs/contract.md    a especificação (fonte de verdade)
 docs/licensing.md   LGPL, patentes, marcas e o que o usuário pode distribuir

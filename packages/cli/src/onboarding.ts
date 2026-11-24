@@ -2,7 +2,7 @@
 import { mkdir, readdir, writeFile } from "node:fs/promises";
 import { copyFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { checkPinnedBrowser, assetHome } from "@frankframes/engine";
 import { expectedFontFiles } from "@frankframes/engine";
@@ -43,20 +43,34 @@ export async function runInit(target: string): Promise<void> {
   process.stdout.write(`\npróximos:\n  frankframes preview ${join(dir, "index.html")} --open\n  frankframes render ${join(dir, "index.html")} -o out/video.mp4\n`);
 }
 
-/** Skill dentro do pacote (publicado) ou no monorepo. */
-function skillSource(): string {
-  const packaged = fileURLToPath(new URL("../skill/SKILL.md", import.meta.url));
-  const monorepo = fileURLToPath(new URL("../../../skills/frankframes/SKILL.md", import.meta.url));
-  return existsSync(packaged) ? packaged : monorepo;
+/** Uma skill de agente: nome da pasta e o `SKILL.md` dela. */
+export interface SkillSource {
+  name: string;
+  file: string;
 }
 
-/** Instala a skill no diretório de agente do projeto atual. */
+/** Skills dentro do pacote (publicado) ou no monorepo: uma por pasta que tenha `SKILL.md`, em ordem alfabética. */
+export function skillSources(): SkillSource[] {
+  const packaged = fileURLToPath(new URL("../skill/", import.meta.url));
+  const monorepo = fileURLToPath(new URL("../../../skills/", import.meta.url));
+  const base = existsSync(join(packaged, "frankframes", "SKILL.md")) ? packaged : monorepo;
+  const found = readdirSync(base, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory() && existsSync(join(base, entry.name, "SKILL.md")))
+    .map((entry) => ({ name: entry.name, file: join(base, entry.name, "SKILL.md") }))
+    .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+  if (found.length === 0) throw new Error(`nenhuma skill encontrada em ${base} (rode \`node scripts/sync-skill.ts\`)`);
+  return found;
+}
+
+/** Instala todas as skills no diretório de agente do projeto atual (Claude: uma pasta por skill; Cursor: um .mdc por skill). */
 export async function runSkillInstall(target: "claude" | "cursor", destination: string): Promise<void> {
-  const dir = target === "claude" ? join(resolve(destination), ".claude", "skills", "frankframes") : join(resolve(destination), ".cursor", "rules");
-  await mkdir(dir, { recursive: true });
-  const file = target === "claude" ? join(dir, "SKILL.md") : join(dir, "frankframes.mdc");
-  await copyFile(skillSource(), file);
-  process.stdout.write(`skill instalada em ${file}\n`);
+  for (const skill of skillSources()) {
+    const dir = target === "claude" ? join(resolve(destination), ".claude", "skills", skill.name) : join(resolve(destination), ".cursor", "rules");
+    await mkdir(dir, { recursive: true });
+    const file = target === "claude" ? join(dir, "SKILL.md") : join(dir, `${skill.name}.mdc`);
+    await copyFile(skill.file, file);
+    process.stdout.write(`skill ${skill.name} instalada em ${file}\n`);
+  }
 }
 
 /** Diagnóstico do ambiente. Sai com 1 quando falta requisito duro. */

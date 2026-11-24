@@ -159,6 +159,13 @@ quando tiver espaço: `font-family: "Space Grotesk", sans-serif`.
 5. **Não deixe mídia sem `data-duration` nem duração medida.** Se o probe não puder medir, declare o
    tempo no elemento.
 
+## Variáveis e lote
+
+Para a mesma peça com valores diferentes, marque o texto com `data-var="nome"` e atributos com
+`data-var-attr="src:foto; data-duration:tempo"`; os valores entram no render. Várias versões numa fila:
+`frankframes render --batch lote.json` (formato em `docs/batch.md`, regras em `docs/contract.md` §11).
+O lint não valida variáveis. Para gerar um vídeo inteiro a partir de um pedido, use `frankframes-generate`.
+
 ## Legendas e áudio
 
 - `frankframes captions <audio> -o legendas.html` gera a composição de legendas. Se o provedor devolver
