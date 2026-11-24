@@ -454,6 +454,38 @@
             "Gate completo verde."
           ],
           "jiraKey": "EDT-79"
+        },
+        {
+          "summary": "E_PREVIEW_AUDIO fora do catálogo de diagnósticos",
+          "points": 1,
+          "labels": [
+            "robustez",
+            "cli",
+            "docs"
+          ],
+          "acceptance": [
+            "Visto em 2026-11-24 na revisão do EDT-65: E_PREVIEW_AUDIO é emitido por packages/producer/src/preview-audio.ts (PreviewAudioError), packages/engine/src/preview-audio.ts, cli.ts e studio-server.ts, mas não aparece em docs/reference/diagnostics.md.",
+            "O código é registrado na fonte que o generate-reference lê (mesmo caminho de CLI_ERROR_CODES ou equivalente do producer) e diagnostics.md é regenerado, sem edição manual.",
+            "Teste que falharia sem a mudança: todo código E_* emitido em packages/*/src aparece no catálogo gerado (varredura, não lista fixa).",
+            "Gate completo verde."
+          ],
+          "jiraKey": "EDT-80"
+        },
+        {
+          "summary": "Testes de cache deixam diretórios ff-cache-* em %TEMP%",
+          "points": 1,
+          "labels": [
+            "bug",
+            "robustez",
+            "engine"
+          ],
+          "acceptance": [
+            "Visto em 2026-11-24 na revisão do EDT-79: os testes antigos de packages/engine/test/cache.test.ts deixam ff-cache-* e ff-cache-cancel-* em %TEMP% depois do gate.",
+            "Cada teste remove o próprio diretório (t.after / finally com rm recursive); falha na remoção aparece no teste, nada de catch vazio.",
+            "Teste ou checagem que falharia sem a mudança: a suíte de cache termina sem diretórios ff-cache-* novos em os.tmpdir().",
+            "Gate completo verde."
+          ],
+          "jiraKey": "EDT-81"
         }
       ],
       "jiraKey": "EDT-26"
