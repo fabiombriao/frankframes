@@ -2903,3 +2903,32 @@ tocados por quase tudo). Cada item vira um commit depois de revisão e `node scr
 Decisões já tomadas pelo planejamento (técnicas): release como tarball único `@frankframes/cli`;
 `engines` Node ≥ 22.18; `generate` aceita só login do Codex com conta ChatGPT (nunca chave de API).
 Decidido pelo titular: legendas do aceite (EDT-64) pela Groq, com `GROQ_API_KEY` no `.env` (o áudio do vídeo sai da máquina só nesse passo).
+
+---
+
+## EDT-77 — hardware com vários workers não reproduz hash na mesma máquina
+
+**Medição (2026-11-24, `scripts/bench/hw-determinism-lab.ts`, 5 rodadas intercaladas, 240 frames):**
+`base-w6` 110 frames instáveis · `w6-settle0` 103 · `w6-settle2` 128 · `w6-delay100` 152 · `w6-shared`
+208 · `w1` 0 · **`w6-nogpucomp` 0** (com a CPU em 61–69%). O teto de 80 ms do `settlePaint` dispara em
+≤ 2,3% das esperas e 108 dos 110 frames instáveis divergem sem ele: esperar mais (opção A) não resolve.
+Custo da opção D: 47,8 → 45,7 fps (~5%).
+
+**Decisão: opção D** — `--disable-gpu-compositing` também em hardware. O ANGLE continua no driver real
+(WebGL e canvas na GPU); só o compositor passa a ser software, como já é em `software`. Não muda o padrão
+`auto` nem a promessa do §9 ("igual nesta máquina" em hardware).
+
+Passos:
+1. `packages/engine/src/args.ts`: `gpuFlags("hardware", …)` inclui `--disable-gpu-compositing` em win32,
+   darwin e linux. Teste unitário dos três: falha sem a mudança.
+2. Medir no lab `w6-nogpucomp` contra `w6-nogpucomp-settle0` (sem a espera extra da captura em hardware,
+   `capture.ts:404`). Se o settle0 der 0 instáveis em 5 rodadas, apagar a espera extra (menos código, mais
+   rápido) e o comentário de `capture.ts:83`; se não der, manter.
+3. `docs/contract.md` §9 item 6: hardware também com `--disable-gpu-compositing`, com o motivo e os números
+   acima; reescrever a frase da "espera a mais" conforme o passo 2. Composição com vídeo continua em
+   software (não medido com D; fica como está).
+4. `packages/producer/test/hw-determinism.test.ts` entra no commit e fica verde; o lab
+   (`scripts/bench/hw-determinism-lab.ts`) entra também, com os experimentos atuais.
+5. Robustez: rodar o `hw-determinism.test.ts` 3× com carga artificial de CPU em paralelo (o sintoma
+   original aparecia sob carga) e 1× `FF_GPU=1` em `determinism.test.ts` ("determinismo em hardware forçado").
+6. Goldens rodam em `software` (`packages/catalog/test/goldens.test.ts`): não mudam. Gate completo verde.
