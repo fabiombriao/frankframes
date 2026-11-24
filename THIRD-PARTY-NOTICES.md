@@ -40,6 +40,50 @@ ADEQUAÇÃO A UM FIM ESPECÍFICO. EM NENHUM CASO O DETENTOR DE DIREITOS AUTORAIS
 RESPONSÁVEL POR DANOS DIRETOS, INDIRETOS, INCIDENTAIS, ESPECIAIS, EXEMPLARES OU CONSEQUENCIAIS
 DECORRENTES DO USO DESTE SOFTWARE.
 
+## Dependências de produção instaladas pelo npm
+
+O tarball `@frankframes/cli` não embute estes pacotes: o `npm install` os baixa do registro, cada um com
+o próprio `LICENSE`. A lista é a árvore de `npm ls --omit=dev --all`, e `node scripts/third-party.ts --check`
+reprova o gate se aparecer dependência sem aviso aqui ou com licença fora de MIT, ISC, Apache-2.0,
+BSD-2-Clause, BSD-3-Clause, 0BSD e BlueOak-1.0.0.
+
+### puppeteer-core — Apache-2.0
+
+Copyright The Chromium Authors. Controla o Chrome headless shell pinado (`packages/engine`). Licenciado
+sob a Apache License 2.0 (https://www.apache.org/licenses/LICENSE-2.0): uso, reprodução e distribuição
+permitidos, desde que se mantenha o aviso de copyright e o texto da licença, que acompanham o pacote
+instalado em `node_modules/puppeteer-core`. O FrankFrames não o modificou.
+
+### Transitivas de puppeteer-core e de parse5
+
+Mesmos termos de cada licença abaixo; o texto integral e o aviso de copyright de cada pacote ficam no
+`LICENSE` dele, dentro do `node_modules` instalado.
+
+| Pacote | Versões | Licença | Copyright |
+|---|---|---|---|
+| @puppeteer/browsers | 3.2.7 | Apache-2.0 | The Chromium Authors |
+| chromium-bidi | 157.0.8090-0 | Apache-2.0 | The Chromium Authors |
+| webdriver-bidi-protocol | 1.0.2 | Apache-2.0 | Google Inc. |
+| devtools-protocol | 0.0.1717327 | BSD-3-Clause | The Chromium Authors |
+| ansi-regex | 6.6.0 | MIT | Sindre Sorhus |
+| ansi-styles | 6.2.3 | MIT | Sindre Sorhus |
+| emoji-regex | 10.6.0 | MIT | Mathias Bynens |
+| escalade | 3.2.0 | MIT | Luke Edwards |
+| get-east-asian-width | 1.7.0 | MIT | Sindre Sorhus |
+| mitt | 3.0.1 | MIT | Jason Miller |
+| modern-tar | 0.8.6 | MIT | Ayuhito |
+| string-width | 7.2.0, 8.3.0 | MIT | Sindre Sorhus |
+| strip-ansi | 7.2.0 | MIT | Sindre Sorhus |
+| typed-query-selector | 2.12.4 | MIT | Pig Fang |
+| wrap-ansi | 9.0.2 | MIT | Sindre Sorhus |
+| ws | 8.23.0 | MIT | Einar Otto Stangvik, Arnout Kazemier e colaboradores |
+| yargs | 18.2.0 | MIT | James Halliday e colaboradores |
+| zod | 4.6.7 | MIT | Colin McDonnell |
+| cliui | 9.0.1 | ISC | colaboradores |
+| get-caller-file | 2.0.5 | ISC | Stefan Penner |
+| y18n | 5.0.8 | ISC | colaboradores |
+| yargs-parser | 22.0.0 | ISC | colaboradores |
+
 ## FFmpeg embarcado (build LGPL)
 
 O produto distribui o build **LGPL** descrito em `vendor/ffmpeg/SOURCE.txt`:

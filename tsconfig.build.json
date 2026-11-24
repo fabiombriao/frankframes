@@ -1,0 +1,16 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "noEmitOnError": true,
+    "rewriteRelativeImportExtensions": true,
+    "allowImportingTsExtensions": true,
+    "declaration": false,
+    "sourceMap": false,
+    "newLine": "lf",
+    "outDir": "out/release/stage",
+    "rootDir": "."
+  },
+  "include": ["packages/*/src/**/*.ts"],
+  "exclude": ["packages/*/test/**", "scripts/**", "node_modules", "out"]
+}

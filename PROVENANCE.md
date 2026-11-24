@@ -32,11 +32,16 @@ uso, cópia ou redistribuição. Componentes de terceiros mantêm suas licenças
 | Dependência | Licença | Uso |
 |---|---|---|
 | `parse5` | MIT | parser HTML do contrato |
+| `puppeteer-core` | Apache-2.0 | controla o Chrome headless shell pinado (`packages/engine`); só protocolo CDP, sem código do Chrome embutido |
 | `typescript` | Apache-2.0 | apenas build/checagem |
 | `@types/node` | MIT | tipos |
 | `libsvtav1` | BSD-3-Clause (encoder) | AV1 |
 | `libvpx` | BSD-3-Clause | VP9 |
 | `libopenh264` | BSD-2-Clause | H.264 opt-in, binário pré-compilado da Cisco |
+
+As transitivas de produção (`puppeteer-core`, `parse5`) estão em `THIRD-PARTY-NOTICES.md`, e
+`node scripts/third-party.ts --check` reprova o gate de release se alguma faltar lá ou tiver licença fora
+de MIT/ISC/Apache-2.0/BSD-2-Clause/BSD-3-Clause/0BSD/BlueOak-1.0.0.
 
 Bibliotecas de terceiros não tornam este código derivado. Uso de biblioteca exige atribuição, não
 abertura do nosso código.
@@ -51,3 +56,4 @@ abertura do nosso código.
 | 2026-11-21 | 26 presets de motion e miniaturas geradas pelo próprio engine (EDT-51) |
 | 2026-11-21 | câmera (`data-camera`: aproximar, afastar, panorâmicas, deriva) sobre `object-view-box`, em imagem e vídeo; miniaturas com foto de teste do FFmpeg (EDT-53) |
 | 2026-11-21 | transições próprias por data-transition; curva de terceiros removida de docs/transitions.md (EDT-54) |
+| 2026-11-24 | avisos de terceiros de produção: `puppeteer-core` (Apache-2.0) e as 22 transitivas registradas em `THIRD-PARTY-NOTICES.md`; `scripts/third-party.ts --check` verifica avisos e licenças (EDT-65) |

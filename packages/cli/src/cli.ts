@@ -34,10 +34,12 @@ import { runSetup } from "./setup.ts";
 import { runUpgrade } from "./upgrade.ts";
 import { startStudio } from "./studio-server.ts";
 import type { RenderStage } from "@frankframes/producer";
+import type { CliCode } from "./cli-errors.ts";
 
 const HELP = `frankframes — vídeo determinístico a partir de HTML
 
 uso:
+  frankframes --version | -v
   frankframes lint <arquivo.html> [--json]
   frankframes render <arquivo.html> [-o saida.mp4] [--codec av1|vp9|h264] [--preset draft|standard|high]
                                     [--workers N] [--gpu auto|software|hardware] [--no-loudness]
@@ -211,8 +213,22 @@ async function browserCommand(action: string): Promise<number> {
   return 0;
 }
 
+const CLI_VERSION_ERROR: CliCode = "E_VERSION_UNREADABLE";
+
 async function main(): Promise<void> {
   const argv = process.argv.slice(2);
+  // `--version` antes de tudo: lê o `package.json` do pacote cli (no tarball do release ele fica ao lado de `src/`).
+  if (argv[0] === "--version" || argv[0] === "-v") {
+    try {
+      const manifest = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as { version?: unknown };
+      if (typeof manifest.version !== "string") throw new Error("package.json sem campo version");
+      process.stdout.write(`${manifest.version}\n`);
+    } catch (error) {
+      process.stderr.write(`${CLI_VERSION_ERROR}: ${(error as Error).message}\n  dica: reinstale o pacote (npm i -g @frankframes/cli) ou rode a partir de um clone completo\n`);
+      process.exitCode = 1;
+    }
+    return;
+  }
   // `frames` tem parser próprio (`--at`): não passa por `parseCli`.
   if (argv[0] === "frames") {
     process.exitCode = await runFramesCommand(argv.slice(1));

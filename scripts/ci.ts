@@ -4,12 +4,12 @@
  *
  *   node scripts/ci.ts            # typecheck + testes + doctor + render de fumaça
  *   node scripts/ci.ts --fast     # só typecheck e testes rápidos (pré-push)
- *   node scripts/ci.ts --release  # inclui `npm pack --dry-run` de todos os pacotes
+ *   node scripts/ci.ts --release  # inclui build do tarball, avisos de terceiros e instalação real do tgz
  *
  * Sem serviço externo, sem container: roda na máquina que já tem os assets.
  */
 import { spawn } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -63,7 +63,9 @@ const TIMEOUTS = {
   "suíte completa": 25 * MINUTE,
   doctor: 3 * MINUTE,
   "render de fumaça": 10 * MINUTE,
-  pack: 3 * MINUTE,
+  "build release": 5 * MINUTE,
+  avisos: 2 * MINUTE,
+  "instalar tarball": 15 * MINUTE,
 } as const;
 
 async function stage(
@@ -146,9 +148,14 @@ if (!fast) {
 }
 
 if (release) {
-  for (const workspace of ["contract", "encode", "engine", "producer", "transcribe", "catalog", "cli"]) {
-    stages.push(await stage(`pack ${workspace}`, "npm", ["pack", "--dry-run", "-w", `@frankframes/${workspace}`], TIMEOUTS.pack));
-  }
+  // Tarball único @frankframes/cli (EDT-65): build compilado, avisos de terceiros e instalação de verdade.
+  const cliManifest = JSON.parse(readFileSync(join(ROOT, "packages", "cli", "package.json"), "utf8")) as { version: string };
+  const tarball = `out/release/frankframes-cli-${cliManifest.version}.tgz`;
+  const built = await stage("build release", process.execPath, ["scripts/build-release.ts"], TIMEOUTS["build release"]);
+  stages.push(built);
+  stages.push(await stage("avisos", process.execPath, ["scripts/third-party.ts", "--check"], TIMEOUTS.avisos));
+  // Sem tarball não há o que instalar: a etapa seguinte só roda se o build passou.
+  if (built.ok) stages.push(await stage("instalar tarball", process.execPath, ["scripts/verify-release.ts", tarball], TIMEOUTS["instalar tarball"]));
 }
 
 const failed = stages.filter((item) => !item.ok);

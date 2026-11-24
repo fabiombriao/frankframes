@@ -61,6 +61,7 @@ Gerado por `node scripts/generate-reference.ts` a partir do código. Não edite 
 | `E_VAR_INVALID` | erro | render |
 | `E_VAR_MISSING` | erro | render |
 | `E_VAR_UNKNOWN` | erro | render |
+| `E_VERSION_UNREADABLE` | erro | cli |
 | `E_VOLUME_INVALID` | erro | contrato |
 | `E_WHISPER_MISSING` | erro | transcrição |
 | `W_GEN_FRAME_BLANK` | aviso | geração |
