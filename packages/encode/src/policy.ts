@@ -11,21 +11,25 @@ export interface FfmpegFacts {
 export type Preset = "draft" | "standard" | "high";
 export type VideoCodec = "av1" | "vp9" | "h264";
 
-export const POLICY_CODES = ["E_FFMPEG_GPL", "E_GPL_ENCODER", "E_ENCODER_MISSING", "E_H264_NOT_OPTED_IN", "E_CODEC_UNSUPPORTED"] as const;
+export const POLICY_CODES = ["E_FFMPEG_GPL", "E_GPL_ENCODER", "E_ENCODER_MISSING", "E_H264_NOT_OPTED_IN", "E_CODEC_UNSUPPORTED", "E_FFMPEG_PLATFORM_UNSUPPORTED"] as const;
 
 export type PolicyCode =
   | "E_FFMPEG_GPL"
   | "E_GPL_ENCODER"
   | "E_ENCODER_MISSING"
   | "E_H264_NOT_OPTED_IN"
-  | "E_CODEC_UNSUPPORTED";
+  | "E_CODEC_UNSUPPORTED"
+  | "E_FFMPEG_PLATFORM_UNSUPPORTED";
 
 export class EncodePolicyError extends Error {
   readonly code: PolicyCode;
-  constructor(code: PolicyCode, message: string, options?: { cause?: unknown }) {
-    super(message, options);
+  /** Ação acionável; quando existe, já vai dentro da `message`. */
+  readonly hint: string | undefined;
+  constructor(code: PolicyCode, message: string, options?: { cause?: unknown; hint?: string }) {
+    super(options?.hint === undefined ? message : `${message} (${options.hint})`, options?.cause === undefined ? undefined : { cause: options.cause });
     this.name = "EncodePolicyError";
     this.code = code;
+    this.hint = options?.hint;
   }
 }
 

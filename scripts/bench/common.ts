@@ -10,7 +10,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { detectFfmpeg } from "@frankframes/encode";
-import { PINNED_BROWSER, probeRenderer, resolveChrome } from "@frankframes/engine";
+import { PINNED_BROWSER_VERSION, probeRenderer, resolveChrome } from "@frankframes/engine";
 
 const run = promisify(execFile);
 
@@ -114,7 +114,7 @@ export async function machineInfo(ffmpeg: string): Promise<MachineInfo> {
     os: `${platform()} ${release()}`,
     node: process.version,
     chrome: { path: chrome.path, version: chrome.version, pinned: chrome.pinned },
-    pinnedBrowserVersion: PINNED_BROWSER.version,
+    pinnedBrowserVersion: PINNED_BROWSER_VERSION,
     gpuRenderer: renderer.renderer,
     gpuIsHardware: renderer.hardware,
     ffmpeg: facts.version.split("\n")[0]?.trim() ?? facts.version,

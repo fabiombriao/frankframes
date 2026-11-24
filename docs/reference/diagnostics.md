@@ -11,6 +11,7 @@ Gerado por `node scripts/generate-reference.ts` a partir do código. Não edite 
 | `E_BODY_INVALID` | erro | studio |
 | `E_BODY_TOO_LARGE` | erro | studio |
 | `E_BROWSER_CLOSED` | erro | render |
+| `E_BROWSER_PLATFORM_UNSUPPORTED` | erro | plataforma |
 | `E_BROWSER_TIMEOUT` | erro | render |
 | `E_CANCELED` | erro | render |
 | `E_CANCELLED` | erro | render |
@@ -43,6 +44,7 @@ Gerado por `node scripts/generate-reference.ts` a partir do código. Não edite 
 | `E_FADE_INVALID` | erro | contrato |
 | `E_FFMPEG_GPL` | erro | licença/encode |
 | `E_FFMPEG_MISSING` | erro | transcrição |
+| `E_FFMPEG_PLATFORM_UNSUPPORTED` | erro | licença/encode |
 | `E_FONT_LOAD` | erro | render |
 | `E_FPS_INVALID` | erro | contrato |
 | `E_FRAMES_INPUT` | erro | frames |
@@ -53,6 +55,7 @@ Gerado por `node scripts/generate-reference.ts` a partir do código. Não edite 
 | `E_GEN_FORMAT_MISMATCH` | erro | geração |
 | `E_GEN_OUT_EXISTS` | erro | geração |
 | `E_GEN_REQUEST_INVALID` | erro | geração |
+| `E_GOLDENS_PLATFORM_MISSING` | erro | plataforma |
 | `E_GPL_ENCODER` | erro | licença/encode |
 | `E_H264_NOT_OPTED_IN` | erro | licença/encode |
 | `E_HISTORY_STALE` | erro | studio |

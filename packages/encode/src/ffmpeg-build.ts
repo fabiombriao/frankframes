@@ -1,9 +1,66 @@
 // FrankFrames — proprietário. Ver LICENSE na raiz.
-/** Build de FFmpeg que o produto embarca: LGPL, sem --enable-gpl. */
-export const FFMPEG_BUILD = {
-  version: "n8.1.3-39-g660b5aa7db",
-  archive: "ffmpeg-n8.1-latest-win64-lgpl-8.1.zip",
-  url: "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n8.1-latest-win64-lgpl-8.1.zip",
-  sha256: "e22cd9184816f0eb912e95a0adc39e4129f38bdff55974d6d21f2037440afde9",
-  root: "ffmpeg-n8.1-latest-win64-lgpl-8.1",
-} as const;
+import { EncodePolicyError } from "./policy.ts";
+
+/** Plataformas com build de FFmpeg pinado. Qualquer outra falha alto em `ffmpegBuildFor`. */
+export type FfmpegPlatform = "win64" | "linux64";
+
+export interface FfmpegBuild {
+  platform: FfmpegPlatform;
+  /** `git describe` do FFmpeg: igual nas duas plataformas, senão o encode deixa de ser comparável. */
+  version: string;
+  /** Tag datada e imutável do BtbN/FFmpeg-Builds (`latest` é móvel: o SHA-256 deixaria de bater). */
+  tag: string;
+  archive: string;
+  url: string;
+  /** SHA-256 do arquivo baixado (não dos binários, que o manifesto guarda depois de extrair). */
+  sha256: string;
+  /** Pasta que o arquivo cria ao extrair. */
+  root: string;
+  /** `zip` no Windows; `tar.xz` no Linux (extração por `tar -xJf`). */
+  format: "zip" | "tar.xz";
+}
+
+const VERSION = "n8.1.3-39-g660b5aa7db";
+const TAG = "autobuild-2026-11-23-12-43";
+
+function build(platform: FfmpegPlatform, format: FfmpegBuild["format"], sha256: string): FfmpegBuild {
+  const root = `ffmpeg-${VERSION}-${platform}-lgpl-8.1`;
+  const archive = `${root}.${format}`;
+  return {
+    platform,
+    version: VERSION,
+    tag: TAG,
+    archive,
+    url: `https://github.com/BtbN/FFmpeg-Builds/releases/download/${TAG}/${archive}`,
+    sha256,
+    root,
+    format,
+  };
+}
+
+/** Builds LGPL (sem `--enable-gpl`, sem libx264/libx265) que o produto embarca, uma por plataforma. */
+export const FFMPEG_BUILDS: Record<FfmpegPlatform, FfmpegBuild> = {
+  win64: build("win64", "zip", "f0ca6f38361a853baaa010df76e62444e862437c29fbf09b13b008040641d10c"),
+  linux64: build("linux64", "tar.xz", "f5ff93b3ed1d933f6877a5a5e60f63779375f74e85b135fb1c7e12ec3a782369"),
+};
+
+/** Chave de plataforma do pin para o par `process.platform`/`process.arch`; `undefined` quando não há build pinado. */
+export function ffmpegPlatform(platform: string = process.platform, arch: string = process.arch): FfmpegPlatform | undefined {
+  if (arch !== "x64") return undefined;
+  if (platform === "win32") return "win64";
+  if (platform === "linux") return "linux64";
+  return undefined;
+}
+
+/** Build pinado da plataforma. Sem pin é erro com código e `hint`: nunca cai num build de outra plataforma. */
+export function ffmpegBuildFor(platform: string = process.platform, arch: string = process.arch): FfmpegBuild {
+  const key = ffmpegPlatform(platform, arch);
+  if (key === undefined) {
+    throw new EncodePolicyError(
+      "E_FFMPEG_PLATFORM_UNSUPPORTED",
+      `sem build de FFmpeg pinado para ${platform}/${arch}`,
+      { hint: `plataformas com pin: ${Object.keys(FFMPEG_BUILDS).join(", ")}; em outra, aponte FFMPEG_PATH e FFPROBE_PATH para um FFmpeg LGPL seu` },
+    );
+  }
+  return FFMPEG_BUILDS[key];
+}

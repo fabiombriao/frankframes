@@ -1,17 +1,23 @@
 // FrankFrames — proprietário. Ver LICENSE na raiz.
 // Uso:
+// Gera/compara os goldens da PLATAFORMA ATUAL (catalog/goldens/<win64|linux64>/); uma plataforma nunca escreve no conjunto de outra.
 //   node scripts/generate-goldens.ts                      regenera todos os blocos
 //   node scripts/generate-goldens.ts --only a,b           regenera só esses (os demais ficam como estão)
 //   node scripts/generate-goldens.ts --compare a,b        captura e compara com os PNGs guardados; não grava nada
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { captureGolden, engineSignature, psnr } from "../packages/producer/src/goldens.ts";
+import { browserPlatform } from "@frankframes/engine";
+import { GoldenSetMissingError, captureGolden, engineSignature, goldenDir, loadGoldenSet, psnr } from "../packages/producer/src/goldens.ts";
 import { defaultConcurrency, mapPool } from "./pool.ts";
 import type { GoldenBlock, GoldenManifest } from "../packages/producer/src/goldens.ts";
 
 const catalog = fileURLToPath(new URL("../catalog/blocks/", import.meta.url));
-const target = fileURLToPath(new URL("../catalog/goldens.json", import.meta.url));
+const catalogDir = fileURLToPath(new URL("../catalog/", import.meta.url));
+const platformKey = browserPlatform();
+if (platformKey === undefined) throw new GoldenSetMissingError(process.platform, process.arch, undefined, []);
+const setDir = goldenDir(catalogDir, platformKey);
+const target = join(setDir, "goldens.json");
 const gpu = process.argv.includes("--gpu-hardware") ? "hardware" : "software";
 /** Abaixo disto a mudança é visual, não jitter de rasterização (EDT-56). */
 const COMPARE_THRESHOLD_DB = 45;
@@ -40,7 +46,7 @@ if (compare !== undefined) {
     const golden = await captureGolden(join(catalog, slug, "index.html"), { gpu, includePng: true });
     const scores: Array<{ frame: number; db: number }> = [];
     for (const frame of golden.frames) {
-      const stored = await readFile(join(catalog, "..", "goldens", slug, `${frame.frame}.png`));
+      const stored = await readFile(join(setDir, slug, `${frame.frame}.png`));
       if (frame.png === undefined) throw new Error(`${slug} frame ${frame.frame}: captura sem PNG`);
       scores.push({ frame: frame.frame, db: await psnr(frame.png, stored) });
     }
@@ -56,7 +62,7 @@ if (compare !== undefined) {
   const slugs = only ?? all;
   const blocks = await mapPool(slugs, defaultConcurrency(), async (slug) => {
     const golden = await captureGolden(join(catalog, slug, "index.html"), { gpu, includePng: true });
-    const dir = join(catalog, "..", "goldens", slug);
+    const dir = join(setDir, slug);
     await mkdir(dir, { recursive: true });
     for (const frame of golden.frames) {
       if (frame.png !== undefined) await writeFile(join(dir, `${frame.frame}.png`), frame.png);
@@ -69,12 +75,13 @@ if (compare !== undefined) {
   let merged: GoldenBlock[] = blocks;
   if (only !== undefined) {
     // Parcial: mantém as entradas dos outros blocos e troca só as regeneradas, na ordem do manifesto.
-    const current = JSON.parse(await readFile(target, "utf8")) as GoldenManifest;
+    const { manifest: current } = await loadGoldenSet(catalogDir);
     const fresh = new Map(blocks.map((block) => [block.name, block]));
     merged = current.blocks.map((block) => fresh.get(block.name) ?? block);
     for (const block of blocks) if (!current.blocks.some((entry) => entry.name === block.name)) merged.push(block);
     merged.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0)); // mesma ordem do `.sort()` de readdir
   }
   const manifest: GoldenManifest = { engine: await engineSignature(gpu), blocks: merged };
+  await mkdir(setDir, { recursive: true });
   await writeFile(target, `${JSON.stringify(manifest, null, 2)}\n`);
 }

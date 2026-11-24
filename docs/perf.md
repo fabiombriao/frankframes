@@ -106,7 +106,7 @@ Observações:
 - Tamanho mediano do PNG: software padrão 816.222 B vs `optimizeForSpeed: true` 1.565.385 B; hardware padrão
   586.507 B vs 1.315.073 B.
 - `optimizeForSpeed: false` é byte a byte igual ao padrão (115/115); `true` nunca é igual (0/115) → os SHA-256 de
-  `catalog/goldens.json` mudariam; PSNR contra os PNG antigos precisa ser conferido.
+  `catalog/goldens/<plataforma>/goldens.json` mudariam; PSNR contra os PNG antigos precisa ser conferido.
 
 ## Leitura das hipóteses (proposta do executor; a ordem final é do planejador)
 

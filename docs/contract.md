@@ -709,9 +709,33 @@ O contrato promete isto ao autor, e o engine tem que cumprir:
      a rejeição chegar ao chamador (`openSessionFor`); fechar o servidor duas vezes é permitido.
    Os dois códigos são códigos de render (`stage: "capture"`), como `E_FONT_LOAD`.
 
-**GPU:** o padrão é `auto` — hardware quando existe, SwiftShader como fallback. Igualdade byte-a-byte
-entre *máquinas diferentes* só é prometida em `software`; em `hardware` a promessa é "igual nesta
-máquina" (o pixel depende do driver).
+**GPU:** o padrão é `auto` — hardware quando existe, SwiftShader como fallback. Em `software` a promessa é
+igualdade de hash por frame **para o mesmo SO, a mesma arquitetura e o mesmo browser pinado** (a versão do Chrome
+headless shell que `doctor` e `setup` conferem por SHA-256); em `hardware` a promessa é "igual nesta máquina"
+(o pixel depende do driver). **Entre sistemas operacionais não se promete igualdade**: o mesmo bloco renderizado no
+Windows e no Linux sai com pixels diferentes (medição abaixo).
+
+**Plataformas:** o produto tem pin (Chrome headless shell e FFmpeg LGPL, cada um por SHA-256) para
+`win32/x64` (`win64`) e `linux/x64` (`linux64`). Qualquer outra combinação de SO e arquitetura falha alto, antes
+de baixar ou lançar qualquer coisa: `E_BROWSER_PLATFORM_UNSUPPORTED` (navegador) e `E_FFMPEG_PLATFORM_UNSUPPORTED`
+(FFmpeg), com `hint`; o `doctor` e o `setup` reportam o código no passo que falhou. `setup`, `doctor`,
+`browser install` e `render` rodam em Linux x64 (medido em contêiner Docker `node:24-bookworm`, WSL2).
+
+**Goldens por plataforma:** o catálogo guarda um conjunto por plataforma, `catalog/goldens/<win64|linux64>/`
+(`goldens.json` e os PNGs). A conferência usa o conjunto da plataforma em que roda e nunca o de outra. Plataforma
+sem conjunto gerado falha alto com `E_GOLDENS_PLATFORM_MISSING` e `hint` — não há skip silencioso. Os dois conjuntos
+estão gerados. O `linux64` só foi gerado depois de a auto-prova do Linux fechar 240/240 em 3 execuções sob carga
+(`docs/determinismo-plataformas.md`).
+
+**`software` reproduz o hash sob carga (EDT-13):** o mesmo bloco, na mesma máquina, dá o mesmo hash por frame mesmo com
+sessões em paralelo e CPUs saturadas. O defeito que quebrava isso (o raster do texto de `subtitles` caía em outra fase de
+subpixel em ~1/3 das sessões sob carga e ficava assim a sessão toda) é corrigido em `startSession`: depois do `ready`, o
+`body` sai do layout e volta com paint real entre os dois, e o compositor recria as camadas do mesmo estado. Teste:
+`packages/producer/test/subtitles-load.test.ts`.
+
+**Medido entre plataformas (EDT-13):** em `software`, os goldens gerados no Windows **não** são reproduzidos no
+Linux x64 (mesma CPU): 0 de 240 frames com o mesmo hash, 18 só por PSNR ≥ 50 dB e 222 abaixo de 50 dB (PSNR mín.
+34,6 dB, mediana 42,6 dB, máx. 66,8 dB). Números, método e limites em `docs/determinismo-plataformas.md`.
 
 Verificado em `2026-11-20`: 60 frames 720p × 2 execuções + 1 em ordem invertida, nos modos `auto`
 (RTX 4060 via D3D11) e `software` (SwiftShader) → todos os hashes idênticos por frame.

@@ -1,17 +1,15 @@
 FFmpeg — build LGPL, sem --enable-gpl (sem libx264/libx265).
 
 versão:      n8.1.3-39-g660b5aa7db
-arquivo:     ffmpeg-n8.1-latest-win64-lgpl-8.1.zip
-origem:      https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n8.1-latest-win64-lgpl-8.1.zip
-sha256(zip): e22cd9184816f0eb912e95a0adc39e4129f38bdff55974d6d21f2037440afde9
-sha256 ffmpeg.exe:  47a7f14338c9a7f94a7cd9dda56e1112ebccd20bf50ee6c1653c074a381a33c5
-sha256 ffprobe.exe: 3c307d32af67b353aae87329e4b8fa31326b321ea2fd365de0bd53dd1f029aba
+plataforma:  win64
+tag:         autobuild-2026-11-23-12-43
+arquivo:     ffmpeg-n8.1.3-39-g660b5aa7db-win64-lgpl-8.1.zip
+origem:      https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-11-23-12-43/ffmpeg-n8.1.3-39-g660b5aa7db-win64-lgpl-8.1.zip
+sha256(zip): f0ca6f38361a853baaa010df76e62444e862437c29fbf09b13b008040641d10c
+sha256 ffmpeg:  51f05f24611d447de5b562ed2f0daf72327f7f1413ca0e83086324b9d00f74dd
+sha256 ffprobe: c064bd7a6f834761644fe30f7de6f2dce2fdc2ebd6351eeb11f84dd11f8d9a1e
 
-Como reconstruir este binário:
-1. baixe o arquivo acima e confira o SHA-256;
-2. descompacte; bin/ffmpeg.exe e bin/ffprobe.exe são os binários usados;
-3. a receita de build do projeto BtbN/FFmpeg-Builds está em https://github.com/BtbN/FFmpeg-Builds
-   (scripts de compilação geram builds LGPL e GPL a partir das mesmas fontes do FFmpeg).
-
-O texto completo da licença está em LICENSE.txt, ao lado deste arquivo.
-O FrankFrames chama o FFmpeg como processo separado; nenhuma biblioteca é linkada.
+Reconstruir: baixe o arquivo acima, confira o SHA-256 e descompacte;
+a receita de build está em https://github.com/BtbN/FFmpeg-Builds.
+Licença completa em LICENSE.txt, ao lado deste arquivo.
+O FrankFrames executa o FFmpeg como processo separado; nada é linkado.

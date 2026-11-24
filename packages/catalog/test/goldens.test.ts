@@ -4,8 +4,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { captureGolden, engineSignature, psnr } from "@frankframes/producer";
-import type { GoldenManifest } from "@frankframes/producer";
+import { captureGolden, engineSignature, loadGoldenSet, psnr } from "@frankframes/producer";
 import { resolveChrome } from "@frankframes/engine";
 import { defaultConcurrency, mapPool } from "../../../scripts/pool.ts";
 
@@ -18,12 +17,13 @@ test("blocos do catálogo não mudam de pixel", { timeout: 900_000 }, async (t) 
     return t.skip("Chrome não encontrado");
   }
 
-  const manifest = JSON.parse(await readFile(join(root, "catalog", "goldens.json"), "utf8")) as GoldenManifest;
+  // Conjunto da plataforma atual; sem conjunto, `E_GOLDENS_PLATFORM_MISSING` reprova o teste (nada de skip).
+  const { manifest, pngPath, platform } = await loadGoldenSet(join(root, "catalog"));
   const engine = await engineSignature("software");
   assert.equal(
     engine.browser,
     manifest.engine.browser,
-    `goldens gerados com ${manifest.engine.browser}, rodando com ${engine.browser}: rode \`node scripts/generate-goldens.ts\``,
+    `goldens ${platform} gerados com${manifest.engine.browser}, rodando com ${engine.browser}: rode \`node scripts/generate-goldens.ts\``,
   );
 
   const perBlock = await mapPool(manifest.blocks, defaultConcurrency(), async (expected) => {
@@ -36,7 +36,7 @@ test("blocos do catálogo não mudam de pixel", { timeout: 900_000 }, async (t) 
       const got = actual.frames.find((frame) => frame.frame === golden.frame);
       if (got?.sha256 === golden.sha256) continue;
 
-      const stored = await readFile(join(root, "catalog", "goldens", expected.name, `${golden.frame}.png`)).catch(() => null);
+      const stored = await readFile(pngPath(expected.name, golden.frame)).catch(() => null);
       if (got?.png !== undefined && stored !== null) {
         const quality = await psnr(got.png, stored);
         if (quality >= 50) continue; // jitter de rasterização, não mudança visual

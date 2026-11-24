@@ -1,6 +1,7 @@
 // FrankFrames — proprietário. Ver LICENSE na raiz.
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { runCommand } from "../../../scripts/stage.ts";
@@ -8,10 +9,21 @@ import { tempDir } from "../../../scripts/test-support/temp.ts";
 
 const CWD = process.cwd();
 
+/** Zumbi (estado Z) já morreu: só espera o pai colher. Sem init no PID 1 (contêiner) ele ficaria para sempre. */
+function zombie(pid: number): boolean {
+  if (process.platform !== "linux") return false;
+  try {
+    return /^State:\s+Z/m.test(readFileSync(`/proc/${pid}/status`, "utf8"));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+    throw error;
+  }
+}
+
 function alive(pid: number): boolean {
   try {
     process.kill(pid, 0);
-    return true;
+    return !zombie(pid);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ESRCH") return false;
     throw error;

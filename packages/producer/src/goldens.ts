@@ -1,12 +1,12 @@
 // FrankFrames — proprietário. Ver LICENSE na raiz.
 import { execFile } from "node:child_process";
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { promisify } from "node:util";
-import { assetPath, openSession, removeOrWarn, resolveChrome, startServer } from "@frankframes/engine";
+import { assetPath, browserPlatform, openSession, removeOrWarn, resolveChrome, startServer } from "@frankframes/engine";
 import type { Session } from "@frankframes/engine";
-import type { GpuMode } from "@frankframes/engine";
+import type { BrowserPlatform, GpuMode } from "@frankframes/engine";
 import { prepare } from "./render.ts";
 
 const run = promisify(execFile);
@@ -27,6 +27,65 @@ export interface GoldenBlock {
 export interface GoldenManifest {
   engine: { browser: string; gpu: GpuMode; viewport: string };
   blocks: GoldenBlock[];
+}
+
+/** Códigos do seletor de goldens por plataforma; entram em `docs/reference/diagnostics.md`. */
+export const GOLDEN_ERROR_CODES = ["E_GOLDENS_PLATFORM_MISSING"] as const;
+
+/** Esta plataforma não tem conjunto de goldens: erro com código e `hint`, nunca o conjunto de outra plataforma. */
+export class GoldenSetMissingError extends Error {
+  readonly code = "E_GOLDENS_PLATFORM_MISSING";
+  readonly hint: string;
+  constructor(platform: string, arch: string, key: BrowserPlatform | undefined, available: string[]) {
+    const have = available.length === 0 ? "nenhum" : available.join(", ");
+    const hint =
+      key === undefined
+        ? `plataformas com goldens: ${have}; esta (${platform}/${arch}) não tem browser pinado, então não há conjunto a gerar`
+        : `gere o conjunto no ambiente desta plataforma com \`node scripts/generate-goldens.ts\` (conjuntos existentes: ${have}); não copie o de outra plataforma`;
+    super(`E_GOLDENS_PLATFORM_MISSING: sem goldens para ${key ?? `${platform}/${arch}`} (${hint})`);
+    this.name = "GoldenSetMissingError";
+    this.hint = hint;
+  }
+}
+
+/** Conjunto de goldens de UMA plataforma: `catalog/goldens/<plataforma>/goldens.json` e `<bloco>/<frame>.png`. */
+export interface GoldenSet {
+  platform: BrowserPlatform;
+  dir: string;
+  manifest: GoldenManifest;
+  /** PNG de referência de um frame; pode não existir em disco (o chamador trata a ausência). */
+  pngPath(block: string, frame: number): string;
+}
+
+/** Diretório do conjunto da plataforma (existindo ou não). */
+export function goldenDir(catalogDir: string, platform: BrowserPlatform): string {
+  return join(catalogDir, "goldens", platform);
+}
+
+/**
+ * Conjunto de goldens da plataforma do processo (ou do par `platform`/`arch` dado, para teste). Plataforma sem
+ * browser pinado ou sem conjunto gerado falha alto (`E_GOLDENS_PLATFORM_MISSING`): nunca pula nem usa outro conjunto.
+ */
+export async function loadGoldenSet(catalogDir: string, platform: string = process.platform, arch: string = process.arch): Promise<GoldenSet> {
+  const key = browserPlatform(platform, arch);
+  const available = async (): Promise<string[]> => {
+    try {
+      return (await readdir(join(catalogDir, "goldens"), { withFileTypes: true })).filter((entry) => entry.isDirectory()).map((entry) => entry.name).sort();
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+      throw error;
+    }
+  };
+  if (key === undefined) throw new GoldenSetMissingError(platform, arch, undefined, await available());
+  const dir = goldenDir(catalogDir, key);
+  let raw: string;
+  try {
+    raw = await readFile(join(dir, "goldens.json"), "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") throw new GoldenSetMissingError(platform, arch, key, await available());
+    throw error;
+  }
+  return { platform: key, dir, manifest: JSON.parse(raw) as GoldenManifest, pngPath: (block, frame) => join(dir, block, `${frame}.png`) };
 }
 
 /** Frames amostrados: começo, meio e fim, sem depender do último frame parcial. */

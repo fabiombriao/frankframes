@@ -6,7 +6,8 @@ import { cp, writeFile } from "node:fs/promises";
 import { watch } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { loadComposition } from "@frankframes/contract";
-import { PINNED_BROWSER, assetPath, checkPinnedBrowser, startServer } from "@frankframes/engine";
+import { BrowserPlatformError, assetPath, checkPinnedBrowser, pinnedBrowser, startServer } from "@frankframes/engine";
+import type { BrowserPin } from "@frankframes/engine";
 import type { Preset, VideoCodec } from "@frankframes/encode";
 import {
   PreviewAudioError,
@@ -169,6 +170,17 @@ function parseCli(argv: string[]): Cli {
 // Devolve o código de saída; quem chama grava em `process.exitCode` e deixa o loop drenar
 // (`process.exit()` logo após I/O de processo filho pode abortar com UV_HANDLE_CLOSING no Node 24/Windows).
 async function browserCommand(action: string): Promise<number> {
+  // Plataforma sem shell pinado: erro com código e hint (E_BROWSER_PLATFORM_UNSUPPORTED), nunca o pin de outra.
+  let pinned: BrowserPin;
+  try {
+    pinned = pinnedBrowser();
+  } catch (error) {
+    if (!(error instanceof BrowserPlatformError)) throw error;
+    process.stderr.write(`${error.message}
+`);
+    return 1;
+  }
+
   if (action === "check") {
     const pin = await checkPinnedBrowser();
     if (!pin.present) {
@@ -176,10 +188,10 @@ async function browserCommand(action: string): Promise<number> {
       return 1;
     }
     if (!pin.matches) {
-      process.stderr.write(`digest não confere em ${pin.path}\nesperado ${PINNED_BROWSER.sha256}\nobtido   ${pin.digest}\n`);
+      process.stderr.write(`digest não confere em ${pin.path}\nesperado ${pinned.sha256}\nobtido   ${pin.digest}\n`);
       return 1;
     }
-    process.stdout.write(`ok ${PINNED_BROWSER.version} · ${pin.path}\n`);
+    process.stdout.write(`ok ${pinned.version} · ${pin.path}\n`);
     return 0;
   }
 
@@ -192,8 +204,8 @@ async function browserCommand(action: string): Promise<number> {
   const child = spawn(
     process.platform === "win32" ? "cmd" : "npx",
     process.platform === "win32"
-      ? ["/c", "npx", "--yes", "@puppeteer/browsers", "install", `chrome-headless-shell@${PINNED_BROWSER.version}`, "--path", vendor]
-      : ["--yes", "@puppeteer/browsers", "install", `chrome-headless-shell@${PINNED_BROWSER.version}`, "--path", vendor],
+      ? ["/c", "npx", "--yes", "@puppeteer/browsers", "install", `chrome-headless-shell@${pinned.version}`, "--path", vendor]
+      : ["--yes", "@puppeteer/browsers", "install", `chrome-headless-shell@${pinned.version}`, "--path", vendor],
     { stdio: "inherit" },
   );
   const exited = Promise.withResolvers<number>();
@@ -209,7 +221,7 @@ async function browserCommand(action: string): Promise<number> {
     process.stderr.write(`download concluído, mas o digest não confere: ${pin.digest}\n`);
     return 1;
   }
-  process.stdout.write(`ok ${PINNED_BROWSER.version} · ${pin.path}\n`);
+  process.stdout.write(`ok ${pinned.version} · ${pin.path}\n`);
   return 0;
 }
 

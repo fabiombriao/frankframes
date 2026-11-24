@@ -3,7 +3,7 @@ import { test } from "node:test";
 import type { TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import path, { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { checkCodexAuth, codexVersion, resolveCodex, runCodexExec, sanitizedEnv } from "../src/generate-codex.ts";
 import type { CodexExecInput, ResolvedCodex } from "../src/generate-codex.ts";
@@ -22,34 +22,41 @@ const isGenerateError =
   (error: unknown): boolean =>
     error instanceof GenerateError && error.code === code && (hint === undefined || hint.test(error.hint));
 
-function touch(file: string): void {
-  mkdirSync(join(file, ".."), { recursive: true });
-  writeFileSync(file, "");
+/** Disco virtual no formato do Windows: o teste vale em qualquer SO, pois `platform: "win32"` troca o `path` e o delimitador. */
+function windowsDisk(...files: string[]): (file: string) => boolean {
+  const present = new Set(files);
+  return (file) => present.has(file);
 }
 
-test("resolveCodex (Windows): codex.cmd com codex.js ao lado roda `node codex.js`, sem shell", async (t) => {
-  const dir = await temp(t, "cmd");
-  touch(join(dir, "codex.cmd"));
-  touch(join(dir, "node_modules", "@openai", "codex", "bin", "codex.js"));
-  const found = resolveCodex({ env: { Path: dir }, platform: "win32" });
+const w = path.win32;
+const NPM_DIR = w.join("C:\\", "Users", "teste", "AppData", "Roaming", "npm");
+const CODEX_JS = w.join(NPM_DIR, "node_modules", "@openai", "codex", "bin", "codex.js");
+
+test("resolveCodex (Windows): codex.cmd com codex.js ao lado roda `node codex.js`, sem shell", () => {
+  const found = resolveCodex({ env: { Path: NPM_DIR }, platform: "win32", pathExists: windowsDisk(w.join(NPM_DIR, "codex.cmd"), CODEX_JS) });
   assert.equal(found.command, process.execPath, "sem node.exe ao lado usa o node atual");
-  assert.deepEqual(found.args, [join(dir, "node_modules", "@openai", "codex", "bin", "codex.js")]);
+  assert.deepEqual(found.args, [CODEX_JS]);
 
-  touch(join(dir, "node.exe"));
-  assert.equal(resolveCodex({ env: { PATH: dir }, platform: "win32" }).command, join(dir, "node.exe"));
+  const withNode = windowsDisk(w.join(NPM_DIR, "codex.cmd"), CODEX_JS, w.join(NPM_DIR, "node.exe"));
+  assert.equal(resolveCodex({ env: { PATH: NPM_DIR }, platform: "win32", pathExists: withNode }).command, w.join(NPM_DIR, "node.exe"));
 });
 
-test("resolveCodex (Windows): codex.exe vence codex.cmd", async (t) => {
-  const dir = await temp(t, "exe");
-  touch(join(dir, "codex.exe"));
-  touch(join(dir, "codex.cmd"));
-  assert.deepEqual(resolveCodex({ env: { PATH: dir }, platform: "win32" }), { command: join(dir, "codex.exe"), args: [] });
+test("resolveCodex (Windows): vários diretórios no PATH separados por ';', na ordem", () => {
+  const second = w.join("C:\\", "Ferramentas");
+  const found = resolveCodex({ env: { PATH: `${w.join("C:\\", "vazio")};${second}` }, platform: "win32", pathExists: windowsDisk(w.join(second, "codex.exe")) });
+  assert.deepEqual(found, { command: w.join(second, "codex.exe"), args: [] });
 });
 
-test("resolveCodex: codex.cmd sem codex.js é E_CODEX_MISSING com a dica de reinstalar", async (t) => {
-  const dir = await temp(t, "nojs");
-  touch(join(dir, "codex.cmd"));
-  assert.throws(() => resolveCodex({ env: { PATH: dir }, platform: "win32" }), isGenerateError("E_CODEX_MISSING", /npm i -g @openai\/codex/));
+test("resolveCodex (Windows): codex.exe vence codex.cmd", () => {
+  const disk = windowsDisk(w.join(NPM_DIR, "codex.exe"), w.join(NPM_DIR, "codex.cmd"));
+  assert.deepEqual(resolveCodex({ env: { PATH: NPM_DIR }, platform: "win32", pathExists: disk }), { command: w.join(NPM_DIR, "codex.exe"), args: [] });
+});
+
+test("resolveCodex: codex.cmd sem codex.js é E_CODEX_MISSING com a dica de reinstalar", () => {
+  const disk = windowsDisk(w.join(NPM_DIR, "codex.cmd"));
+  assert.throws(() => resolveCodex({ env: { PATH: NPM_DIR }, platform: "win32", pathExists: disk }), isGenerateError("E_CODEX_MISSING", /npm i -g @openai\/codex/));
+  // O erro é o de reinstalar (achou o .cmd), não o de "não achei no PATH".
+  assert.throws(() => resolveCodex({ env: { PATH: NPM_DIR }, platform: "win32", pathExists: disk }), (error: unknown) => error instanceof GenerateError && /achei/.test(error.message));
 });
 
 test("resolveCodex: PATH vazio é E_CODEX_MISSING com a dica de instalar e logar", () => {
@@ -57,11 +64,9 @@ test("resolveCodex: PATH vazio é E_CODEX_MISSING com a dica de instalar e logar
   assert.throws(() => resolveCodex({ env: {}, platform: "linux" }), isGenerateError("E_CODEX_MISSING"));
 });
 
-test("resolveCodex: FRANKFRAMES_CODEX inexistente não cai no PATH, mesmo com um codex válido lá", async (t) => {
-  const dir = await temp(t, "forced");
-  touch(join(dir, "codex.exe"));
-  const env = { PATH: dir, FRANKFRAMES_CODEX: join(dir, "nao-existe.exe") };
-  assert.throws(() => resolveCodex({ env, platform: "win32" }), isGenerateError("E_CODEX_MISSING", /FRANKFRAMES_CODEX/));
+test("resolveCodex: FRANKFRAMES_CODEX inexistente não cai no PATH, mesmo com um codex válido lá", () => {
+  const env = { PATH: NPM_DIR, FRANKFRAMES_CODEX: w.join(NPM_DIR, "nao-existe.exe") };
+  assert.throws(() => resolveCodex({ env, platform: "win32", pathExists: windowsDisk(w.join(NPM_DIR, "codex.exe")) }), isGenerateError("E_CODEX_MISSING", /FRANKFRAMES_CODEX/));
 });
 
 test("resolveCodex: FRANKFRAMES_CODEX para .mjs roda no node; para binário roda direto", async () => {
@@ -69,11 +74,9 @@ test("resolveCodex: FRANKFRAMES_CODEX para .mjs roda no node; para binário roda
   assert.deepEqual(resolveCodex({ env: { FRANKFRAMES_CODEX: "/opt/codex" }, platform: "linux", pathExists: () => true }), { command: "/opt/codex", args: [] });
 });
 
-test("resolveCodex: codex.ps1 e o `codex` sem extensão do npm no Windows são ignorados", async (t) => {
-  const dir = await temp(t, "ps1");
-  touch(join(dir, "codex.ps1"));
-  touch(join(dir, "codex"));
-  assert.throws(() => resolveCodex({ env: { PATH: dir }, platform: "win32" }), isGenerateError("E_CODEX_MISSING"));
+test("resolveCodex: codex.ps1 e o `codex` sem extensão do npm no Windows são ignorados", () => {
+  const disk = windowsDisk(w.join(NPM_DIR, "codex.ps1"), w.join(NPM_DIR, "codex"));
+  assert.throws(() => resolveCodex({ env: { PATH: NPM_DIR }, platform: "win32", pathExists: disk }), isGenerateError("E_CODEX_MISSING"));
 });
 
 test("resolveCodex (POSIX): acha `codex` executável no PATH", () => {

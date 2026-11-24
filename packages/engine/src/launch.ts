@@ -2,7 +2,7 @@
 import { existsSync } from "node:fs";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { PINNED_BROWSER, checkPinnedBrowser } from "./pin.ts";
+import { PINNED_BROWSER_VERSION, checkPinnedBrowser, pinnedBrowser } from "./pin.ts";
 
 const run = promisify(execFile);
 
@@ -39,11 +39,11 @@ export async function resolveChrome(explicit?: string): Promise<ResolvedChrome> 
 
   const pin = await checkPinnedBrowser();
   if (pin.present && pin.matches) {
-    return { path: pin.path, version: PINNED_BROWSER.version, pinned: true, warnings };
+    return { path: pin.path, version: PINNED_BROWSER_VERSION, pinned: true, warnings };
   }
   if (pin.present && !pin.matches) {
     warnings.push(
-      `shell pinado com digest diferente (esperado ${PINNED_BROWSER.sha256.slice(0, 16)}…, obtido ${(pin.digest ?? "").slice(0, 16)}…): não será usado`,
+      `shell pinado com digest diferente (esperado ${pinnedBrowser().sha256.slice(0, 16)}…, obtido ${(pin.digest ?? "").slice(0, 16)}…): não será usado`,
     );
   }
 

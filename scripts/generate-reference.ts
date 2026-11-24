@@ -4,8 +4,8 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { CODES } from "@frankframes/contract";
-import { EDIT_ERROR_CODES, FRAMES_ERROR_CODES, PREVIEW_AUDIO_ERROR_CODES, RENDER_ERROR_CODES } from "@frankframes/producer";
-import { FAILURE_ERROR_CODES } from "@frankframes/engine";
+import { EDIT_ERROR_CODES, FRAMES_ERROR_CODES, GOLDEN_ERROR_CODES, PREVIEW_AUDIO_ERROR_CODES, RENDER_ERROR_CODES } from "@frankframes/producer";
+import { FAILURE_ERROR_CODES, PLATFORM_ERROR_CODES } from "@frankframes/engine";
 import { TRANSCRIBE_ERROR_CODES } from "@frankframes/transcribe";
 import { POLICY_CODES } from "@frankframes/encode";
 import { CLI_ERROR_CODES, STUDIO_ERROR_CODES } from "../packages/cli/src/cli-errors.ts";
@@ -20,6 +20,8 @@ export function renderReference(): string {
     ...FRAMES_ERROR_CODES.map((code): [string, string] => [code, "frames"]),
     ...[...GENERATE_ERROR_CODES, ...GENERATE_REPAIR_CODES].map((code): [string, string] => [code, "geração"]),
     ...FAILURE_ERROR_CODES.map((code): [string, string] => [code, "render"]),
+    ...PLATFORM_ERROR_CODES.map((code): [string, string] => [code, "plataforma"]),
+    ...GOLDEN_ERROR_CODES.map((code): [string, string] => [code, "plataforma"]),
     ...EDIT_ERROR_CODES.map((code): [string, string] => [code, "edição"]),
     ...PREVIEW_AUDIO_ERROR_CODES.map((code): [string, string] => [code, "preview"]),
     ...STUDIO_ERROR_CODES.map((code): [string, string] => [code, "studio"]),

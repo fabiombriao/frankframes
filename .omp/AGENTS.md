@@ -35,7 +35,7 @@ Node ≥ 22.18 (TypeScript roda direto, sem build). Nada de bundler.
 
 1. **Contrato inválido bloqueia o render.** Nunca "renderizou com sucesso e saiu errado".
 2. **Duração não é estimada**: autoral, derivada ou `unresolved` com a lista exata do que falta.
-3. **Determinismo é teste**: seek independente de ordem, hash por frame. GPU é padrão (`auto`), SwiftShader é fallback; igualdade entre máquinas só é prometida em `software`.
+3. **Determinismo é teste**: seek independente de ordem, hash por frame. GPU é padrão (`auto`), SwiftShader é fallback; igualdade de hash só é prometida em `software`, no mesmo SO e arquitetura com o browser pinado (goldens por plataforma em `catalog/goldens/<win64|linux64>`).
 4. **Vídeo nunca é decodificado pelo Chrome**: frames extraídos por FFmpeg, `<video>` vira `<img>`.
 5. **Tempo resolvido pelo compilador**, não pelo runtime: `data-ff-start`/`data-ff-end`/`data-ff-comp-start`.
 6. **Assets são pinados por hash** e vivem em `vendor/` (ou `FRANKFRAMES_HOME`).
@@ -56,6 +56,7 @@ Node ≥ 22.18 (TypeScript roda direto, sem build). Nada de bundler.
 | Contêiner/codec | MP4 com AV1 por padrão; VP9/WebM muxa Opus; H.264 só via `libopenh264` com opt-in e aviso de patente |
 | GPU | `auto` = hardware quando existe, SwiftShader quando não |
 | CI | gate local (`scripts/ci.ts`); **GitHub Actions proibido** (`.omp/RULES.md`) |
+| Plataformas | `win64` e `linux64` com browser e FFmpeg pinados por SHA-256; outra plataforma falha alto. Gate Linux em Docker (`scripts/linux/gate.ts`) |
 | Transcrição | local só por comando explícito; nunca baixa sozinho |
 | Distribuição | pacotes npm privados com `files`/`engines`/`prepack`; sem instalador ainda |
 

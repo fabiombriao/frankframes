@@ -324,6 +324,26 @@ async function startSession(
       if (scope.__ffMediaReady) await scope.__ffMediaReady;
     });
 
+    // EDT-13: a camada que o compositor cria para um elemento animado nasce, em parte das sessões, com o estado do
+    // raster do texto fixado de um jeito (outra fase de subpixel nos mesmos glifos), e fica assim a sessão inteira:
+    // esperar mais não desfaz, e o seek não invalida a camada. Com a página pronta (animações criadas e pausadas) e
+    // antes de qualquer medição, o corpo sai do layout e volta, com um paint real entre os dois: as camadas são
+    // destruídas e recriadas a partir do mesmo estado, e o pixel deixa de depender de como a carga da máquina
+    // ordenou o primeiro commit.
+    await page.evaluate(async () => {
+      const clock = (globalThis as unknown as { __ff: { settle: () => Promise<boolean>; syncAnimations: () => void } }).__ff;
+      const body = document.body;
+      const display = body.style.display;
+      body.style.display = "none";
+      void body.offsetHeight;
+      await clock.settle();
+      body.style.display = display;
+      void body.offsetHeight;
+      // Animações CSS nascem de novo ao voltar do `display: none`: de volta ao tempo do relógio antes do paint.
+      clock.syncAnimations();
+      await clock.settle();
+    });
+
     // Só com FRANKFRAMES_CAPTURE_PROFILE=1: conta cada espera de paint em `__ff.settleCount`
     // (seek e captura passam por `__ff.settle`). Sem a variável, a página não muda.
     if (process.env.FRANKFRAMES_CAPTURE_PROFILE === "1") {

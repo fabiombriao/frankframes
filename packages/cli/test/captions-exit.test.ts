@@ -20,6 +20,9 @@ const run = promisify(execFile);
 const CLI = fileURLToPath(new URL("../src/cli.ts", import.meta.url));
 const FFMPEG = fileURLToPath(new URL(`../../../vendor/ffmpeg/bin/ffmpeg${process.platform === "win32" ? ".exe" : ""}`, import.meta.url));
 const RUNS = 10;
+// Servidor e cliente no MESMO endereço literal: `localhost` resolve para ::1 num lado e 127.0.0.1 no outro (Linux com IPv6 no
+// contêiner: o servidor sobe em ::1 e o fetch do filho recebe ECONNREFUSED em 127.0.0.1 sem tentar a outra família).
+const LOOPBACK = "127.0.0.1";
 
 interface Outcome {
   code: number | null;
@@ -57,7 +60,7 @@ test(
       });
     });
     const listening = Promise.withResolvers<void>();
-    server.listen(0, "localhost", listening.resolve);
+    server.listen(0, LOOPBACK, listening.resolve);
     await listening.promise;
     const { port } = server.address() as AddressInfo;
 
@@ -67,7 +70,7 @@ test(
       // WAV curto e real, gerado pelo FFmpeg LGPL pinado.
       await run(FFMPEG, ["-v", "error", "-f", "lavfi", "-i", "sine=frequency=440:duration=0.4", "-ar", "16000", "-ac", "1", audio]);
 
-      const env = { ...process.env, OPENAI_API_KEY: "teste", OPENAI_BASE_URL: `http://localhost:${port}`, GROQ_API_KEY: "" };
+      const env = { ...process.env, OPENAI_API_KEY: "teste", OPENAI_BASE_URL: `http://${LOOPBACK}:${port}`, GROQ_API_KEY: "" };
       for (let i = 0; i < RUNS; i++) {
         const out = join(dir, `legenda-${i}.html`);
         const result = await runCli(["captions", audio, "-o", out, "--size", "1080x1920", "--language", "pt"], env);
@@ -91,7 +94,7 @@ test("captions com falha do provedor sai com exit 1 e mensagem, sem abortar o li
     request.on("end", () => response.writeHead(500, { "content-type": "text/plain" }).end("falha simulada"));
   });
   const listening = Promise.withResolvers<void>();
-  server.listen(0, "localhost", listening.resolve);
+  server.listen(0, LOOPBACK, listening.resolve);
   await listening.promise;
   const { port } = server.address() as AddressInfo;
 
@@ -99,7 +102,7 @@ test("captions com falha do provedor sai com exit 1 e mensagem, sem abortar o li
   try {
     const audio = join(dir, "audio.wav");
     await run(process.execPath, ["-e", `require("node:fs").writeFileSync(${JSON.stringify(audio)}, Buffer.alloc(44))`]);
-    const env = { ...process.env, OPENAI_API_KEY: "teste", OPENAI_BASE_URL: `http://localhost:${port}`, GROQ_API_KEY: "" };
+    const env = { ...process.env, OPENAI_API_KEY: "teste", OPENAI_BASE_URL: `http://${LOOPBACK}:${port}`, GROQ_API_KEY: "" };
     for (let i = 0; i < 3; i++) {
       const result = await runCli(["captions", audio, "-o", join(dir, "x.html")], env);
       assert.equal(result.code, 1, `execução ${i + 1}: exit ${result.code}\n${result.stderr}`);

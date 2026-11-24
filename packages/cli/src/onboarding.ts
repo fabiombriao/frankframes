@@ -4,7 +4,7 @@ import { copyFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { existsSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { checkPinnedBrowser, assetHome } from "@frankframes/engine";
+import { BrowserPlatformError, checkPinnedBrowser, assetHome } from "@frankframes/engine";
 import { expectedFontFiles } from "@frankframes/engine";
 import { listBlocks } from "@frankframes/catalog";
 import { assertFfmpegAllowed, detectFfmpeg } from "@frankframes/encode";
@@ -82,11 +82,18 @@ export async function runDoctor(): Promise<number> {
 
   line("node", process.version);
 
-  const pin = await checkPinnedBrowser();
-  if (pin.present && pin.matches) line("browser", `ok ${pin.path}`);
-  else {
+  try {
+    const pin = await checkPinnedBrowser();
+    if (pin.present && pin.matches) line("browser", `ok ${pin.path}`);
+    else {
+      failed = true;
+      line("browser", pin.present ? "digest não confere — rode `frankframes browser install`" : "ausente — rode `frankframes browser install`");
+    }
+  } catch (error) {
+    // Plataforma sem pin: o doctor reporta o código e o hint e falha; qualquer outro erro sobe.
+    if (!(error instanceof BrowserPlatformError)) throw error;
     failed = true;
-    line("browser", pin.present ? "digest não confere — rode `frankframes browser install`" : "ausente — rode `frankframes browser install`");
+    line("browser", error.message);
   }
 
   const pair = await resolveFfmpeg();

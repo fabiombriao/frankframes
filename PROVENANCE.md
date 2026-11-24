@@ -56,4 +56,5 @@ abertura do nosso código.
 | 2026-11-21 | 26 presets de motion e miniaturas geradas pelo próprio engine (EDT-51) |
 | 2026-11-21 | câmera (`data-camera`: aproximar, afastar, panorâmicas, deriva) sobre `object-view-box`, em imagem e vídeo; miniaturas com foto de teste do FFmpeg (EDT-53) |
 | 2026-11-21 | transições próprias por data-transition; curva de terceiros removida de docs/transitions.md (EDT-54) |
+| 2026-11-24 | plataformas com pin (EDT-13): shell do Chrome 158.0.8127.36 (Chrome for Testing, `@puppeteer/browsers`) e FFmpeg LGPL `n8.1.3-39-g660b5aa7db` do BtbN em tag datada imutável (`autobuild-2026-11-23-12-43`), em `win64` e `linux64`, cada um pinado por SHA-256; plataforma sem pin falha alto. Nenhum código de terceiros; só binários executados como processo externo |
 | 2026-11-24 | avisos de terceiros de produção: `puppeteer-core` (Apache-2.0) e as 22 transitivas registradas em `THIRD-PARTY-NOTICES.md`; `scripts/third-party.ts --check` verifica avisos e licenças (EDT-65) |
