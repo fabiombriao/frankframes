@@ -1,7 +1,7 @@
 [
-  { "t": 1, "source": 9, "region": "0,0,1920,700", "minPsnr": 30 },
-  { "t": 29.5, "source": 37.5, "region": "0,0,1920,700", "minPsnr": 30 },
-  { "t": 0.3, "expect": "motion-enter" },
-  { "t": 6, "expect": "lower-third", "region": "0,700,1920,380" },
-  { "t": "palavra", "expect": "caption", "region": "0,860,1920,220" }
+  { "t": 1, "source": 9, "region": "0,0,1080,640", "minPsnr": 30 },
+  { "t": 29.5, "source": 37.5, "region": "0,0,1080,640", "minPsnr": 30 },
+  { "t": 5.3, "expect": "motion-enter", "from": 5.1, "to": 5.9, "region": "0,1110,1080,430" },
+  { "t": 6, "expect": "lower-third", "region": "0,1110,260,430" },
+  { "t": "palavra", "expect": "caption", "region": "220,1340,640,410" }
 ]

@@ -55,6 +55,7 @@ const byName = (checks: CheckResult[], name: string): CheckResult => {
 
 const FPS30 = { num: 30, den: 1 };
 const FULL_HD = { width: 1920, height: 1080, seconds: 30 };
+const PORTRAIT_HD = { width: 1080, height: 1920, seconds: 30 };
 
 // ------------------------------------------------------------------------------------ checkDuration
 
@@ -163,15 +164,20 @@ test("checkLoudness: medição ausente ou ilegível falha alto com E_ACCEPT_MEAS
 
 // ------------------------------------------------------------------------------------ parseKeyframeSpec
 
-test("parseKeyframeSpec: o spec do A001 (scripts/accept/keyframes-a001.json) cabe em 1920x1080 / 30 s", () => {
+test("parseKeyframeSpec: o spec do A001 (scripts/accept/keyframes-a001.json) cabe em 1080x1920 / 30 s", () => {
+  // O A001 sai em vertical: a fonte é 1920x1080 com rotação -90 (exibe 1080x1920) e o projeto de aceite é 1080x1920.
   const raw: unknown = JSON.parse(readFileSync(new URL("../../../scripts/accept/keyframes-a001.json", import.meta.url), "utf8"));
-  const specs = parseKeyframeSpec(raw, FULL_HD);
+  const specs = parseKeyframeSpec(raw, PORTRAIT_HD);
   assert.deepEqual(specs.map((spec) => spec.kind), ["match", "match", "motion-enter", "lower-third", "caption"]);
-  assert.deepEqual(specs[0], { kind: "match", t: 1, source: 9, region: { x: 0, y: 0, w: 1920, h: 700 }, minPsnr: 30 });
-  assert.equal(specs[2]!.kind === "motion-enter" && specs[2]!.from, 0.1);
-  assert.equal(specs[2]!.kind === "motion-enter" && specs[2]!.to, 0.9);
-  assert.deepEqual(specs[4], { kind: "caption", t: "palavra", source: null, region: { x: 0, y: 860, w: 1920, h: 220 }, maxPsnr: 30 });
+  assert.deepEqual(specs[0], { kind: "match", t: 1, source: 9, region: { x: 0, y: 0, w: 1080, h: 640 }, minPsnr: 30 });
+  assert.deepEqual(specs[1], { kind: "match", t: 29.5, source: 37.5, region: { x: 0, y: 0, w: 1080, h: 640 }, minPsnr: 30 });
+  // a entrada animada é a do bloco "Crédito vertical" (faixa amarela, y 1110–1540), inserido em 5 s com "subir"
+  assert.deepEqual(specs[2], { kind: "motion-enter", t: 5.3, from: 5.1, to: 5.9, region: { x: 0, y: 1110, w: 1080, h: 430 }, maxPsnr: 40 });
+  assert.deepEqual(specs[3], { kind: "lower-third", t: 6, source: null, region: { x: 0, y: 1110, w: 260, h: 430 }, maxPsnr: 30 });
+  assert.deepEqual(specs[4], { kind: "caption", t: "palavra", source: null, region: { x: 220, y: 1340, w: 640, h: 410 }, maxPsnr: 30 });
   assert.equal(sourceOffsetOf(specs), 8, "corte em 8 s: fonte = MP4 + 8");
+  // as regiões do vertical não cabem num quadro 16:9: o spec não vale para outro formato
+  acceptError("E_ACCEPT_SPEC", () => parseKeyframeSpec(raw, FULL_HD));
 });
 
 test("parseKeyframeSpec: recusa região fora do quadro (E_ACCEPT_SPEC com a região na mensagem)", () => {
