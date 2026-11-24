@@ -2,14 +2,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdtemp, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { extractFrames } from "../src/media.ts";
 import { openSession, openSessionFor, resolveChrome, startServer } from "../src/index.ts";
 import { assetPath } from "../src/home.ts";
 import type { MediaManifest } from "../src/media.ts";
+import { tempDir } from "../../../scripts/test-support/temp.ts";
 
 const run = promisify(execFile);
 const ffmpeg = assetPath("ffmpeg", "bin", process.platform === "win32" ? "ffmpeg.exe" : "ffmpeg");
@@ -28,7 +28,7 @@ test("preview toca o vídeo fora de banda em tempo real", { timeout: 300_000 }, 
     return t.skip("ffmpeg ausente");
   }
 
-  const dir = await mkdtemp(join(tmpdir(), "ff-preview-media-"));
+  const dir = await tempDir(t, "ff-preview-media-");
   const clip = join(dir, "clip.mp4");
   await run(ffmpeg, [
     "-hide_banner", "-loglevel", "error",

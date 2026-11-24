@@ -1,11 +1,11 @@
 // FrankFrames — proprietário. Ver LICENSE na raiz.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { loadComposition } from "@frankframes/contract";
 import { annotateTiming, mergeSubCompositions } from "../src/compile.ts";
+import { tempDir } from "../../../scripts/test-support/temp.ts";
 
 test("<template> inline vira nós reais e some do documento", async () => {
   const html = `<html><body><div data-composition-id="main" data-root="true">
@@ -22,8 +22,8 @@ test("<template> inline vira nós reais e some do documento", async () => {
   assert.equal(merged.warnings.length, 0);
 });
 
-test("sub-composição de arquivo é inlinada com caminhos reescritos", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "ff-compile-"));
+test("sub-composição de arquivo é inlinada com caminhos reescritos", async (t) => {
+  const dir = await tempDir(t, "ff-compile-");
   await mkdir(join(dir, "cards"), { recursive: true });
   await writeFile(
     join(dir, "cards", "card.html"),
@@ -43,8 +43,8 @@ test("sub-composição de arquivo é inlinada com caminhos reescritos", async ()
   assert.ok(!merged.html.includes("data-composition-src"), "host não pode continuar externo");
 });
 
-test("referência circular é recusada com aviso, sem loop", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "ff-compile-"));
+test("referência circular é recusada com aviso, sem loop", async (t) => {
+  const dir = await tempDir(t, "ff-compile-");
   await writeFile(
     join(dir, "a.html"),
     `<div data-composition-id="a"><div data-composition-id="x" data-composition-src="b.html"></div></div>`,
@@ -129,8 +129,8 @@ test("EDT-44: <audio> com data-track é só organização, sem z-index", () => {
   assert.ok(!out.includes("z-index"), out);
 });
 
-test("<style> do <head> da sub-composição é preservado", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "ff-head-"));
+test("<style> do <head> da sub-composição é preservado", async (t) => {
+  const dir = await tempDir(t, "ff-head-");
   await writeFile(
     join(dir, "card.html"),
     `<html><head><style>.x{color:red}</style></head><body>
@@ -146,8 +146,8 @@ test("<style> do <head> da sub-composição é preservado", async () => {
   assert.ok(merged.html.includes("background:blue"), "o style da raiz interna precisa ser herdado");
 });
 
-test("data-composition-src fora da entrada é recusado", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "ff-escape-"));
+test("data-composition-src fora da entrada é recusado", async (t) => {
+  const dir = await tempDir(t, "ff-escape-");
   const merged = await mergeSubCompositions(
     `<div data-composition-id="main" data-root="true"><div data-composition-id="h" data-start="0" data-composition-src="../segredo.html"></div></div>`,
     dir,

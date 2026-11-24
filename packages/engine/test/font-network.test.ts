@@ -2,12 +2,10 @@
 import { test } from "node:test";
 import type { TestContext } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp } from "node:fs/promises";
 import { createConnection, createServer } from "node:net";
 import type { Socket } from "node:net";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { classifyFailure, openSession, resolveChrome, retryOnceIfTransient, startServer } from "../src/index.ts";
+import { tempDir } from "../../../scripts/test-support/temp.ts";
 
 const VIEWPORT = { width: 640, height: 360 };
 
@@ -83,7 +81,7 @@ async function proxyTo(upstreamPort: number): Promise<Proxy> {
 
 test("fonte embarcada cuja requisição cai no caminho: E_FONT_LOAD transiente, repetido uma vez e depois carrega (EDT-72)", { timeout: 300_000 }, async (t) => {
   if (!(await chromeOrSkip(t))) return;
-  const dir = await mkdtemp(join(tmpdir(), "ff-font-net-"));
+  const dir = await tempDir(t, "ff-font-net-");
   const server = await startServer(dir, { page: { path: "index.html", html: page("") } });
   const proxy = await proxyTo(Number(new URL(server.url).port));
   const causes: string[] = [];
@@ -113,7 +111,7 @@ test("fonte embarcada cuja requisição cai no caminho: E_FONT_LOAD transiente, 
 
 test("fonte embarcada que continua caindo: a segunda falha sobe como E_FONT_LOAD, sem terceira tentativa (EDT-72)", { timeout: 300_000 }, async (t) => {
   if (!(await chromeOrSkip(t))) return;
-  const dir = await mkdtemp(join(tmpdir(), "ff-font-net-"));
+  const dir = await tempDir(t, "ff-font-net-");
   const server = await startServer(dir, { page: { path: "index.html", html: page("") } });
   const proxy = await proxyTo(Number(new URL(server.url).port));
   let attempts = 0;
@@ -139,7 +137,7 @@ test("fonte embarcada que continua caindo: a segunda falha sobe como E_FONT_LOAD
 test("@font-face do autor para arquivo inexistente: o servidor registra o 404 e a falha é de autoria, sem repetir (EDT-72)", { timeout: 300_000 }, async (t) => {
   if (!(await chromeOrSkip(t))) return;
   const html = page("<style>@font-face{font-family:Quebrada;src:url(./nao-existe.woff2) format('woff2')}</style>");
-  const dir = await mkdtemp(join(tmpdir(), "ff-font-net-"));
+  const dir = await tempDir(t, "ff-font-net-");
   const logs: string[] = [];
   const server = await startServer(dir, { page: { path: "index.html", html }, log: (line) => logs.push(line) });
   let attempts = 0;

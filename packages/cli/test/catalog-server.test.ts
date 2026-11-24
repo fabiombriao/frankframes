@@ -2,12 +2,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { request } from "node:http";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildCatalogIndex, publishCatalog, serveCatalog } from "../src/catalog-server.ts";
 import type { CatalogServer } from "../src/catalog-server.ts";
+import { tempDir } from "../../../scripts/test-support/temp.ts";
 
 function rawGet(url: string, path: string): Promise<number> {
   const { hostname, port } = new URL(url);
@@ -38,8 +38,8 @@ test("índice valida o sha256 do HTML de cada bloco", async () => {
   }
 });
 
-test("publica, serve e bloqueia path traversal", async () => {
-  const root = await mkdtemp(join(tmpdir(), "ff-catalog-"));
+test("publica, serve e bloqueia path traversal", async (t) => {
+  const root = await tempDir(t, "ff-catalog-");
   let server: CatalogServer | undefined;
   try {
     const published = await publishCatalog(root);
@@ -78,6 +78,5 @@ test("publica, serve e bloqueia path traversal", async () => {
     assert.ok([403, 404].includes(await rawGet(server.url, "/%2e%2e/%2e%2e/package.json")));
   } finally {
     await server?.close();
-    await rm(root, { recursive: true, force: true });
   }
 });

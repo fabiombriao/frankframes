@@ -1,13 +1,13 @@
 // FrankFrames — proprietário. Ver LICENSE na raiz.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { loadComposition } from "@frankframes/contract";
 import { resolveFfmpeg } from "@frankframes/producer";
 import { startStudio } from "../src/studio-server.ts";
 import type { StudioServer } from "../src/studio-server.ts";
+import { tempDir, withTempDir } from "../../../scripts/test-support/temp.ts";
 
 const HTML = `<!doctype html>
 <html lang="pt-BR">
@@ -38,17 +38,17 @@ async function upload(server: StudioServer, name: string, body: Buffer, start = 
 }
 
 async function withStudio(run: (server: StudioServer, dir: string, entry: string) => Promise<void>): Promise<void> {
-  const dir = await mkdtemp(join(tmpdir(), "ff-studio-test-"));
-  const entry = join(dir, "comp.html");
-  await writeFile(entry, HTML, "utf8");
-  let server: StudioServer | undefined;
-  try {
-    server = await startStudio({ entry });
-    await run(server, dir, entry);
-  } finally {
-    await server?.close();
-    await rm(dir, { recursive: true, force: true });
-  }
+  await withTempDir("ff-studio-test-", async (dir) => {
+    const entry = join(dir, "comp.html");
+    await writeFile(entry, HTML, "utf8");
+    let server: StudioServer | undefined;
+    try {
+      server = await startStudio({ entry });
+      await run(server, dir, entry);
+    } finally {
+      await server?.close();
+    }
+  });
 }
 
 test("estúdio desfaz, refaz, divide e recusa histórico velho", () =>
@@ -210,19 +210,19 @@ const AUDIO_HTML = `<!doctype html>
 
 /** Estúdio com cache de áudio próprio: o teste nunca toca o cache do usuário. */
 async function withAudioStudio(html: string, run: (server: StudioServer, dir: string) => Promise<void>): Promise<void> {
-  const dir = await mkdtemp(join(tmpdir(), "ff-studio-audio-"));
-  await mkdir(join(dir, "assets"), { recursive: true });
-  await writeFile(join(dir, "assets", "musica.wav"), wav(1.5, 12000)); // tom: loudnorm não mede silêncio
-  const entry = join(dir, "comp.html");
-  await writeFile(entry, html, "utf8");
-  let server: StudioServer | undefined;
-  try {
-    server = await startStudio({ entry, audioCacheDir: join(dir, "cache-audio") });
-    await run(server, dir);
-  } finally {
-    await server?.close();
-    await rm(dir, { recursive: true, force: true });
-  }
+  await withTempDir("ff-studio-audio-", async (dir) => {
+    await mkdir(join(dir, "assets"), { recursive: true });
+    await writeFile(join(dir, "assets", "musica.wav"), wav(1.5, 12000)); // tom: loudnorm não mede silêncio
+    const entry = join(dir, "comp.html");
+    await writeFile(entry, html, "utf8");
+    let server: StudioServer | undefined;
+    try {
+      server = await startStudio({ entry, audioCacheDir: join(dir, "cache-audio") });
+      await run(server, dir);
+    } finally {
+      await server?.close();
+    }
+  });
 }
 
 test("estúdio injeta o mix do preview e serve o WAV pela chave", async (t) => {
@@ -305,8 +305,8 @@ test("estúdio exclui um clip, não move o resto e desfaz byte a byte", () =>
     assert.equal(await readFile(entry, "utf8"), chained, "falha não grava");
   }));
 
-test("estúdio recusa excluir o único clip de uma raiz sem data-duration", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "ff-studio-test-"));
+test("estúdio recusa excluir o único clip de uma raiz sem data-duration", async (t) => {
+  const dir = await tempDir(t, "ff-studio-test-");
   const entry = join(dir, "solo.html");
   const solo = HTML.replace(' data-duration="2">', ">").replace(/\s*<div data-clip-id="b"[^<]*<\/div>/, "");
   assert.ok(!solo.includes('data-clip-id="b"') && !solo.includes('data-duration="2"'), "fixture preparada");
@@ -320,7 +320,6 @@ test("estúdio recusa excluir o único clip de uma raiz sem data-duration", asyn
     assert.equal(await readFile(entry, "utf8"), solo, "arquivo intacto");
   } finally {
     await server?.close();
-    await rm(dir, { recursive: true, force: true });
   }
 });
 
@@ -433,7 +432,7 @@ test("estúdio entrega a waveform de um clip com som e recusa o que não tem", a
     t.skip(`ffmpeg indisponível: ${(error as Error).message}`);
     return;
   }
-  const dir = await mkdtemp(join(tmpdir(), "ff-studio-wave-"));
+  const dir = await tempDir(t, "ff-studio-wave-");
   const entry = join(dir, "comp.html");
   let server: StudioServer | undefined;
   try {
@@ -469,7 +468,6 @@ test("estúdio entrega a waveform de um clip com som e recusa o que não tem", a
     }
   } finally {
     await server?.close();
-    await rm(dir, { recursive: true, force: true });
   }
 });
 

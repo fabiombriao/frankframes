@@ -3,12 +3,12 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import { resolveFfmpeg } from "@frankframes/producer";
+import { tempDir } from "../../../scripts/test-support/temp.ts";
 
 const run = promisify(execFile);
 const CLI = fileURLToPath(new URL("../src/cli.ts", import.meta.url));
@@ -57,31 +57,27 @@ test("frames --json devolve os instantes pedidos, com estatística e PNG", async
     t.skip("FFmpeg indisponível");
     return;
   }
-  const dir = await mkdtemp(join(tmpdir(), "ff-frames-cli-"));
-  try {
-    const video = join(dir, "v.webm");
-    await run(pair.ffmpeg, [
-      "-hide_banner", "-loglevel", "error",
-      "-f", "lavfi", "-i", "testsrc2=s=320x180:d=2:r=30",
-      "-c:v", "libvpx-vp9", "-pix_fmt", "yuv420p", "-y", video,
-    ], { timeout: 60_000 });
+  const dir = await tempDir(t, "ff-frames-cli-");
+  const video = join(dir, "v.webm");
+  await run(pair.ffmpeg, [
+    "-hide_banner", "-loglevel", "error",
+    "-f", "lavfi", "-i", "testsrc2=s=320x180:d=2:r=30",
+    "-c:v", "libvpx-vp9", "-pix_fmt", "yuv420p", "-y", video,
+  ], { timeout: 60_000 });
 
-    const out = join(dir, "pngs");
-    const outcome = await cli(["frames", video, "--at", "25%,1.5", "-o", out, "--json"]);
-    assert.equal(outcome.code, 0, outcome.stderr);
-    const report = JSON.parse(outcome.stdout) as { durationSeconds: number; frames: Array<{ t: number; png: string; meanLuma: number; stdLuma: number; uniform: boolean }> };
-    assert.deepEqual(report.frames.map((frame) => frame.t), [0.5, 1.5]);
-    for (const frame of report.frames) {
-      assert.ok(existsSync(frame.png), frame.png);
-      assert.equal(frame.uniform, false);
-      assert.equal(typeof frame.meanLuma, "number");
-    }
-    assert.ok(Math.abs(report.durationSeconds - 2) < 0.1);
-
-    const text = await cli(["frames", video, "--at", "50%", "-o", out]);
-    assert.equal(text.code, 0, text.stderr);
-    assert.match(text.stdout, /t=1 s/);
-  } finally {
-    await rm(dir, { recursive: true, force: true });
+  const out = join(dir, "pngs");
+  const outcome = await cli(["frames", video, "--at", "25%,1.5", "-o", out, "--json"]);
+  assert.equal(outcome.code, 0, outcome.stderr);
+  const report = JSON.parse(outcome.stdout) as { durationSeconds: number; frames: Array<{ t: number; png: string; meanLuma: number; stdLuma: number; uniform: boolean }> };
+  assert.deepEqual(report.frames.map((frame) => frame.t), [0.5, 1.5]);
+  for (const frame of report.frames) {
+    assert.ok(existsSync(frame.png), frame.png);
+    assert.equal(frame.uniform, false);
+    assert.equal(typeof frame.meanLuma, "number");
   }
+  assert.ok(Math.abs(report.durationSeconds - 2) < 0.1);
+
+  const text = await cli(["frames", video, "--at", "50%", "-o", out]);
+  assert.equal(text.code, 0, text.stderr);
+  assert.match(text.stdout, /t=1 s/);
 });

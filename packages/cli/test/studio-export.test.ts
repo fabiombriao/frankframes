@@ -1,13 +1,13 @@
 // FrankFrames — proprietário. Ver LICENSE na raiz.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { writeFile } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
 import { EncodePolicyError } from "@frankframes/encode";
 import type { FfmpegPair, RenderOptions, RenderResult } from "@frankframes/producer";
 import { ExportError, createExporter } from "../src/studio-export.ts";
 import type { ExportJob, ExporterOptions } from "../src/studio-export.ts";
+import { withTempDir } from "../../../scripts/test-support/temp.ts";
 
 const HTML = `<!doctype html>
 <html lang="pt-BR">
@@ -38,24 +38,24 @@ async function withExporter(
   overrides: Partial<ExporterOptions>,
   run: (exporter: ReturnType<typeof createExporter>, dir: string, events: ExportJob[]) => Promise<void>,
 ): Promise<void> {
-  const dir = await mkdtemp(join(tmpdir(), "ff-export-test-"));
-  const entry = join(dir, "comp.html");
-  await writeFile(entry, HTML, "utf8");
-  const events: ExportJob[] = [];
-  const exporter = createExporter({
-    entry,
-    resolveFfmpeg: async () => PAIR,
-    guard: async () => {},
-    reveal: async () => {},
-    onEvent: (job) => events.push(job),
-    ...overrides,
+  await withTempDir("ff-export-test-", async (dir) => {
+    const entry = join(dir, "comp.html");
+    await writeFile(entry, HTML, "utf8");
+    const events: ExportJob[] = [];
+    const exporter = createExporter({
+      entry,
+      resolveFfmpeg: async () => PAIR,
+      guard: async () => {},
+      reveal: async () => {},
+      onEvent: (job) => events.push(job),
+      ...overrides,
+    });
+    try {
+      await run(exporter, dir, events);
+    } finally {
+      await exporter.close();
+    }
   });
-  try {
-    await run(exporter, dir, events);
-  } finally {
-    await exporter.close();
-    await rm(dir, { recursive: true, force: true });
-  }
 }
 
 async function rejection(promise: Promise<unknown>): Promise<ExportError> {

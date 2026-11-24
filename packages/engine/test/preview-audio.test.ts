@@ -1,11 +1,12 @@
 // FrankFrames — proprietário. Ver LICENSE na raiz.
 import { test } from "node:test";
+import type { TestContext } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { injectionScript, openSession, openSessionFor, resolveChrome, startServer } from "../src/index.ts";
 import type { PreviewAudioConfig } from "../src/index.ts";
+import { tempDir } from "../../../scripts/test-support/temp.ts";
 
 /** WAV PCM mono 8 kHz com um tom de 440 Hz. */
 function tone(seconds: number): Buffer {
@@ -81,7 +82,7 @@ async function driftConverges(session: Session, before: number, minChecks: numbe
 }
 
 async function withPage(
-  t: { skip: (reason: string) => void },
+  t: TestContext,
   audio: PreviewAudioConfig,
   body: (session: Session, dir: string) => Promise<void>,
 ): Promise<void> {
@@ -90,7 +91,7 @@ async function withPage(
   } catch {
     return t.skip("Chrome não encontrado");
   }
-  const dir = await mkdtemp(join(tmpdir(), "ff-preview-audio-"));
+  const dir = await tempDir(t, "ff-preview-audio-");
   await writeFile(join(dir, "index.html"), PAGE);
   await writeFile(join(dir, "tone.wav"), tone(6));
   const server = await startServer(dir, { live: true, preview: META, audio });
@@ -175,7 +176,7 @@ test("src do mix inexistente: erro visível na barra e em liveErrors", { timeout
   } catch {
     return t.skip("Chrome não encontrado");
   }
-  const dir = await mkdtemp(join(tmpdir(), "ff-preview-audio-"));
+  const dir = await tempDir(t, "ff-preview-audio-");
   await writeFile(join(dir, "index.html"), PAGE);
   const server = await startServer(dir, { live: true, preview: META, audio: { src: "/nao-existe.wav" } });
   const session = await openSessionFor(server, { url: server.url, viewport: { width: 640, height: 360 }, gpu: "auto" });
@@ -199,7 +200,7 @@ test("falha do mix no servidor e composição longa aparecem na barra, sem derru
   } catch {
     return t.skip("Chrome não encontrado");
   }
-  const dir = await mkdtemp(join(tmpdir(), "ff-preview-audio-"));
+  const dir = await tempDir(t, "ff-preview-audio-");
   await writeFile(join(dir, "index.html"), PAGE);
 
   for (const [audio, status, expected] of [

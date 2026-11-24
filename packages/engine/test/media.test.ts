@@ -2,12 +2,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { extractFrames, openSession, openSessionFor, resolveChrome, startServer } from "../src/index.ts";
 import type { MediaManifest } from "../src/media.ts";
+import { tempDir } from "../../../scripts/test-support/temp.ts";
 
 const run = promisify(execFile);
 const FFMPEG = process.env.FFMPEG_PATH ?? "ffmpeg";
@@ -42,7 +42,7 @@ test("vídeo fora de banda: <video> vira <img> e o frame é estável", { timeout
     return t.skip("Chrome não encontrado");
   }
 
-  const workspace = await mkdtemp(join(tmpdir(), "ff-media-"));
+  const workspace = await tempDir(t, "ff-media-");
   const video = join(workspace, "clip.mp4");
   // mpeg4 embutido: nada de libx264 nem no fixture.
   await run(FFMPEG, [
@@ -113,7 +113,7 @@ test("imagem substituta respeita a janela do clip", { timeout: 300_000 }, async 
     return t.skip("Chrome não encontrado");
   }
 
-  const workspace = await mkdtemp(join(tmpdir(), "ff-media-window-"));
+  const workspace = await tempDir(t, "ff-media-window-");
   const video = join(workspace, "clip.mp4");
   await run(FFMPEG, [
     "-hide_banner", "-loglevel", "error",

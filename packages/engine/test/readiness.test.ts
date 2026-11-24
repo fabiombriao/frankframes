@@ -1,10 +1,10 @@
 // FrankFrames — proprietário. Ver LICENSE na raiz.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { openSession, resolveChrome, startServer } from "../src/index.ts";
+import { tempDir } from "../../../scripts/test-support/temp.ts";
 
 test("imagem do autor que não carrega falha a sessão", { timeout: 120_000 }, async (t) => {
   try {
@@ -13,7 +13,7 @@ test("imagem do autor que não carrega falha a sessão", { timeout: 120_000 }, a
     return t.skip("Chrome não encontrado");
   }
 
-  const dir = await mkdtemp(join(tmpdir(), "ff-img-"));
+  const dir = await tempDir(t, "ff-img-");
   await writeFile(
     join(dir, "index.html"),
     `<html><body><div data-composition-id="x" data-root="true" data-duration="1">

@@ -1,10 +1,11 @@
 // FrankFrames — proprietário. Ver LICENSE na raiz.
 import { test } from "node:test";
+import type { TestContext } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { openSession, openSessionFor, resolveChrome, startServer } from "../src/index.ts";
+import { tempDir } from "../../../scripts/test-support/temp.ts";
 
 const COMPOSITION = `<html><head><style>
   .b { position: fixed; top: 0; left: 0; width: 40px; height: 40px; background: #ff2d55; animation: m 3s linear infinite; }
@@ -21,7 +22,7 @@ const SHORT = `<html><head><style>
 
 /** Preview de 15 frames a 30 fps (500 ms); o último frame começa em 14 × 1000/30 ms. */
 async function withShortPreview(
-  t: { skip: (reason: string) => void },
+  t: TestContext,
   run: (session: Awaited<ReturnType<typeof openSession>>) => Promise<void>,
 ): Promise<void> {
   try {
@@ -29,7 +30,7 @@ async function withShortPreview(
   } catch {
     return t.skip("Chrome não encontrado");
   }
-  const dir = await mkdtemp(join(tmpdir(), "ff-ui-short-"));
+  const dir = await tempDir(t, "ff-ui-short-");
   await writeFile(join(dir, "index.html"), SHORT);
   const server = await startServer(dir, { live: true, preview: { fps: { num: 30, den: 1 }, frames: 15 } });
   const session = await openSessionFor(server, { url: server.url, viewport: { width: 480, height: 270 }, gpu: "auto" });
@@ -161,7 +162,7 @@ test("barra do preview: pausa, scrub por frame e #f na URL", { timeout: 120_000 
     return t.skip("Chrome não encontrado");
   }
 
-  const dir = await mkdtemp(join(tmpdir(), "ff-ui-"));
+  const dir = await tempDir(t, "ff-ui-");
   await writeFile(join(dir, "index.html"), COMPOSITION);
 
   const server = await startServer(dir, { live: true, preview: { fps: { num: 30, den: 1 }, frames: 90 } });

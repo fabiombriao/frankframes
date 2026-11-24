@@ -1,12 +1,12 @@
 // FrankFrames — proprietário. Ver LICENSE na raiz.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
-import { tmpdir } from "node:os";
 import { openSession, openSessionFor, resolveChrome, startServer } from "@frankframes/engine";
 import { prepare } from "../src/render.ts";
 import { buildCaptionComposition } from "../src/captions.ts";
+import { tempDir } from "../../../scripts/test-support/temp.ts";
 
 test("karaokê acende a palavra no instante certo", { timeout: 300_000 }, async (t) => {
   try {
@@ -15,7 +15,7 @@ test("karaokê acende a palavra no instante certo", { timeout: 300_000 }, async 
     return t.skip("Chrome não encontrado");
   }
 
-  const dir = await mkdtemp(join(tmpdir(), "ff-karaoke-"));
+  const dir = await tempDir(t, "ff-karaoke-");
   const entry = join(dir, "index.html");
   await writeFile(
     entry,

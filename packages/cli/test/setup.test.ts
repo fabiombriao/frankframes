@@ -2,21 +2,22 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { ensureFfmpeg, ensureFonts } from "../src/setup.ts";
+import { withTempDir } from "../../../scripts/test-support/temp.ts";
 
-async function withHome<T>(run: (home: string) => Promise<T>): Promise<T> {
-  const home = await mkdtemp(join(tmpdir(), "ff-home-"));
-  const previous = process.env.FRANKFRAMES_HOME;
-  process.env.FRANKFRAMES_HOME = home;
-  try {
-    return await run(home);
-  } finally {
-    if (previous === undefined) delete process.env.FRANKFRAMES_HOME;
-    else process.env.FRANKFRAMES_HOME = previous;
-  }
+function withHome<T>(run: (home: string) => Promise<T>): Promise<T> {
+  return withTempDir("ff-home-", async (home) => {
+    const previous = process.env.FRANKFRAMES_HOME;
+    process.env.FRANKFRAMES_HOME = home;
+    try {
+      return await run(home);
+    } finally {
+      if (previous === undefined) delete process.env.FRANKFRAMES_HOME;
+      else process.env.FRANKFRAMES_HOME = previous;
+    }
+  });
 }
 
 test("ffmpeg com digest diferente do manifesto é detectado", async () => {

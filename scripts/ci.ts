@@ -14,6 +14,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { runCommand } from "./stage.ts";
+import { guardTempLeaks } from "./test-support/temp-leaks.ts";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const fast = process.argv.includes("--fast");
@@ -35,6 +36,7 @@ const FAST_TESTS = [
   "packages/producer/test/preview-audio.test.ts",
   "packages/cli/test/timeline-math.test.ts",
   "packages/cli/test/studio-export.test.ts",
+  "packages/cli/test/temp-leaks.test.ts",
   "packages/engine/test/clock.test.ts",
   "packages/engine/test/motion-runtime.test.ts",
 ];
@@ -135,10 +137,13 @@ if (!stages.at(-1)?.ok) {
   process.exit(1);
 }
 
-stages.push(await stage("testes rápidos", process.execPath, ["--test", ...FAST_TESTS], TIMEOUTS["testes rápidos"]));
+// EDT-82: etapas que rodam testes não podem deixar `ff-*` novo em os.tmpdir() (os antigos são tolerados).
+stages.push(await guardTempLeaks("testes rápidos", () => stage("testes rápidos", process.execPath, ["--test", ...FAST_TESTS], TIMEOUTS["testes rápidos"])));
 
 if (!fast) {
-  const full = await stage("suíte completa", process.execPath, ["--test", "--test-concurrency=1", "packages/*/test/*.test.ts"], TIMEOUTS["suíte completa"], "out/ci-suite.log");
+  const full = await guardTempLeaks("suíte completa", () =>
+    stage("suíte completa", process.execPath, ["--test", "--test-concurrency=1", "packages/*/test/*.test.ts"], TIMEOUTS["suíte completa"], "out/ci-suite.log"),
+  );
   stages.push(full);
   if (full.ok) {
     stages.push(await stage("doctor", process.execPath, ["packages/cli/src/cli.ts", "doctor"], TIMEOUTS.doctor));

@@ -4,10 +4,10 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { createServer } from "node:http";
 import type { Server } from "node:http";
-import { mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { createLocal, installLocalModel } from "../src/local.ts";
+import { tempDir } from "../../../scripts/test-support/temp.ts";
 
 function listen(server: Server): Promise<number> {
   const { promise, resolve, reject } = Promise.withResolvers<number>();
@@ -33,8 +33,8 @@ function hasErrorCode(error: unknown, code: string): boolean {
 const PAYLOAD = "ABCDEFGH";
 const PAYLOAD_SHA256 = createHash("sha256").update(PAYLOAD).digest("hex");
 
-test("installLocalModel grava os bytes e cria diretórios", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "ff-model-test-"));
+test("installLocalModel grava os bytes e cria diretórios", async (t) => {
+  const dir = await tempDir(t, "ff-model-test-");
   const server = createServer((_request, response) => {
     response.writeHead(200, { "content-length": String(PAYLOAD.length) });
     response.end(PAYLOAD);
@@ -55,12 +55,11 @@ test("installLocalModel grava os bytes e cria diretórios", async () => {
     assert.equal((await stat(destPath)).size, 8);
   } finally {
     await close(server);
-    await rm(dir, { recursive: true, force: true });
   }
 });
 
-test("installLocalModel com SHA-256 errado apaga o temporário e não cria o destino", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "ff-model-bad-"));
+test("installLocalModel com SHA-256 errado apaga o temporário e não cria o destino", async (t) => {
+  const dir = await tempDir(t, "ff-model-bad-");
   const server = createServer((_request, response) => {
     response.writeHead(200);
     response.end(PAYLOAD);
@@ -82,24 +81,19 @@ test("installLocalModel com SHA-256 errado apaga o temporário e não cria o des
     assert.deepEqual(await readdir(dirname(destPath)), []);
   } finally {
     await close(server);
-    await rm(dir, { recursive: true, force: true });
   }
 });
 
-test("createLocal sem binário lança E_WHISPER_MISSING", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "ff-whisper-missing-"));
-  try {
-    const file = join(dir, "audio.wav");
-    await writeFile(file, "RIFF");
-    const transcriber = createLocal({
-      whisperBin: join(dir, "nao-existe", "whisper-cli.exe"),
-      modelPath: join(dir, "nao-existe.bin"),
-    });
-    await assert.rejects(
-      () => transcriber.transcribe(file),
-      (error: unknown) => hasErrorCode(error, "E_WHISPER_MISSING"),
-    );
-  } finally {
-    await rm(dir, { recursive: true, force: true });
-  }
+test("createLocal sem binário lança E_WHISPER_MISSING", async (t) => {
+  const dir = await tempDir(t, "ff-whisper-missing-");
+  const file = join(dir, "audio.wav");
+  await writeFile(file, "RIFF");
+  const transcriber = createLocal({
+    whisperBin: join(dir, "nao-existe", "whisper-cli.exe"),
+    modelPath: join(dir, "nao-existe.bin"),
+  });
+  await assert.rejects(
+    () => transcriber.transcribe(file),
+    (error: unknown) => hasErrorCode(error, "E_WHISPER_MISSING"),
+  );
 });

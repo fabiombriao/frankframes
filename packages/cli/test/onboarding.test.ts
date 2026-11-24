@@ -1,14 +1,14 @@
 // FrankFrames — proprietário. Ver LICENSE na raiz.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, stat } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { loadComposition } from "@frankframes/contract";
 import { runInit, runSkillInstall } from "../src/onboarding.ts";
+import { tempDir } from "../../../scripts/test-support/temp.ts";
 
-test("init cria uma composição que passa no contrato", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "ff-init-"));
+test("init cria uma composição que passa no contrato", async (t) => {
+  const dir = await tempDir(t, "ff-init-");
   await runInit(dir);
 
   const composition = loadComposition(await readFile(join(dir, "index.html"), "utf8"));
@@ -18,8 +18,8 @@ test("init cria uma composição que passa no contrato", async () => {
   assert.equal((await stat(join(dir, "assets"))).isDirectory(), true);
 });
 
-test("skill install grava a skill no diretório do agente", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "ff-skill-"));
+test("skill install grava a skill no diretório do agente", async (t) => {
+  const dir = await tempDir(t, "ff-skill-");
   await runSkillInstall("claude", dir);
   for (const name of ["frankframes", "frankframes-generate"]) {
     const text = await readFile(join(dir, ".claude", "skills", name, "SKILL.md"), "utf8");
@@ -27,8 +27,8 @@ test("skill install grava a skill no diretório do agente", async () => {
   }
 });
 
-test("skill install --cursor grava um .mdc por skill", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "ff-skill-cursor-"));
+test("skill install --cursor grava um .mdc por skill", async (t) => {
+  const dir = await tempDir(t, "ff-skill-cursor-");
   await runSkillInstall("cursor", dir);
   for (const name of ["frankframes", "frankframes-generate"]) {
     const text = await readFile(join(dir, ".cursor", "rules", `${name}.mdc`), "utf8");

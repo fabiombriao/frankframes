@@ -2,12 +2,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { prepare } from "../src/render.ts";
 import { resolveFfmpeg } from "../src/ffmpeg.ts";
+import { tempDir } from "../../../scripts/test-support/temp.ts";
 
 const run = promisify(execFile);
 
@@ -19,7 +19,7 @@ test("vídeo dentro de sub-composição entra no manifesto com início absoluto"
     return t.skip("ffmpeg não encontrado");
   }
 
-  const dir = await mkdtemp(join(tmpdir(), "ff-nested-"));
+  const dir = await tempDir(t, "ff-nested-");
   await mkdir(join(dir, "cards"), { recursive: true });
   await run(pair.ffmpeg, [
     "-hide_banner", "-loglevel", "error",

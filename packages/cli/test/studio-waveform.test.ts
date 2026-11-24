@@ -3,12 +3,12 @@ import { test } from "node:test";
 import type { TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
-import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileDigest } from "@frankframes/engine";
 import { resolveFfmpeg } from "@frankframes/producer";
 import { PeakAccumulator, WaveformError, peaksFromPcm, waveformFor } from "../src/studio-waveform.ts";
+import { withTempDir } from "../../../scripts/test-support/temp.ts";
 
 /** PCM s16le: `count` amostras de `value`, ou ±`value` alternando quando `alternate`. */
 function pcm(count: number, value: number, alternate = false): Buffer {
@@ -54,13 +54,8 @@ async function ffmpegOrSkip(t: TestContext): Promise<string | undefined> {
   }
 }
 
-async function withTemp(run: (dir: string) => Promise<void>): Promise<void> {
-  const dir = await mkdtemp(join(tmpdir(), "ff-waveform-"));
-  try {
-    await run(dir);
-  } finally {
-    await rm(dir, { recursive: true, force: true });
-  }
+function withTemp(run: (dir: string) => Promise<void>): Promise<void> {
+  return withTempDir("ff-waveform-", run);
 }
 
 test("peaksFromPcm: silêncio e onda cheia viram 0 e 255, e byte solto no fim é ignorado", () => {

@@ -1,11 +1,11 @@
 // FrankFrames — proprietário. Ver LICENSE na raiz.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { openSession, openSessionFor, resolveChrome, startServer } from "@frankframes/engine";
 import { compileComposition } from "../src/compile.ts";
+import { tempDir } from "../../../scripts/test-support/temp.ts";
 
 const ENTRY = `<!doctype html>
 <html><head><meta charset="utf-8"><style>
@@ -28,7 +28,7 @@ test("sub-composição de arquivo só aparece na janela dela", { timeout: 300_00
     return t.skip("Chrome não encontrado");
   }
 
-  const dir = await mkdtemp(join(tmpdir(), "ff-sub-"));
+  const dir = await tempDir(t, "ff-sub-");
   await mkdir(join(dir, "cards"), { recursive: true });
   await writeFile(join(dir, "index.html"), ENTRY);
   await writeFile(join(dir, "cards", "card.html"), CARD);

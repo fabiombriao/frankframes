@@ -3,11 +3,11 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { createHash } from "node:crypto";
-import { mkdtemp, readFile, stat } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import type { AddressInfo } from "node:net";
 import { installBlockFromUrl } from "../src/remote.ts";
+import { tempDir } from "../../../scripts/test-support/temp.ts";
 
 const HTML = `<html><body><div data-composition-id="card" data-root="true" data-width="640" data-height="360" data-fps="30" data-duration="2">
   <div data-clip-id="a" data-start="0" data-duration="2">olá</div>
@@ -37,14 +37,14 @@ async function serve(files: Record<string, string>): Promise<{ url: string; clos
   };
 }
 
-test("instala bloco remoto quando o hash confere", async () => {
+test("instala bloco remoto quando o hash confere", async (t) => {
   const digest = createHash("sha256").update(HTML).digest("hex");
   const server = await serve({
     "meta.json": JSON.stringify({ name: "Card", summary: "teste", durationSeconds: 2, tags: [], slug: "card", sha256: digest }),
     "index.html": HTML,
   });
   try {
-    const dir = await mkdtemp(join(tmpdir(), "ff-remote-"));
+    const dir = await tempDir(t, "ff-remote-");
     const installed = await installBlockFromUrl(server.url, dir);
     assert.equal(installed.sha256, digest);
     assert.equal((await readFile(join(dir, "index.html"), "utf8")), HTML);
@@ -54,11 +54,11 @@ test("instala bloco remoto quando o hash confere", async () => {
   }
 });
 
-test("recusa bloco sem hash ou com conteúdo adulterado", async () => {
+test("recusa bloco sem hash ou com conteúdo adulterado", async (t) => {
   const digest = createHash("sha256").update(HTML).digest("hex");
   const semHash = await serve({ "meta.json": JSON.stringify({ name: "Card" }), "index.html": HTML });
   try {
-    await assert.rejects(installBlockFromUrl(semHash.url, await mkdtemp(join(tmpdir(), "ff-remote-"))), /não declara sha256/);
+    await assert.rejects(installBlockFromUrl(semHash.url, await tempDir(t, "ff-remote-")), /não declara sha256/);
   } finally {
     await semHash.close();
   }
@@ -68,7 +68,7 @@ test("recusa bloco sem hash ou com conteúdo adulterado", async () => {
     "index.html": HTML.replace("olá", "alterado"),
   });
   try {
-    await assert.rejects(installBlockFromUrl(adulterado.url, await mkdtemp(join(tmpdir(), "ff-remote-"))), /sha256 não confere/);
+    await assert.rejects(installBlockFromUrl(adulterado.url, await tempDir(t, "ff-remote-")), /sha256 não confere/);
   } finally {
     await adulterado.close();
   }

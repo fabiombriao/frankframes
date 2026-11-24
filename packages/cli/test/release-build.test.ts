@@ -4,11 +4,11 @@
 // `npm pack`, por isso fica na suíte completa e não nos testes rápidos.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { cp, mkdir, mkdtemp, readFile, readdir, rm, stat, symlink, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { cp, mkdir, readFile, readdir, stat, symlink, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { after, before, describe, test } from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { makeTempDir } from "../../../scripts/test-support/temp.ts";
 
 const ROOT = fileURLToPath(new URL("../../../", import.meta.url));
 const SLOW = 5 * 60_000;
@@ -39,13 +39,15 @@ async function listFiles(dir: string): Promise<string[]> {
 }
 
 describe("EDT-65 build do release", { timeout: SLOW }, () => {
+  let temp: Awaited<ReturnType<typeof makeTempDir>> | undefined;
   let workdir = "";
   let releaseDir = "";
   let stageDir = "";
   let repoVersion = "";
 
   before(async () => {
-    workdir = await mkdtemp(join(tmpdir(), "ff-release-build-"));
+    temp = await makeTempDir("ff-release-build-");
+    workdir = temp.dir;
     releaseDir = join(workdir, "release");
     stageDir = join(releaseDir, "stage");
     repoVersion = (await readJson(join(ROOT, "packages", "cli", "package.json"))).version ?? "";
@@ -59,7 +61,7 @@ describe("EDT-65 build do release", { timeout: SLOW }, () => {
   });
 
   after(async () => {
-    if (workdir !== "") await rm(workdir, { recursive: true, force: true });
+    await temp?.remove();
   });
 
   test("premissa: o Node recusa .ts dentro de node_modules (motivo de existir o build)", async () => {

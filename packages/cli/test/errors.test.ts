@@ -2,18 +2,18 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdtemp, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import { toErrorPayload } from "@frankframes/producer";
+import { tempDir } from "../../../scripts/test-support/temp.ts";
 
 const run = promisify(execFile);
 const CLI = fileURLToPath(new URL("../src/cli.ts", import.meta.url));
 
-test("render --json devolve código estável e sem caminho absoluto", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "ff-err-"));
+test("render --json devolve código estável e sem caminho absoluto", async (t) => {
+  const dir = await tempDir(t, "ff-err-");
   const entry = join(dir, "index.html");
   await writeFile(entry, `<div data-composition-id="quebrada" data-root="true"><div data-start="ontem" data-duration="1"></div></div>`);
 

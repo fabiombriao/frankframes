@@ -2,12 +2,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdtemp } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { buildAudioGraph, isSilentMeasurement, mixAudio } from "../src/audio.ts";
 import type { AudioClip } from "../src/audio.ts";
+import { tempDir } from "../../../scripts/test-support/temp.ts";
 
 const run = promisify(execFile);
 const FFMPEG = process.env.FFMPEG_PATH ?? "ffmpeg";
@@ -92,7 +91,7 @@ test("integração: duas senoides mixadas geram AAC estéreo de 2s", { timeout: 
   if (!(await binaryAvailable(FFMPEG))) return t.skip("ffmpeg não encontrado");
   if (!(await binaryAvailable(FFPROBE))) return t.skip("ffprobe não encontrado");
 
-  const workspace = await mkdtemp(join(tmpdir(), "ff-audio-test-"));
+  const workspace = await tempDir(t, "ff-audio-test-");
   const first = join(workspace, "440.wav");
   const second = join(workspace, "880.wav");
   const outPath = join(workspace, "mix.m4a");
@@ -178,7 +177,7 @@ test("integração: música abaixa ~9 dB sob a voz, medido no arquivo", { timeou
   if (!(await binaryAvailable(FFMPEG))) return t.skip("ffmpeg não encontrado");
   const { mixAudio } = await import("../src/audio.ts");
 
-  const workspace = await mkdtemp(join(tmpdir(), "ff-duck-"));
+  const workspace = await tempDir(t, "ff-duck-");
   const music = join(workspace, "music.wav");
   const voice = join(workspace, "voice.wav");
   await run(FFMPEG, ["-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000:duration=2", "-ac", "2", "-y", music]);
@@ -205,7 +204,7 @@ test("integração: entrega normalizada em -14 LUFS", { timeout: 300_000 }, asyn
   if (!(await binaryAvailable(FFMPEG))) return t.skip("ffmpeg não encontrado");
   const { mixAudio } = await import("../src/audio.ts");
 
-  const workspace = await mkdtemp(join(tmpdir(), "ff-lufs-"));
+  const workspace = await tempDir(t, "ff-lufs-");
   const voice = join(workspace, "voice.wav");
   await run(FFMPEG, ["-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "sine=frequency=300:sample_rate=48000:duration=2", "-ac", "2", "-y", voice]);
 
@@ -243,7 +242,7 @@ test("integração: automação de volume aplicada, medida no arquivo", { timeou
   if (!(await binaryAvailable(FFMPEG))) return t.skip("ffmpeg não encontrado");
   const { mixAudio } = await import("../src/audio.ts");
 
-  const workspace = await mkdtemp(join(tmpdir(), "ff-kf-"));
+  const workspace = await tempDir(t, "ff-kf-");
   const tone = join(workspace, "tone.wav");
   await run(FFMPEG, ["-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000:duration=2", "-ac", "2", "-y", tone]);
 
@@ -285,7 +284,7 @@ for (const [format, extension] of [["aac", "m4a"], ["wav", "wav"]] as const) {
     if (!(await binaryAvailable(FFMPEG))) return t.skip("ffmpeg não encontrado");
     if (!(await binaryAvailable(FFPROBE))) return t.skip("ffprobe não encontrado");
 
-    const workspace = await mkdtemp(join(tmpdir(), "ff-silence-"));
+    const workspace = await tempDir(t, "ff-silence-");
     const silent = join(workspace, "silencio.wav");
     const outPath = join(workspace, `mix.${extension}`);
     await run(FFMPEG, [
@@ -310,7 +309,7 @@ for (const [format, extension] of [["aac", "m4a"], ["wav", "wav"]] as const) {
 
 test("integração: silêncio misturado a um tom continua normalizado em -14 LUFS", { timeout: 120_000 }, async (t) => {
   if (!(await binaryAvailable(FFMPEG))) return t.skip("ffmpeg não encontrado");
-  const workspace = await mkdtemp(join(tmpdir(), "ff-silence-mix-"));
+  const workspace = await tempDir(t, "ff-silence-mix-");
   const silent = join(workspace, "silencio.wav");
   const tone = join(workspace, "tom.wav");
   await run(FFMPEG, ["-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo", "-t", "2", "-y", silent]);

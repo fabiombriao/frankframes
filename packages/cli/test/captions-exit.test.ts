@@ -8,13 +8,13 @@ import assert from "node:assert/strict";
 import { execFile, spawn } from "node:child_process";
 import { createServer } from "node:http";
 import { existsSync } from "node:fs";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { AddressInfo } from "node:net";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import { loadComposition } from "@frankframes/contract";
+import { tempDir } from "../../../scripts/test-support/temp.ts";
 
 const run = promisify(execFile);
 const CLI = fileURLToPath(new URL("../src/cli.ts", import.meta.url));
@@ -43,7 +43,7 @@ function runCli(args: string[], env: NodeJS.ProcessEnv): Promise<Outcome> {
 test(
   `captions termina com exit 0 sem abortar o libuv (${RUNS} execuções seguidas)`,
   { timeout: 120_000, skip: existsSync(FFMPEG) ? false : "vendor/ffmpeg ausente (rode scripts/vendor-ffmpeg.ts)" },
-  async () => {
+  async (t) => {
     const server = createServer((request, response) => {
       request.resume();
       request.on("end", () => {
@@ -61,7 +61,7 @@ test(
     await listening.promise;
     const { port } = server.address() as AddressInfo;
 
-    const dir = await mkdtemp(join(tmpdir(), "ff-captions-exit-"));
+    const dir = await tempDir(t, "ff-captions-exit-");
     const audio = join(dir, "audio.wav");
     try {
       // WAV curto e real, gerado pelo FFmpeg LGPL pinado.
@@ -81,12 +81,11 @@ test(
       const closed = Promise.withResolvers<void>();
       server.close(() => closed.resolve());
       await closed.promise;
-      await rm(dir, { recursive: true, force: true });
     }
   },
 );
 
-test("captions com falha do provedor sai com exit 1 e mensagem, sem abortar o libuv", { timeout: 60_000 }, async () => {
+test("captions com falha do provedor sai com exit 1 e mensagem, sem abortar o libuv", { timeout: 60_000 }, async (t) => {
   const server = createServer((request, response) => {
     request.resume();
     request.on("end", () => response.writeHead(500, { "content-type": "text/plain" }).end("falha simulada"));
@@ -96,7 +95,7 @@ test("captions com falha do provedor sai com exit 1 e mensagem, sem abortar o li
   await listening.promise;
   const { port } = server.address() as AddressInfo;
 
-  const dir = await mkdtemp(join(tmpdir(), "ff-captions-exit-"));
+  const dir = await tempDir(t, "ff-captions-exit-");
   try {
     const audio = join(dir, "audio.wav");
     await run(process.execPath, ["-e", `require("node:fs").writeFileSync(${JSON.stringify(audio)}, Buffer.alloc(44))`]);
@@ -112,6 +111,5 @@ test("captions com falha do provedor sai com exit 1 e mensagem, sem abortar o li
     const closed = Promise.withResolvers<void>();
     server.close(() => closed.resolve());
     await closed.promise;
-    await rm(dir, { recursive: true, force: true });
   }
 });

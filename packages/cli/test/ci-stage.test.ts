@@ -1,10 +1,10 @@
 // FrankFrames — proprietário. Ver LICENSE na raiz.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, readFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { runCommand } from "../../../scripts/stage.ts";
+import { tempDir } from "../../../scripts/test-support/temp.ts";
 
 const CWD = process.cwd();
 
@@ -18,8 +18,8 @@ function alive(pid: number): boolean {
   }
 }
 
-test("etapa que termina no prazo devolve o código de saída, o fim da saída e o log", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "ff-stage-"));
+test("etapa que termina no prazo devolve o código de saída, o fim da saída e o log", async (t) => {
+  const dir = await tempDir(t, "ff-stage-");
   const logFile = join(dir, "etapa.log");
   const result = await runCommand({
     file: process.execPath,

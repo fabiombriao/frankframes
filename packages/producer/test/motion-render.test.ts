@@ -3,8 +3,7 @@ import { test } from "node:test";
 import type { TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdtemp, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { openSession, openSessionFor, resolveChrome, startServer } from "@frankframes/engine";
@@ -12,6 +11,7 @@ import { evaluateCurve } from "@frankframes/contract";
 import { compileComposition } from "../src/compile.ts";
 import { buildCaptionComposition } from "../src/captions.ts";
 import { RenderError, renderComposition } from "../src/render.ts";
+import { tempDir } from "../../../scripts/test-support/temp.ts";
 
 const run = promisify(execFile);
 const FPS = { num: 30, den: 1 };
@@ -52,7 +52,7 @@ interface Probe {
 test("o motion anima pelo relógio e seek fora de ordem dá o mesmo frame", { timeout: 300_000 }, async (t) => {
   if (!(await chromeOrSkip(t))) return;
 
-  const dir = await mkdtemp(join(tmpdir(), "ff-motion-"));
+  const dir = await tempDir(t, "ff-motion-");
   const compiled = await compileComposition({ entryHtml: MOTION, entryDir: dir });
   assert.equal(compiled.composition.ok, true, JSON.stringify(compiled.composition.diagnostics));
   assert.ok(compiled.html.includes("data-ff-motion"));
@@ -111,7 +111,7 @@ test("clip dentro de sub-composição anima a partir do início do host", { time
   </div>
 </div>`,
   );
-  const dir = await mkdtemp(join(tmpdir(), "ff-motion-sub-"));
+  const dir = await tempDir(t, "ff-motion-sub-");
   const compiled = await compileComposition({ entryHtml: html, entryDir: dir });
   assert.equal(compiled.composition.ok, true, JSON.stringify(compiled.composition.diagnostics));
 
@@ -133,8 +133,8 @@ test("clip dentro de sub-composição anima a partir do início do host", { time
   }
 });
 
-async function openWith(html: string): Promise<{ close: () => Promise<void>; run: () => ReturnType<typeof openSession> }> {
-  const dir = await mkdtemp(join(tmpdir(), "ff-motion-err-"));
+async function openWith(t: TestContext, html: string): Promise<{ close: () => Promise<void>; run: () => ReturnType<typeof openSession> }> {
+  const dir = await tempDir(t, "ff-motion-err-");
   const server = await startServer(dir, { page: { path: "index.html", html } });
   return { close: () => server.close(), run: () => openSession({ url: `${server.url}index.html`, viewport: VIEWPORT, gpu: "auto" }) };
 }
@@ -146,11 +146,11 @@ test("animação CSS do autor numa propriedade possuída falha na prontidão com
     "@keyframes fade{from{opacity:0}to{opacity:1}} .fx{animation:fade 1s linear forwards}",
     `<div id="a" class="box fx" data-clip-id="a" data-start="0" data-duration="3" data-enter="surgir"></div>`,
   );
-  const dir = await mkdtemp(join(tmpdir(), "ff-motion-conflict-"));
+  const dir = await tempDir(t, "ff-motion-conflict-");
   const compiled = await compileComposition({ entryHtml: source, entryDir: dir });
   assert.equal(compiled.composition.ok, true, "o contrato não vê animação em folha de estilo; quem pega é o runtime");
 
-  const harness = await openWith(compiled.html);
+  const harness = await openWith(t, compiled.html);
   try {
     await assert.rejects(harness.run(), /E_MOTION_CONFLICT: .*opacity/);
   } finally {
@@ -163,7 +163,7 @@ test("animação CSS do autor numa propriedade possuída falha na prontidão com
     `<div id="a" class="box fx" data-clip-id="a" data-start="0" data-duration="3" data-enter="surgir"></div>`,
   );
   const calmCompiled = await compileComposition({ entryHtml: calm, entryDir: dir });
-  const ok = await openWith(calmCompiled.html);
+  const ok = await openWith(t, calmCompiled.html);
   try {
     const session = await ok.run();
     await session.close();
@@ -183,7 +183,7 @@ test("o runtime recusa motion em <video> sem shim com E_MOTION_TARGET e JSON inv
     [video, /E_MOTION_TARGET: .*<video/],
     [bad, /E_MOTION_RUNTIME: data-ff-motion inválido/],
   ] as const) {
-    const harness = await openWith(html);
+    const harness = await openWith(t, html);
     try {
       await assert.rejects(harness.run(), expected);
     } finally {
@@ -208,7 +208,7 @@ test("render real: conflito de posse sai como E_MOTION_RUNTIME na etapa capture;
   const ffprobe = process.env.FFPROBE_PATH ?? "ffprobe";
   if (!(await ffmpegAvailable(ffmpeg, ffprobe))) return t.skip("ffmpeg/ffprobe não encontrados");
 
-  const workspace = await mkdtemp(join(tmpdir(), "ff-motion-render-"));
+  const workspace = await tempDir(t, "ff-motion-render-");
   const entry = join(workspace, "index.html");
   const small = (head: string, cls: string): string =>
     page(head, `<div id="a" class="box ${cls}" data-clip-id="a" data-start="0" data-duration="1" data-enter="surgir dur=0.5"></div>`).replace('data-duration="6"', 'data-duration="1"');
@@ -255,7 +255,7 @@ test("keyframes visuais: cada propriedade segue a curva do trecho no Chrome e o 
     "",
     `<div id="k" class="box" data-clip-id="k" data-start="0" data-duration="6" data-keyframes='${JSON.stringify(KEYFRAMES)}'></div>`,
   );
-  const dir = await mkdtemp(join(tmpdir(), "ff-keyframes-"));
+  const dir = await tempDir(t, "ff-keyframes-");
   const compiled = await compileComposition({ entryHtml: html, entryDir: dir });
   assert.equal(compiled.composition.ok, true, JSON.stringify(compiled.composition.diagnostics));
   assert.ok(compiled.html.includes("data-ff-motion"));
@@ -340,7 +340,7 @@ const SPLIT = page(
 test("data-split letter: texto intacto, fonte herdada, palavra sem quebra no meio e frames independentes de ordem", { timeout: 300_000 }, async (t) => {
   if (!(await chromeOrSkip(t))) return;
 
-  const dir = await mkdtemp(join(tmpdir(), "ff-split-"));
+  const dir = await tempDir(t, "ff-split-");
   const compiled = await compileComposition({ entryHtml: SPLIT, entryDir: dir });
   assert.equal(compiled.composition.ok, true, JSON.stringify(compiled.composition.diagnostics));
 
@@ -389,7 +389,7 @@ test("data-split letter: texto intacto, fonte herdada, palavra sem quebra no mei
 test("legendas com motion renderizam sem erro de página e as palavras entram no instante falado", { timeout: 300_000 }, async (t) => {
   if (!(await chromeOrSkip(t))) return;
 
-  const dir = await mkdtemp(join(tmpdir(), "ff-caps-"));
+  const dir = await tempDir(t, "ff-caps-");
   const html = buildCaptionComposition(
     [
       {

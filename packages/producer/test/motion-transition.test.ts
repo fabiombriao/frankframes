@@ -4,13 +4,11 @@ import { test } from "node:test";
 import type { TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdtemp } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { promisify } from "node:util";
 import { openSessionFor, resolveChrome, startServer } from "@frankframes/engine";
 import { compileComposition } from "../src/compile.ts";
 import { resolveFfmpeg } from "../src/ffmpeg.ts";
+import { tempDir } from "../../../scripts/test-support/temp.ts";
 
 const run = promisify(execFile);
 const FPS = { num: 30, den: 1 };
@@ -43,17 +41,19 @@ const card = (id: string, color: string, start: string, attrs: string): string =
 
 const PRESETS = ["dissolver", "cortina", "empurrar", "zoom", "iris"] as const;
 
-// Frame 30 = só A (1,0 s); frames 46–59 = meio da transição; frame 75 = só B (2,5 s).
+// Frame 30 = só A (1,0 s); frames 46–56 = meio da transição; frame 75 = só B (2,5 s).
+// O meio para em 56: perto do fim (frame 59) o zoom já é idêntico a B em pixels com o compositor em software (EDT-77, opção D).
+// Antes dependia de arredondamento do compositor de GPU.
 const ONLY_A = 30;
 const ONLY_B = 75;
-const MIDDLE = [46, 52, 59];
+const MIDDLE = [46, 52, 56];
 const FRAMES = [0, ONLY_A, ...MIDDLE, ONLY_B, 104];
 
 for (const preset of PRESETS) {
   test(`transição ${preset}: o meio difere de só A e de só B e o seek é determinístico`, { timeout: 600_000 }, async (t) => {
     if (!(await environmentOrSkip(t))) return;
 
-    const dir = await mkdtemp(join(tmpdir(), `ff-transition-${preset}-`));
+    const dir = await tempDir(t, `ff-transition-${preset}-`);
     const html = `<!doctype html><html><head><meta charset="utf-8"><style>html,body{margin:0;background:#000}</style></head><body>
 <div data-composition-id="main" data-root="true" data-width="320" data-height="180" data-fps="30">
 ${card("a", "#d02020", "0", "")}

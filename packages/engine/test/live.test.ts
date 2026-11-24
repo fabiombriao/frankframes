@@ -1,10 +1,10 @@
 // FrankFrames — proprietário. Ver LICENSE na raiz.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { openSession, openSessionFor, resolveChrome, startServer } from "../src/index.ts";
+import { tempDir } from "../../../scripts/test-support/temp.ts";
 
 const COMPOSITION = `<html><head><style>
   .b { position: fixed; top: 0; left: 0; width: 50px; height: 50px; background: #f00; animation: m 4s linear infinite; }
@@ -34,7 +34,7 @@ test("preview roda em tempo real e respeita a janela dos clips", { timeout: 120_
     return t.skip("Chrome não encontrado");
   }
 
-  const dir = await mkdtemp(join(tmpdir(), "ff-live-"));
+  const dir = await tempDir(t, "ff-live-");
   await writeFile(join(dir, "index.html"), COMPOSITION);
 
   const server = await startServer(dir, { live: true });
@@ -78,7 +78,7 @@ test("falha ao gravar o instante em sessionStorage vai para liveErrors, uma vez 
     return t.skip("Chrome não encontrado");
   }
 
-  const dir = await mkdtemp(join(tmpdir(), "ff-live-storage-"));
+  const dir = await tempDir(t, "ff-live-storage-");
   await writeFile(join(dir, "index.html"), COMPOSITION);
 
   const server = await startServer(dir, { live: true });

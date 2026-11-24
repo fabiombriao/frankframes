@@ -1,24 +1,25 @@
 // FrankFrames — proprietário. Ver LICENSE na raiz.
 import { test } from "node:test";
+import type { TestContext } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { startServer } from "../src/index.ts";
+import { tempDir } from "../../../scripts/test-support/temp.ts";
 
 /** Erro de sistema de arquivos com `code`, como o Node entrega. */
 function fsError(code: string): NodeJS.ErrnoException {
   return Object.assign(new Error(`${code}: simulado`), { code });
 }
 
-async function siteWith(file: string, content: string): Promise<string> {
-  const dir = await mkdtemp(join(tmpdir(), "ff-server-read-"));
+async function siteWith(t: TestContext, file: string, content: string): Promise<string> {
+  const dir = await tempDir(t, "ff-server-read-");
   await writeFile(join(dir, file), content);
   return dir;
 }
 
-test("arquivo ausente continua 404, sem retry e sem entrar nos registros de falha", async () => {
-  const dir = await siteWith("index.html", "<html></html>");
+test("arquivo ausente continua 404, sem retry e sem entrar nos registros de falha", async (t) => {
+  const dir = await siteWith(t, "index.html", "<html></html>");
   let reads = 0;
   const server = await startServer(dir, {
     log: () => {},
@@ -37,8 +38,8 @@ test("arquivo ausente continua 404, sem retry e sem entrar nos registros de falh
   }
 });
 
-test("EBUSY passageiro: o servidor repete, serve o arquivo e registra cada tentativa extra", async () => {
-  const dir = await siteWith("index.html", "<html></html>");
+test("EBUSY passageiro: o servidor repete, serve o arquivo e registra cada tentativa extra", async (t) => {
+  const dir = await siteWith(t, "index.html", "<html></html>");
   let reads = 0;
   const server = await startServer(dir, {
     log: () => {},
@@ -66,8 +67,8 @@ test("EBUSY passageiro: o servidor repete, serve o arquivo e registra cada tenta
 });
 
 for (const code of ["EBUSY", "EPERM", "EACCES"]) {
-  test(`${code} que não passa: no máximo 3 repetições, depois 500 com o código no corpo`, async () => {
-    const dir = await siteWith("index.html", "<html></html>");
+  test(`${code} que não passa: no máximo 3 repetições, depois 500 com o código no corpo`, async (t) => {
+    const dir = await siteWith(t, "index.html", "<html></html>");
     let reads = 0;
     const server = await startServer(dir, {
       log: () => {},
@@ -96,8 +97,8 @@ for (const code of ["EBUSY", "EPERM", "EACCES"]) {
   });
 }
 
-test("outro erro de leitura (EMFILE) vira 500 com o código, sem retry", async () => {
-  const dir = await siteWith("index.html", "<html></html>");
+test("outro erro de leitura (EMFILE) vira 500 com o código, sem retry", async (t) => {
+  const dir = await siteWith(t, "index.html", "<html></html>");
   let reads = 0;
   const server = await startServer(dir, {
     log: () => {},
@@ -120,8 +121,8 @@ test("outro erro de leitura (EMFILE) vira 500 com o código, sem retry", async (
   }
 });
 
-test("o registro de falhas é limitado às mais recentes", async () => {
-  const dir = await siteWith("index.html", "<html></html>");
+test("o registro de falhas é limitado às mais recentes", async (t) => {
+  const dir = await siteWith(t, "index.html", "<html></html>");
   const server = await startServer(dir, {
     log: () => {},
     readFile: async () => {
@@ -138,8 +139,8 @@ test("o registro de falhas é limitado às mais recentes", async () => {
   }
 });
 
-test("leitura real de um arquivo que existe segue servindo 200", async () => {
-  const dir = await siteWith("dado.txt", "oi");
+test("leitura real de um arquivo que existe segue servindo 200", async (t) => {
+  const dir = await siteWith(t, "dado.txt", "oi");
   const server = await startServer(dir);
   try {
     const response = await fetch(`${server.url}dado.txt`);
@@ -151,8 +152,8 @@ test("leitura real de um arquivo que existe segue servindo 200", async () => {
   }
 });
 
-test("cada falha e cada repetição vão para o log do servidor, uma linha por evento", async () => {
-  const dir = await siteWith("index.html", "<html></html>");
+test("cada falha e cada repetição vão para o log do servidor, uma linha por evento", async (t) => {
+  const dir = await siteWith(t, "index.html", "<html></html>");
   const lines: string[] = [];
   let reads = 0;
   const server = await startServer(dir, {

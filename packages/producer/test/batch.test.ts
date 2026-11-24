@@ -1,11 +1,11 @@
 // FrankFrames — proprietário. Ver LICENSE na raiz.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { BatchError, RenderError, assertBatchEntries, parseBatchFile, runBatch, workersPerJob } from "../src/index.ts";
 import type { BatchJob, RenderOptions, RenderResult } from "../src/index.ts";
+import { tempDir } from "../../../scripts/test-support/temp.ts";
 
 function job(id: string, extra: Partial<BatchJob> = {}): BatchJob {
   return { id, entry: `/x/${id}.html`, out: `/x/${id}.mp4`, ...extra };
@@ -231,8 +231,8 @@ test("loudness false nos defaults vale para os jobs, e o job pode voltar ao padr
   assert.equal(spec.jobs[1]!.loudness, undefined);
 });
 
-test("assertBatchEntries aponta o job cujo HTML não existe", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "ff-batch-"));
+test("assertBatchEntries aponta o job cujo HTML não existe", async (t) => {
+  const dir = await tempDir(t, "ff-batch-");
   await mkdir(join(dir, "ok"), { recursive: true });
   await writeFile(join(dir, "ok", "index.html"), "<div></div>");
   assertBatchEntries([job("a", { entry: join(dir, "ok", "index.html") })]);

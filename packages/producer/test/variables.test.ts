@@ -1,11 +1,11 @@
 // FrankFrames — proprietário. Ver LICENSE na raiz.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { loadComposition } from "@frankframes/contract";
 import { VariableError, applyVariables, collectVariables, prepare } from "../src/index.ts";
+import { tempDir } from "../../../scripts/test-support/temp.ts";
 
 const SOURCE = `<!doctype html>
 <html><head><meta charset="utf-8"></head><body>
@@ -95,7 +95,7 @@ test("data-duration por variável muda a duração resolvida pelo contrato", () 
 });
 
 test("prepare aplica as variáveis antes do contrato, inclusive em sub-composição, e sem vars vale o autoral", { timeout: 60_000 }, async (t) => {
-  const dir = await mkdtemp(join(tmpdir(), "ff-vars-"));
+  const dir = await tempDir(t, "ff-vars-");
   await mkdir(join(dir, "cards"), { recursive: true });
   const entry = join(dir, "index.html");
   await writeFile(

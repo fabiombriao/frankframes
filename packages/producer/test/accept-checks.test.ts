@@ -5,8 +5,7 @@ import { after, test } from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { readFileSync } from "node:fs";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import {
@@ -31,6 +30,7 @@ import type { CheckResult, DurationInput, KeyframeSpec, LoudnessInput } from "..
 import { mixAudio, measureLoudness } from "../src/audio.ts";
 import { buildCaptionComposition } from "../src/captions.ts";
 import { resolveFfmpeg } from "../src/ffmpeg.ts";
+import { makeTempDir } from "../../../scripts/test-support/temp.ts";
 
 const run = promisify(execFile);
 
@@ -319,7 +319,7 @@ const PLAIN_ENTRY = `<html><body><div data-composition-id="main" data-root="true
   data-fps="24" data-duration="2"><div data-clip-id="t" data-start="0" data-duration="2">oi</div></div></body></html>`;
 
 let fixturesPromise: Promise<Fixtures | undefined> | undefined;
-const created: string[] = [];
+const removers: Array<() => Promise<void>> = [];
 
 async function buildFixtures(): Promise<Fixtures | undefined> {
   let pair;
@@ -331,8 +331,8 @@ async function buildFixtures(): Promise<Fixtures | undefined> {
     return undefined;
   }
   const { ffmpeg, ffprobe } = pair;
-  const dir = await mkdtemp(join(tmpdir(), "ff-accept-fixture-"));
-  created.push(dir);
+  const { dir, remove } = await makeTempDir("ff-accept-fixture-");
+  removers.push(remove);
   const ff = (args: string[]): Promise<unknown> => run(ffmpeg, ["-hide_banner", "-loglevel", "error", "-y", ...args], { timeout: 120_000 });
 
   // Fonte: 8 s de padrão de teste a 24 fps (só encoders nativos: mpeg4/aac, nenhum GPL).
@@ -374,7 +374,7 @@ async function buildFixtures(): Promise<Fixtures | undefined> {
 const fixtures = (): Promise<Fixtures | undefined> => (fixturesPromise ??= buildFixtures());
 
 after(async () => {
-  for (const dir of created) await rm(dir, { recursive: true, force: true });
+  await Promise.all(removers.map((remove) => remove()));
 });
 
 /** Spec da fixture: mesmo formato do A001, em coordenadas de 320x180 e 2 s. */

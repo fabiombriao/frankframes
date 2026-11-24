@@ -1,13 +1,15 @@
 // FrankFrames — proprietário. Ver LICENSE na raiz.
 import { test } from "node:test";
+import type { TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { readdirSync } from "node:fs";
-import { mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { renderComposition } from "../src/render.ts";
+import { tempDir } from "../../../scripts/test-support/temp.ts";
 
 const run = promisify(execFile);
 const FFMPEG = process.env.FFMPEG_PATH ?? "ffmpeg";
@@ -42,7 +44,7 @@ const COMPOSITION = `<!doctype html>
 test("render ponta a ponta: HTML -> MP4 com áudio, 45 frames, dois renders idênticos", { timeout: 900_000 }, async (t) => {
   if (!(await ffmpegAvailable())) return t.skip("ffmpeg/ffprobe não encontrados");
 
-  const workspace = await mkdtemp(join(tmpdir(), "ff-e2e-"));
+  const workspace = await tempDir(t, "ff-e2e-");
   const entry = join(workspace, "index.html");
   await writeFile(entry, COMPOSITION);
   await run(FFMPEG, [
@@ -98,7 +100,7 @@ test("render ponta a ponta: HTML -> MP4 com áudio, 45 frames, dois renders idê
 test("vp9 com áudio gera WebM com Opus", { timeout: 600_000 }, async (t) => {
   if (!(await ffmpegAvailable())) return t.skip("ffmpeg/ffprobe não encontrados");
 
-  const workspace = await mkdtemp(join(tmpdir(), "ff-e2e-vp9-"));
+  const workspace = await tempDir(t, "ff-e2e-vp9-");
   const entry = join(workspace, "index.html");
   await writeFile(entry, COMPOSITION);
   await run(FFMPEG, [
@@ -127,7 +129,7 @@ test("vp9 com áudio gera WebM com Opus", { timeout: 600_000 }, async (t) => {
 test("faixa em silêncio digital: o render termina com áudio e avisa que o loudnorm não foi aplicado", { timeout: 600_000 }, async (t) => {
   if (!(await ffmpegAvailable())) return t.skip("ffmpeg/ffprobe não encontrados");
 
-  const workspace = await mkdtemp(join(tmpdir(), "ff-e2e-silence-"));
+  const workspace = await tempDir(t, "ff-e2e-silence-");
   const entry = join(workspace, "index.html");
   await writeFile(entry, COMPOSITION);
   await run(FFMPEG, [
@@ -153,8 +155,8 @@ async function renderDirs(): Promise<string[]> {
   return (await readdir(tmpdir())).filter((name) => name.startsWith("ff-render-")).sort();
 }
 
-async function cancelWorkspace(prefix: string): Promise<{ workspace: string; entry: string }> {
-  const workspace = await mkdtemp(join(tmpdir(), prefix));
+async function cancelWorkspace(t: TestContext, prefix: string): Promise<{ workspace: string; entry: string }> {
+  const workspace = await tempDir(t, prefix);
   const entry = join(workspace, "index.html");
   await writeFile(entry, COMPOSITION);
   await run(FFMPEG, [
@@ -168,7 +170,7 @@ async function cancelWorkspace(prefix: string): Promise<{ workspace: string; ent
 test("cancelar no começo da captura: E_CANCELED, sem temporários, sem .partial e arquivo antigo intacto", { timeout: 300_000 }, async (t) => {
   if (!(await ffmpegAvailable())) return t.skip("ffmpeg/ffprobe não encontrados");
 
-  const { workspace, entry } = await cancelWorkspace("ff-e2e-cancel-");
+  const { workspace, entry } = await cancelWorkspace(t, "ff-e2e-cancel-");
   const outPath = join(workspace, "saida.mp4");
   await writeFile(outPath, "x");
   const before = await renderDirs();
@@ -205,7 +207,7 @@ test("cancelar no começo da captura: E_CANCELED, sem temporários, sem .partial
 test("cancelar no meio da captura (workers abertos): E_CANCELED e nada sobra", { timeout: 300_000 }, async (t) => {
   if (!(await ffmpegAvailable())) return t.skip("ffmpeg/ffprobe não encontrados");
 
-  const { workspace, entry } = await cancelWorkspace("ff-e2e-cancel-mid-");
+  const { workspace, entry } = await cancelWorkspace(t, "ff-e2e-cancel-mid-");
   const outPath = join(workspace, "saida.mp4");
   const before = await renderDirs();
 
@@ -237,7 +239,7 @@ test("cancelar no meio da captura (workers abertos): E_CANCELED e nada sobra", {
 test("sem --keep nenhum PNG vai para o disco; com keepWorkDir os frames também são gravados (EDT-62)", { timeout: 600_000 }, async (t) => {
   if (!(await ffmpegAvailable())) return t.skip("ffmpeg/ffprobe não encontrados");
 
-  const { workspace, entry } = await cancelWorkspace("ff-e2e-keep-");
+  const { workspace, entry } = await cancelWorkspace(t, "ff-e2e-keep-");
   const before = new Set(await renderDirs());
 
   // Sem keep: no fim da captura, com o diretório de trabalho ainda existindo, não há frames/ nem PNG nele.
@@ -281,6 +283,6 @@ test("sem --keep nenhum PNG vai para o disco; com keepWorkDir os frames também 
     const keptProbe = await run(FFPROBE, ["-v", "error", "-show_entries", "stream=nb_frames", "-of", "default=nw=1", kept.outPath]);
     assert.match(keptProbe.stdout, /nb_frames=45/);
   } finally {
-    await rm(kept.workDir, { recursive: true, force: true });
+    await rm(kept.workDir, { recursive: true, force: false });
   }
 });

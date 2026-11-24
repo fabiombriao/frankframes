@@ -4,14 +4,14 @@ import { test } from "node:test";
 import type { TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, readdir, realpath, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, readdir, realpath, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { resolveChrome } from "@frankframes/engine";
 import { captureFrameAt } from "../src/goldens.ts";
 import { prepare } from "../src/render.ts";
 import { resolveFfmpeg } from "../src/ffmpeg.ts";
+import { makeTempDir } from "../../../scripts/test-support/temp.ts";
 
 const run = promisify(execFile);
 
@@ -26,7 +26,8 @@ const TEMP_VARS = ["TEMP", "TMP", "TMPDIR"] as const;
  */
 async function withIsolatedTemp<T>(fn: (temp: string) => Promise<T>): Promise<T> {
   const saved = TEMP_VARS.map((name) => [name, process.env[name]] as const);
-  const temp = await realpath(await mkdtemp(join(tmpdir(), "ff-isolated-tmp-")));
+  const made = await makeTempDir("ff-isolated-tmp-");
+  const temp = await realpath(made.dir);
   for (const name of TEMP_VARS) process.env[name] = temp;
   try {
     return await fn(temp);
@@ -35,7 +36,7 @@ async function withIsolatedTemp<T>(fn: (temp: string) => Promise<T>): Promise<T>
       if (value === undefined) delete process.env[name];
       else process.env[name] = value;
     }
-    await rm(temp, { recursive: true, force: true });
+    await made.remove();
   }
 }
 

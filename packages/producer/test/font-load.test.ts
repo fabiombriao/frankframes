@@ -3,13 +3,13 @@ import { test } from "node:test";
 import type { TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdtemp, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { openSession, resolveChrome, startServer } from "@frankframes/engine";
 import { RENDER_ERROR_CODES, toErrorPayload } from "../src/errors.ts";
 import { RenderError, renderComposition } from "../src/render.ts";
+import { tempDir } from "../../../scripts/test-support/temp.ts";
 
 const run = promisify(execFile);
 const VIEWPORT = { width: 640, height: 360 };
@@ -64,8 +64,8 @@ interface Harness {
   mustReject: () => Promise<never>;
 }
 
-async function openWith(html: string): Promise<Harness> {
-  const dir = await mkdtemp(join(tmpdir(), "ff-font-"));
+async function openWith(t: TestContext, html: string): Promise<Harness> {
+  const dir = await tempDir(t, "ff-font-");
   const server = await startServer(dir, { page: { path: "index.html", html } });
   const open = () => openSession({ url: `${server.url}index.html`, viewport: VIEWPORT, gpu: "software" });
   const mustReject = async (): Promise<never> => {
@@ -86,7 +86,7 @@ test("E_FONT_LOAD é um código de render publicado", () => {
 test("a prontidão rejeita com E_FONT_LOAD e a família quando uma face declarada não carrega", { timeout: 300_000 }, async (t) => {
   if (!(await chromeOrSkip(t))) return;
 
-  const harness = await openWith(BROKEN_USED);
+  const harness = await openWith(t, BROKEN_USED);
   try {
     await assert.rejects(harness.mustReject(), (error: unknown) => {
       const message = error instanceof Error ? error.message : String(error);
@@ -103,14 +103,14 @@ test("a prontidão rejeita com E_FONT_LOAD e a família quando uma face declarad
 test("face declarada que nenhum elemento usa também falha; fontes que existem seguem abrindo", { timeout: 300_000 }, async (t) => {
   if (!(await chromeOrSkip(t))) return;
 
-  const unused = await openWith(BROKEN_UNUSED);
+  const unused = await openWith(t, BROKEN_UNUSED);
   try {
     await assert.rejects(unused.mustReject(), /E_FONT_LOAD: .*Orfa/);
   } finally {
     await unused.close();
   }
 
-  const healthy = await openWith(HEALTHY);
+  const healthy = await openWith(t, HEALTHY);
   try {
     const session = await healthy.open();
     assert.deepEqual(session.pageErrors().filter((line) => /E_FONT_LOAD/.test(line)), []);
@@ -126,7 +126,7 @@ test("render real: fonte que não carrega para na etapa capture com E_FONT_LOAD;
   const ffprobe = process.env.FFPROBE_PATH ?? "ffprobe";
   if (!(await ffmpegAvailable(ffmpeg, ffprobe))) return t.skip("ffmpeg/ffprobe não encontrados");
 
-  const workspace = await mkdtemp(join(tmpdir(), "ff-font-render-"));
+  const workspace = await tempDir(t, "ff-font-render-");
   const entry = join(workspace, "index.html");
 
   await writeFile(entry, BROKEN_USED);

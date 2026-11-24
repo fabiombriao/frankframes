@@ -3,7 +3,6 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -12,6 +11,7 @@ import { checkPinnedBrowser } from "@frankframes/engine";
 import { resolveFfmpeg } from "@frankframes/producer";
 import { parseGenerateArgs, slugify } from "../src/generate-command.ts";
 import { openBrowserCommand } from "../src/open-browser.ts";
+import { withTempDir } from "../../../scripts/test-support/temp.ts";
 
 const run = promisify(execFile);
 const CLI = fileURLToPath(new URL("../src/cli.ts", import.meta.url));
@@ -34,15 +34,12 @@ async function cli(args: string[], env: Record<string, string> = {}): Promise<Re
   }
 }
 
-async function withReplies<T>(replies: unknown[], body: (env: Record<string, string>, dir: string) => Promise<T>): Promise<T> {
-  const dir = await mkdtemp(join(tmpdir(), "ff-gen-cli-"));
-  try {
+function withReplies<T>(replies: unknown[], body: (env: Record<string, string>, dir: string) => Promise<T>): Promise<T> {
+  return withTempDir("ff-gen-cli-", async (dir) => {
     const file = join(dir, "replies.json");
     writeFileSync(file, JSON.stringify(replies));
-    return await body({ FRANKFRAMES_CODEX: FAKE, FAKE_CODEX_REPLIES: file }, dir);
-  } finally {
-    await rm(dir, { recursive: true, force: true });
-  }
+    return body({ FRANKFRAMES_CODEX: FAKE, FAKE_CODEX_REPLIES: file }, dir);
+  });
 }
 
 const good = { html: VALID, blocks: [], notes: "" };

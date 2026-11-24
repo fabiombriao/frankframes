@@ -4,12 +4,12 @@ import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { createServer } from "node:http";
-import { mkdtemp, readFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { AddressInfo } from "node:net";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
+import { tempDir } from "../../../scripts/test-support/temp.ts";
 
 const run = promisify(execFile);
 const CLI = fileURLToPath(new URL("../src/cli.ts", import.meta.url));
@@ -49,13 +49,13 @@ async function serve(files: Record<string, Buffer | string>): Promise<{ url: str
   };
 }
 
-test("blocks add instala um bloco remoto com sha256 conferido", async () => {
+test("blocks add instala um bloco remoto com sha256 conferido", async (t) => {
   const html = await readFile(BLOCK_HTML);
   const sha256 = digestOf(html);
   const meta = { name: "Transição de capítulo", slug: "remoto", durationSeconds: 3.2, sha256 };
   const server = await serve({ "meta.json": JSON.stringify(meta), "index.html": html });
 
-  const dir = await mkdtemp(join(tmpdir(), "ff-remote-"));
+  const dir = await tempDir(t, "ff-remote-");
   const dest = join(dir, "bloco");
 
   try {
@@ -77,14 +77,14 @@ test("blocks add instala um bloco remoto com sha256 conferido", async () => {
   }
 });
 
-test("blocks add recusa conteúdo adulterado", async () => {
+test("blocks add recusa conteúdo adulterado", async (t) => {
   const html = await readFile(BLOCK_HTML);
   const server = await serve({
     "meta.json": JSON.stringify({ name: "adulterado", slug: "adulterado", sha256: digestOf(Buffer.from("outro conteúdo")) }),
     "index.html": html,
   });
 
-  const dir = await mkdtemp(join(tmpdir(), "ff-remote-bad-"));
+  const dir = await tempDir(t, "ff-remote-bad-");
   const dest = join(dir, "bloco");
 
   try {
@@ -100,14 +100,14 @@ test("blocks add recusa conteúdo adulterado", async () => {
   }
 });
 
-test("blocks add recusa meta.json sem sha256", async () => {
+test("blocks add recusa meta.json sem sha256", async (t) => {
   const html = await readFile(BLOCK_HTML);
   const server = await serve({
     "meta.json": JSON.stringify({ name: "sem hash", slug: "sem-hash" }),
     "index.html": html,
   });
 
-  const dir = await mkdtemp(join(tmpdir(), "ff-remote-nohash-"));
+  const dir = await tempDir(t, "ff-remote-nohash-");
   const dest = join(dir, "bloco");
 
   try {

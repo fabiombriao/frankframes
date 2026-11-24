@@ -3,18 +3,18 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { createServer } from "node:http";
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { AddressInfo } from "node:net";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import { loadComposition } from "@frankframes/contract";
+import { tempDir } from "../../../scripts/test-support/temp.ts";
 
 const run = promisify(execFile);
 const CLI = fileURLToPath(new URL("../src/cli.ts", import.meta.url));
 
-test("captions gera composição de legendas a partir do provedor", { timeout: 120_000 }, async () => {
+test("captions gera composição de legendas a partir do provedor", { timeout: 120_000 }, async (t) => {
   const server = createServer((request, response) => {
     let body = "";
     request.on("data", (chunk: Buffer) => (body += chunk.toString()));
@@ -33,7 +33,7 @@ test("captions gera composição de legendas a partir do provedor", { timeout: 1
   await listening.promise;
   const { port } = server.address() as AddressInfo;
 
-  const dir = await mkdtemp(join(tmpdir(), "ff-captions-"));
+  const dir = await tempDir(t, "ff-captions-");
   const audio = join(dir, "audio.wav");
   await writeFile(audio, Buffer.alloc(44));
   const out = join(dir, "legenda.html");

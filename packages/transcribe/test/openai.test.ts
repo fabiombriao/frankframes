@@ -3,10 +3,10 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import type { Server } from "node:http";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { createOpenAiCompatible } from "../src/openai.ts";
+import { withTempDir } from "../../../scripts/test-support/temp.ts";
 
 function listen(server: Server): Promise<number> {
   const { promise, resolve, reject } = Promise.withResolvers<number>();
@@ -31,15 +31,12 @@ async function readBody(stream: AsyncIterable<Buffer | string>): Promise<string>
   return Buffer.concat(chunks).toString("utf8");
 }
 
-async function withInput<T>(run: (file: string) => Promise<T>): Promise<T> {
-  const dir = await mkdtemp(join(tmpdir(), "ff-openai-test-"));
-  const file = join(dir, "audio.wav");
-  await writeFile(file, Buffer.from("RIFFfake-wave-data"));
-  try {
-    return await run(file);
-  } finally {
-    await rm(dir, { recursive: true, force: true });
-  }
+function withInput<T>(run: (file: string) => Promise<T>): Promise<T> {
+  return withTempDir("ff-openai-test-", async (dir) => {
+    const file = join(dir, "audio.wav");
+    await writeFile(file, Buffer.from("RIFFfake-wave-data"));
+    return run(file);
+  });
 }
 
 test("envia multipart, autorização e converte segments/words", async () => {

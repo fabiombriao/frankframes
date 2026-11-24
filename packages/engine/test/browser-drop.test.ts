@@ -4,13 +4,13 @@ import type { TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { writeFile } from "node:fs/promises";
 import { readFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { BrowserError, openSessionFor, resolveChrome, startServer } from "../src/index.ts";
 import type { Session } from "../src/index.ts";
+import { tempDir } from "../../../scripts/test-support/temp.ts";
 
 const FIXTURES = join(dirname(fileURLToPath(import.meta.url)), "fixtures");
 const FPS = { num: 30, den: 1 };
@@ -147,7 +147,7 @@ test("página que nunca termina de carregar uma imagem rejeita a prontidão com 
   const stalled = createServer(() => {});
   await new Promise<void>((resolveListen) => stalled.listen(0, "127.0.0.1", resolveListen));
   const stalledPort = (stalled.address() as AddressInfo).port;
-  const dir = await mkdtemp(join(tmpdir(), "ff-ready-timeout-"));
+  const dir = await tempDir(t, "ff-ready-timeout-");
   await writeFile(
     join(dir, "index.html"),
     `<html><body><div data-composition-id="x" data-root="true" data-duration="1">
@@ -175,7 +175,7 @@ test("página que nunca termina de carregar uma imagem rejeita a prontidão com 
 
 test("E_FONT_LOAD diz o que o servidor viu: servidor: EBUSY quando a fonte não pôde ser lida", { timeout: 120_000 }, async (t) => {
   if (!(await chromeOrSkip(t))) return;
-  const dir = await mkdtemp(join(tmpdir(), "ff-font-ebusy-"));
+  const dir = await tempDir(t, "ff-font-ebusy-");
   await writeFile(
     join(dir, "index.html"),
     `<html><head><style>@font-face{font-family:"Travada";src:url("/travada.woff2") format("woff2");}</style></head>

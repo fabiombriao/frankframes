@@ -1,12 +1,12 @@
 // FrankFrames — proprietário. Ver LICENSE na raiz.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { loadComposition } from "@frankframes/contract";
 import { startStudio } from "../src/studio-server.ts";
 import type { StudioServer } from "../src/studio-server.ts";
+import { tempDir } from "../../../scripts/test-support/temp.ts";
 
 const HTML = `<!doctype html>
 <html lang="pt-BR">
@@ -37,8 +37,8 @@ interface CompositionPayload {
   diagnostics: unknown[];
 }
 
-test("estúdio lê, edita, insere clips e serve a prévia", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "ff-studio-test-"));
+test("estúdio lê, edita, insere clips e serve a prévia", async (t) => {
+  const dir = await tempDir(t, "ff-studio-test-");
   const entry = join(dir, "comp.html");
   await writeFile(entry, HTML, "utf8");
   let server: StudioServer | undefined;
@@ -104,7 +104,6 @@ test("estúdio lê, edita, insere clips e serve a prévia", async () => {
     assert.ok(previewHtml.includes("/__ff_fonts"));
   } finally {
     await server?.close();
-    await rm(dir, { recursive: true, force: true });
   }
 });
 
@@ -139,8 +138,8 @@ interface RichClip {
   editable: boolean;
 }
 
-test("GET /api/composition devolve track, kind, mídia, parentId e editable", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "ff-studio-test-"));
+test("GET /api/composition devolve track, kind, mídia, parentId e editable", async (t) => {
+  const dir = await tempDir(t, "ff-studio-test-");
   const entry = join(dir, "mix.html");
   await writeFile(entry, MIXED, "utf8");
   let server: StudioServer | undefined;
@@ -184,12 +183,11 @@ test("GET /api/composition devolve track, kind, mídia, parentId e editable", as
     assert.equal(nested.kind, "text");
   } finally {
     await server?.close();
-    await rm(dir, { recursive: true, force: true });
   }
 });
 
-test("o Studio serve timeline-math.js como JavaScript", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "ff-studio-test-"));
+test("o Studio serve timeline-math.js como JavaScript", async (t) => {
+  const dir = await tempDir(t, "ff-studio-test-");
   const entry = join(dir, "comp.html");
   await writeFile(entry, HTML, "utf8");
   let server: StudioServer | undefined;
@@ -201,12 +199,11 @@ test("o Studio serve timeline-math.js como JavaScript", async () => {
     assert.match(await response.text(), /export function lastFrameTime/);
   } finally {
     await server?.close();
-    await rm(dir, { recursive: true, force: true });
   }
 });
 
-test("POST /api/clips/<id>/transition grava, entra no histórico e recusa corpo inválido", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "ff-studio-transition-"));
+test("POST /api/clips/<id>/transition grava, entra no histórico e recusa corpo inválido", async (t) => {
+  const dir = await tempDir(t, "ff-studio-transition-");
   const entry = join(dir, "comp.html");
   await writeFile(entry, HTML, "utf8");
   let server: StudioServer | undefined;
@@ -268,6 +265,5 @@ test("POST /api/clips/<id>/transition grava, entra no histórico e recusa corpo 
     assert.equal(await readFile(entry, "utf8"), initial, "pedidos recusados não tocam no arquivo");
   } finally {
     await server?.close();
-    await rm(dir, { recursive: true, force: true });
   }
 });

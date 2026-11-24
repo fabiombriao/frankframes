@@ -1,14 +1,15 @@
 // FrankFrames — proprietário. Ver LICENSE na raiz.
 import { test } from "node:test";
+import type { TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, readFile, readdir, stat, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import { checkPinnedBrowser } from "@frankframes/engine";
 import { resolveFfmpeg } from "@frankframes/producer";
+import { tempDir } from "../../../scripts/test-support/temp.ts";
 
 const run = promisify(execFile);
 const CLI = fileURLToPath(new URL("../src/cli.ts", import.meta.url));
@@ -41,14 +42,14 @@ const TEMPLATE = `<!doctype html>
   <div class="title" style="top:110px;font-size:18px" data-var="sub">Subtítulo autoral</div>
 </div></body></html>`;
 
-async function workspace(): Promise<string> {
-  const dir = await mkdtemp(join(tmpdir(), "ff-batch-cli-"));
+async function workspace(t: TestContext): Promise<string> {
+  const dir = await tempDir(t, "ff-batch-cli-");
   await writeFile(join(dir, "promo.html"), TEMPLATE);
   return dir;
 }
 
-test("erros de uso e de formato saem antes de qualquer render (sem Chrome nem FFmpeg)", { timeout: 120_000 }, async () => {
-  const dir = await workspace();
+test("erros de uso e de formato saem antes de qualquer render (sem Chrome nem FFmpeg)", { timeout: 120_000 }, async (t) => {
+  const dir = await workspace(t);
 
   const notDir = await cli(["render", join(dir, "promo.html"), join(dir, "promo.html"), "-o", join(dir, "saida.mp4"), "--json"]);
   assert.equal(notDir.code, 1);
@@ -89,7 +90,7 @@ test("lote de 2 jobs com data-var: um falta variável, sai 1, gera 1 MP4 e batch
   const pin = await checkPinnedBrowser();
   if (!pin.present || !pin.matches) return t.skip("shell de browser pinado ausente");
 
-  const dir = await workspace();
+  const dir = await workspace(t);
   await mkdir(join(dir, "out"), { recursive: true });
   await writeFile(
     join(dir, "lote.json"),
@@ -135,7 +136,7 @@ test("várias entradas com -o <pasta>: um MP4 por entrada e relatório na pasta"
   const pin = await checkPinnedBrowser();
   if (!pin.present || !pin.matches) return t.skip("shell de browser pinado ausente");
 
-  const dir = await workspace();
+  const dir = await workspace(t);
   await writeFile(join(dir, "outro.html"), TEMPLATE);
   const outDir = join(dir, "saida");
   const outcome = await cli(["render", join(dir, "promo.html"), join(dir, "outro.html"), "-o", outDir, "--preset", "draft", "--workers", "1", "--json"]);

@@ -3,25 +3,22 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { cp, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { cp, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { syncBlockHashes } from "../../../scripts/generate-catalog.ts";
 import { buildCatalogIndex } from "../src/catalog-server.ts";
+import { withTempDir } from "../../../scripts/test-support/temp.ts";
 
 const REAL_BLOCKS = fileURLToPath(new URL("../../../catalog/blocks/", import.meta.url));
 const SLUGS = ["callout-box", "chart-bars"] as const;
 
 /** Copia dois blocos reais para um diretório temporário: o `catalog/` do repositório nunca é tocado. */
-async function withCopy<T>(fn: (root: string) => Promise<T>): Promise<T> {
-  const root = await mkdtemp(join(tmpdir(), "ff-catalog-sync-"));
-  try {
+function withCopy<T>(fn: (root: string) => Promise<T>): Promise<T> {
+  return withTempDir("ff-catalog-sync-", async (root) => {
     for (const slug of SLUGS) await cp(join(REAL_BLOCKS, slug), join(root, slug), { recursive: true });
-    return await fn(root);
-  } finally {
-    await rm(root, { recursive: true, force: true });
-  }
+    return fn(root);
+  });
 }
 
 const sha = (text: string): string => createHash("sha256").update(text).digest("hex");

@@ -2,11 +2,11 @@
 // Studio: rotas de presets de movimento e escrita de data-enter pelo POST de clip.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { startStudio } from "../src/studio-server.ts";
 import type { StudioServer } from "../src/studio-server.ts";
+import { withTempDir } from "../../../scripts/test-support/temp.ts";
 
 const HTML = `<!doctype html>
 <html lang="pt-BR">
@@ -29,17 +29,17 @@ interface PresetItem {
 }
 
 async function withStudio(run: (server: StudioServer, entry: string) => Promise<void>): Promise<void> {
-  const dir = await mkdtemp(join(tmpdir(), "ff-studio-motion-"));
-  const entry = join(dir, "comp.html");
-  await writeFile(entry, HTML, "utf8");
-  let server: StudioServer | undefined;
-  try {
-    server = await startStudio({ entry });
-    await run(server, entry);
-  } finally {
-    await server?.close();
-    await rm(dir, { recursive: true, force: true });
-  }
+  await withTempDir("ff-studio-motion-", async (dir) => {
+    const entry = join(dir, "comp.html");
+    await writeFile(entry, HTML, "utf8");
+    let server: StudioServer | undefined;
+    try {
+      server = await startStudio({ entry });
+      await run(server, entry);
+    } finally {
+      await server?.close();
+    }
+  });
 }
 
 function post(server: StudioServer, path: string, body: unknown): Promise<Response> {

@@ -3,11 +3,11 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { createHash } from "node:crypto";
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { AddressInfo } from "node:net";
 import { installLocalModel } from "../src/local.ts";
+import { tempDir } from "../../../scripts/test-support/temp.ts";
 
 const MODEL = Buffer.from(Array.from({ length: 4096 }, (_, index) => index % 251));
 
@@ -38,11 +38,11 @@ async function serveModel(seenRanges: string[]): Promise<{ url: string; close: (
   };
 }
 
-test("retoma download parcial e verifica o hash", async () => {
+test("retoma download parcial e verifica o hash", async (t) => {
   const ranges: string[] = [];
   const server = await serveModel(ranges);
   try {
-    const dir = await mkdtemp(join(tmpdir(), "ff-resume-"));
+    const dir = await tempDir(t, "ff-resume-");
     const dest = join(dir, "model.bin");
     await writeFile(`${dest}.part`, MODEL.subarray(0, 1024));
 
@@ -57,11 +57,11 @@ test("retoma download parcial e verifica o hash", async () => {
   }
 });
 
-test("destino íntegro não baixa de novo", async () => {
+test("destino íntegro não baixa de novo", async (t) => {
   const ranges: string[] = [];
   const server = await serveModel(ranges);
   try {
-    const dir = await mkdtemp(join(tmpdir(), "ff-resume-"));
+    const dir = await tempDir(t, "ff-resume-");
     const dest = join(dir, "model.bin");
     await writeFile(dest, MODEL);
     const digest = createHash("sha256").update(MODEL).digest("hex");

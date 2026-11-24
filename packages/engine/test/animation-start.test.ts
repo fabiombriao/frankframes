@@ -4,10 +4,8 @@ import type { TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
-import { mkdtemp } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { openSession, openSessionFor, resolveChrome, startServer } from "../src/index.ts";
+import { tempDir } from "../../../scripts/test-support/temp.ts";
 
 const FPS = { num: 30, den: 1 };
 const VIEWPORT = { width: 640, height: 360 };
@@ -63,7 +61,7 @@ async function capture(dir: string, idleMs: number, frames: number[], html: stri
 test("animações CSS ficam congeladas no tempo 0 desde a prontidão: o pixel não depende de quanto tempo real passou", { timeout: 300_000 }, async (t) => {
   if (!(await chromeOrSkip(t))) return;
 
-  const dir = await mkdtemp(join(tmpdir(), "ff-anim-start-"));
+  const dir = await tempDir(t, "ff-anim-start-");
   const frames = [12, 36, 60, 84, 108];
   const quick = await capture(dir, 0, frames);
   const slow = await capture(dir, 2500, frames); // todas as animações terminariam em tempo real
@@ -83,7 +81,7 @@ test("o raster não depende de quanto o DOMContentLoaded demora: animações CSS
   const { port } = slow.address() as AddressInfo;
   const delayed = HTML.replace("</body>", `<script src="http://127.0.0.1:${port}/lento.js"></script></body>`);
   try {
-    const dir = await mkdtemp(join(tmpdir(), "ff-anim-dcl-"));
+    const dir = await tempDir(t, "ff-anim-dcl-");
     const frames = [12, 36];
     delayMs = 0;
     const fast = await capture(dir, 0, frames, delayed);
@@ -101,7 +99,7 @@ test("o raster não depende de quanto o DOMContentLoaded demora: animações CSS
 test("a prontidão pausa as animações em 0 antes do primeiro seek",{ timeout: 300_000 }, async (t) => {
   if (!(await chromeOrSkip(t))) return;
 
-  const dir = await mkdtemp(join(tmpdir(), "ff-anim-paused-"));
+  const dir = await tempDir(t, "ff-anim-paused-");
   const server = await startServer(dir, { page: { path: "index.html", html: HTML } });
   const session = await openSessionFor(server, { url: `${server.url}index.html`, viewport: VIEWPORT, gpu: "software" });
   try {

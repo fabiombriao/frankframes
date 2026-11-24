@@ -4,8 +4,7 @@ import { test } from "node:test";
 import type { TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdtemp, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { openSessionFor, resolveChrome, startServer } from "@frankframes/engine";
@@ -14,6 +13,7 @@ import { compileComposition } from "../src/compile.ts";
 import { resolveFfmpeg } from "../src/ffmpeg.ts";
 import type { FfmpegPair } from "../src/ffmpeg.ts";
 import { prepare } from "../src/render.ts";
+import { tempDir } from "../../../scripts/test-support/temp.ts";
 
 const run = promisify(execFile);
 const FPS = { num: 30, den: 1 };
@@ -59,7 +59,7 @@ test("câmera em <img>: panorâmica move o quadro sem degraus e o seek é determ
   const pair = await environmentOrSkip(t);
   if (pair === undefined) return;
 
-  const dir = await mkdtemp(join(tmpdir(), "ff-camera-img-"));
+  const dir = await tempDir(t, "ff-camera-img-");
   // Foto 4K cinza com um quadrado vermelho no centro: o centroide dele revela o deslocamento da câmera.
   await run(pair.ffmpeg, [
     "-hide_banner", "-loglevel", "error",
@@ -143,8 +143,8 @@ async function probeVideo(session: Session): Promise<VideoProbe> {
 }
 
 /** Prepara e abre uma composição 640x360 com um <video> de 2 s e os atributos dados. */
-async function openVideoComposition(pair: FfmpegPair, videoAttrs: string, style = "") {
-  const dir = await mkdtemp(join(tmpdir(), "ff-camera-video-"));
+async function openVideoComposition(t: TestContext, pair: FfmpegPair, videoAttrs: string, style = "") {
+  const dir = await tempDir(t, "ff-camera-video-");
   await run(pair.ffmpeg, [
     "-hide_banner", "-loglevel", "error",
     "-f", "lavfi", "-i", "testsrc2=size=320x180:rate=30:duration=2",
@@ -175,7 +175,7 @@ test("câmera em <video>: o movimento vai para a <img> do shim e o Chrome não d
   const pair = await environmentOrSkip(t);
   if (pair === undefined) return;
 
-  const { session, server } = await openVideoComposition(pair, 'data-camera="aproximar"');
+  const { session, server } = await openVideoComposition(t, pair, 'data-camera="aproximar"');
   try {
     await session.seekFrame(0, FPS);
     const first = await probeVideo(session);
@@ -207,7 +207,7 @@ test("câmera em <video>: a <img> herda object-fit do vídeo", { timeout: 600_00
   const pair = await environmentOrSkip(t);
   if (pair === undefined) return;
 
-  const { session, server } = await openVideoComposition(pair, 'data-camera="aproximar"', "object-fit:cover;");
+  const { session, server } = await openVideoComposition(t, pair, 'data-camera="aproximar"', "object-fit:cover;");
   try {
     await session.seekFrame(0, FPS);
     assert.equal((await probeVideo(session)).fit, "cover");
@@ -221,7 +221,7 @@ test("motion de entrada num <video> também chega à <img> (EDT-53)", { timeout:
   const pair = await environmentOrSkip(t);
   if (pair === undefined) return;
 
-  const { session, server } = await openVideoComposition(pair, 'data-enter="surgir dur=1"');
+  const { session, server } = await openVideoComposition(t, pair, 'data-enter="surgir dur=1"');
   try {
     await session.seekFrame(0, FPS);
     const opacity = (): Promise<number> => session.evaluate<number>('Number(getComputedStyle(document.querySelector("img[data-ff-media]")).opacity)');

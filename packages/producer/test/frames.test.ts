@@ -3,12 +3,12 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { FRAMES_ERROR_CODES, FramesError, inspectFrames, lumaStats, parseFrameTimes } from "../src/frames.ts";
 import { resolveFfmpeg } from "../src/ffmpeg.ts";
+import { tempDir } from "../../../scripts/test-support/temp.ts";
 
 const run = promisify(execFile);
 
@@ -69,33 +69,29 @@ test("inspectFrames: preto em 0,5 s é chapado, o padrão de teste em 1,5 s não
     t.skip("FFmpeg/FFprobe indisponível");
     return;
   }
-  const dir = await mkdtemp(join(tmpdir(), "ff-frames-"));
-  try {
-    const video = join(dir, "sintetico.webm");
-    // 1 s de preto seguido de 1 s de padrão de teste; só encoder LGPL permitido (libvpx-vp9), nunca libx264.
-    await run(pair.ffmpeg, [
-      "-hide_banner", "-loglevel", "error",
-      "-f", "lavfi", "-i", "color=black:s=320x180:d=1:r=30",
-      "-f", "lavfi", "-i", "testsrc2=s=320x180:d=1:r=30",
-      "-filter_complex", "[0:v][1:v]concat=n=2:v=1:a=0[v]", "-map", "[v]",
-      "-c:v", "libvpx-vp9", "-pix_fmt", "yuv420p", "-y", video,
-    ], { timeout: 60_000 });
+  const dir = await tempDir(t, "ff-frames-");
+  const video = join(dir, "sintetico.webm");
+  // 1 s de preto seguido de 1 s de padrão de teste; só encoder LGPL permitido (libvpx-vp9), nunca libx264.
+  await run(pair.ffmpeg, [
+    "-hide_banner", "-loglevel", "error",
+    "-f", "lavfi", "-i", "color=black:s=320x180:d=1:r=30",
+    "-f", "lavfi", "-i", "testsrc2=s=320x180:d=1:r=30",
+    "-filter_complex", "[0:v][1:v]concat=n=2:v=1:a=0[v]", "-map", "[v]",
+    "-c:v", "libvpx-vp9", "-pix_fmt", "yuv420p", "-y", video,
+  ], { timeout: 60_000 });
 
-    const report = await inspectFrames({ ...pair, input: video, at: "0.5,1.5", outDir: join(dir, "frames") });
-    assert.equal(report.frames.length, 2);
-    assert.ok(Math.abs(report.durationSeconds - 2) < 0.1, `duração ${report.durationSeconds}`);
-    const [black, pattern] = report.frames;
-    assert.equal(black!.t, 0.5);
-    assert.equal(black!.uniform, true, `preto: std ${black!.stdLuma}`);
-    assert.ok(black!.meanLuma < 20);
-    assert.equal(pattern!.t, 1.5);
-    assert.equal(pattern!.uniform, false, `padrão: std ${pattern!.stdLuma}`);
-    assert.ok(pattern!.stdLuma > 2);
-    for (const frame of report.frames) assert.ok(existsSync(frame.png), `PNG ausente: ${frame.png}`);
-    assert.match(black!.png, /t-500\.png$/);
-  } finally {
-    await rm(dir, { recursive: true, force: true });
-  }
+  const report = await inspectFrames({ ...pair, input: video, at: "0.5,1.5", outDir: join(dir, "frames") });
+  assert.equal(report.frames.length, 2);
+  assert.ok(Math.abs(report.durationSeconds - 2) < 0.1, `duração ${report.durationSeconds}`);
+  const [black, pattern] = report.frames;
+  assert.equal(black!.t, 0.5);
+  assert.equal(black!.uniform, true, `preto: std ${black!.stdLuma}`);
+  assert.ok(black!.meanLuma < 20);
+  assert.equal(pattern!.t, 1.5);
+  assert.equal(pattern!.uniform, false, `padrão: std ${pattern!.stdLuma}`);
+  assert.ok(pattern!.stdLuma > 2);
+  for (const frame of report.frames) assert.ok(existsSync(frame.png), `PNG ausente: ${frame.png}`);
+  assert.match(black!.png, /t-500\.png$/);
 });
 
 test("inspectFrames: arquivo inexistente ou que não é vídeo dá E_FRAMES_INPUT com dica de renderizar", async (t) => {
@@ -104,19 +100,15 @@ test("inspectFrames: arquivo inexistente ou que não é vídeo dá E_FRAMES_INPU
     t.skip("FFmpeg/FFprobe indisponível");
     return;
   }
-  const dir = await mkdtemp(join(tmpdir(), "ff-frames-"));
-  try {
-    await assert.rejects(
-      inspectFrames({ ...pair, input: join(dir, "nao-existe.mp4"), at: "50%", outDir: join(dir, "f") }),
-      (error: FramesError) => error.code === "E_FRAMES_INPUT" && /render/.test(error.hint),
-    );
-    const lixo = join(dir, "lixo.mp4");
-    await writeFile(lixo, "isto não é um vídeo");
-    await assert.rejects(
-      inspectFrames({ ...pair, input: lixo, at: "50%", outDir: join(dir, "f") }),
-      (error: FramesError) => error.code === "E_FRAMES_INPUT",
-    );
-  } finally {
-    await rm(dir, { recursive: true, force: true });
-  }
+  const dir = await tempDir(t, "ff-frames-");
+  await assert.rejects(
+    inspectFrames({ ...pair, input: join(dir, "nao-existe.mp4"), at: "50%", outDir: join(dir, "f") }),
+    (error: FramesError) => error.code === "E_FRAMES_INPUT" && /render/.test(error.hint),
+  );
+  const lixo = join(dir, "lixo.mp4");
+  await writeFile(lixo, "isto não é um vídeo");
+  await assert.rejects(
+    inspectFrames({ ...pair, input: lixo, at: "50%", outDir: join(dir, "f") }),
+    (error: FramesError) => error.code === "E_FRAMES_INPUT",
+  );
 });
