@@ -502,6 +502,21 @@
             "Gate completo verde."
           ],
           "jiraKey": "EDT-82"
+        },
+        {
+          "summary": "Código de produção engole erro ao remover temporário (catch vazio)",
+          "points": 2,
+          "labels": [
+            "bug",
+            "robustez"
+          ],
+          "acceptance": [
+            "Visto em 2026-11-24 na revisão do EDT-82: packages/producer/src/audio.ts:423 e scripts/showreel.ts:85 fazem rm(..., { force: true }).catch(() => {}), catch vazio proibido pelas regras; packages/cli/src/generate-context.ts:192 cria ff-generate-* sem remoção garantida em caso de falha; setup.ts:114, goldens.ts:123 e transcribe/src/local.ts:95 removem com force: true; generate-motion-thumbs.ts:214 usa prefixo fora do padrão ff-.",
+            "Cada temporário de produção é removido em finally; falha de remoção vira aviso visível (ou erro, quando o resultado depende dela) com o caminho, nunca é engolida. force: true só onde ENOENT é esperado, com comentário.",
+            "Varredura que falharia sem a mudança: nenhum .catch(() => {}) nem catch vazio em packages/*/src e scripts/ (mesma ideia do teste de catálogo do EDT-80).",
+            "Gate completo verde."
+          ],
+          "jiraKey": "EDT-83"
         }
       ],
       "jiraKey": "EDT-26"
