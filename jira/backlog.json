@@ -671,6 +671,53 @@
           ],
           "acceptance": "Adicionar, mover e remover keyframe no playhead para volume e para as propriedades visuais do contrato de motion; marcas aparecem na barra do clip; valor e curva editáveis no inspetor; entra no desfazer.",
           "jiraKey": "EDT-47"
+        },
+        {
+          "summary": "Studio não edita a duração autoral da raiz; o playhead para no fim sem aviso",
+          "points": 3,
+          "labels": [
+            "bug",
+            "studio"
+          ],
+          "acceptance": [
+            "Visto no aceite do EDT-64 em 2026-11-24: o init gera a raiz com data-duration=\"4\"; importar um clip de 68 s não muda a duração; preview e playhead ficam limitados a 0–119 frames sem diagnóstico, e não dá para dividir em 8 s.",
+            "Inspetor da composição (raiz) edita data-duration (segundos, ou 'derivada', que remove o atributo), data-width, data-height e data-fps pelo motor de edição, com validação do contrato e desfazer/refazer.",
+            "Clip que passa do fim autoral da raiz gera diagnóstico de contrato com código registrado (lint e Studio), com o clip e os instantes; o Studio mostra o aviso e não limita o playhead em silêncio.",
+            "Spec em docs/contract.md no mesmo commit; testes que falhariam sem a mudança; gate verde."
+          ],
+          "jiraKey": "EDT-84"
+        },
+        {
+          "summary": "Studio e CLI: desvios pequenos vistos no aceite",
+          "points": 2,
+          "labels": [
+            "bug",
+            "studio",
+            "cli"
+          ],
+          "acceptance": [
+            "Clique na borda esquerda do scrubber dá frame 1 (0,033 s): passa a dar frame 0, com teste nas duas bordas.",
+            "Mudar data-start no inspetor regravou data-duration de 68.164583 para 68.165 (atributo não tocado mudou e passou da fonte): o motor de edição só regrava o atributo alterado e nunca arredonda para cima um valor derivado da fonte.",
+            "O playhead avançou sozinho até o fim da composição antes da primeira ação: o Studio abre pausado em 0, com teste.",
+            "frankframes init --help criou index.html em vez de mostrar ajuda: --help/-h em todo subcomando mostra a ajuda e não escreve nada, com teste que varre os subcomandos.",
+            "Gate verde."
+          ],
+          "jiraKey": "EDT-85"
+        },
+        {
+          "summary": "Vídeo com rotação de exibição (celular em retrato)",
+          "points": 2,
+          "labels": [
+            "bug",
+            "midia"
+          ],
+          "acceptance": [
+            "Visto no aceite do EDT-64: o A001 é 1920x1080 com display matrix de rotação -90 (exibe 1080x1920).",
+            "Probe e importação reportam as dimensões de exibição e a rotação; extração de frames, preview, Studio e render aplicam a mesma orientação, ou falham alto com código registrado.",
+            "Fixture sintética gerada pelo FFmpeg no teste (display rotation 90, sem binário versionado); o teste compara a orientação do frame extraído e do frame renderizado e falharia sem a mudança.",
+            "docs/contract.md descreve a regra de rotação; gate verde."
+          ],
+          "jiraKey": "EDT-86"
         }
       ],
       "jiraKey": "EDT-35"
