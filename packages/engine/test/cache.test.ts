@@ -1,5 +1,6 @@
 // FrankFrames — proprietário. Ver LICENSE na raiz.
-import { test } from "node:test";
+import { after, before, test } from "node:test";
+import type { TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { mkdir, mkdtemp, readdir, rm, utimes, writeFile } from "node:fs/promises";
@@ -11,6 +12,27 @@ import { assetPath } from "../src/home.ts";
 
 const run = promisify(execFile);
 
+/** Diretórios que estes testes criam em os.tmpdir(). */
+const TEMP_PREFIXES = ["ff-cache-", "ff-evict-"];
+const listTemp = async (): Promise<string[]> => (await readdir(tmpdir())).filter((name) => TEMP_PREFIXES.some((prefix) => name.startsWith(prefix)));
+
+// EDT-81: nenhum teste deste arquivo pode deixar diretório em %TEMP%. Compara com o que já existia antes da suíte.
+let tempBefore = new Set<string>();
+before(async () => {
+  tempBefore = new Set(await listTemp());
+});
+after(async () => {
+  const leaked = (await listTemp()).filter((name) => !tempBefore.has(name));
+  assert.deepEqual(leaked, [], "os testes deixaram diretório temporário em os.tmpdir()");
+});
+
+/** Cada teste remove o próprio diretório; falha na remoção aparece no teste (sem force). */
+async function tempDir(t: TestContext, prefix: string): Promise<string> {
+  const dir = await mkdtemp(join(tmpdir(), prefix));
+  t.after(() => rm(dir, { recursive: true, force: false }));
+  return dir;
+}
+
 test("segunda extração do mesmo vídeo não chama o ffmpeg", { timeout: 300_000 }, async (t) => {
   const ffmpegPath = assetPath("ffmpeg", "bin", process.platform === "win32" ? "ffmpeg.exe" : "ffmpeg");
   const pair = { ffmpeg: ffmpegPath };
@@ -20,7 +42,7 @@ test("segunda extração do mesmo vídeo não chama o ffmpeg", { timeout: 300_00
     return t.skip("ffmpeg não encontrado");
   }
 
-  const dir = await mkdtemp(join(tmpdir(), "ff-cache-"));
+  const dir = await tempDir(t, "ff-cache-");
   const clip = join(dir, "clip.mp4");
   await run(pair.ffmpeg, [
     "-hide_banner", "-loglevel", "error",
@@ -52,8 +74,8 @@ test("chave muda com janela e com conteúdo", () => {
   assert.equal(frameCacheKey(base), frameCacheKey({ ...base }));
 });
 
-test("evicção remove o mais antigo até caber no teto", async () => {
-  const root = await mkdtemp(join(tmpdir(), "ff-evict-"));
+test("evicção remove o mais antigo até caber no teto", async (t) => {
+  const root = await tempDir(t, "ff-evict-");
   for (const [name, seconds] of [["velho", 1_000_000], ["novo", 1_100_000]] as const) {
     await mkdir(join(root, name), { recursive: true });
     await writeFile(join(root, name, "frame.jpg"), Buffer.alloc(4096));
@@ -64,8 +86,8 @@ test("evicção remove o mais antigo até caber no teto", async () => {
   assert.deepEqual(await readdir(root), ["novo"]);
 });
 
-test("evicção com inUse não apaga o diretório em escrita, mesmo sendo o mais antigo", async () => {
-  const root = await mkdtemp(join(tmpdir(), "ff-evict-uso-"));
+test("evicção com inUse não apaga o diretório em escrita, mesmo sendo o mais antigo", async (t) => {
+  const root = await tempDir(t, "ff-evict-uso-");
   for (const [name, seconds] of [["em-uso", 1_000_000], ["novo", 1_100_000]] as const) {
     await mkdir(join(root, name), { recursive: true });
     await writeFile(join(root, name, "frame.jpg"), Buffer.alloc(4096));
@@ -94,7 +116,7 @@ async function makeClip(dir: string, seconds: number, size = "160x90"): Promise<
 }
 
 test("duas extrações simultâneas do mesmo arquivo dão o mesmo dir, uma extração só e nenhum .tmp- sobrando", { timeout: 300_000 }, async (t) => {
-  const dir = await mkdtemp(join(tmpdir(), "ff-cache-conc-"));
+  const dir = await tempDir(t, "ff-cache-conc-");
   const made = await makeClip(dir, 1);
   if (made === undefined) return t.skip("ffmpeg não encontrado");
   const cacheRoot = join(dir, "cache");
@@ -111,7 +133,7 @@ test("duas extrações simultâneas do mesmo arquivo dão o mesmo dir, uma extra
 });
 
 test("cancelar no meio da extração não deixa .tmp- nem .complete falso, e a chamada seguinte extrai de verdade", { timeout: 300_000 }, async (t) => {
-  const dir = await mkdtemp(join(tmpdir(), "ff-cache-cancel-"));
+  const dir = await tempDir(t, "ff-cache-cancel-");
   // Um clipe longo o bastante para o abort cair no meio da extração.
   const made = await makeClip(dir, 40, "640x360");
   if (made === undefined) return t.skip("ffmpeg não encontrado");
@@ -140,8 +162,7 @@ async function listOrEmpty(dir: string): Promise<string[]> {
 }
 
 test("cancelamentos em paralelo, com o FFmpeg escrevendo, não deixam .tmp- nem trocam o erro de cancelamento", { timeout: 300_000 }, async (t) => {
-  const dir = await mkdtemp(join(tmpdir(), "ff-cache-cancel-par-"));
-  t.after(() => rm(dir, { recursive: true, force: true }));
+  const dir = await tempDir(t, "ff-cache-cancel-par-");
   const made = await makeClip(dir, 40, "640x360");
   if (made === undefined) return t.skip("ffmpeg não encontrado");
   const cacheRoot = join(dir, "cache");
