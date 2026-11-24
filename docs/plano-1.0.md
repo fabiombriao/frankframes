@@ -2932,3 +2932,39 @@ Passos:
 5. Robustez: rodar o `hw-determinism.test.ts` 3× com carga artificial de CPU em paralelo (o sintoma
    original aparecia sob carga) e 1× `FF_GPU=1` em `determinism.test.ts` ("determinismo em hardware forçado").
 6. Goldens rodam em `software` (`packages/catalog/test/goldens.test.ts`): não mudam. Gate completo verde.
+
+---
+
+## EDT-13 — gate em modo software em duas máquinas (Windows + Linux x64 em Docker)
+
+Decisão do titular (2026-11-24): a segunda máquina é Linux nesta mesma máquina; ele autorizou os downloads
+num contêiner Docker (WSL2): `node:24-bookworm`, libs do Chrome pelo apt, `chrome-headless-shell`
+158.0.8127.36 linux64 e o FFmpeg LGPL linux64 do BtbN. Limitação declarada: mesma CPU. EDT-5, 19, 34 e 63
+ficam pós-1.0.
+
+Fatos: o browser (`packages/engine/src/pin.ts`) e o FFmpeg (`packages/encode/src/ffmpeg-build.ts`) só
+têm pin `win64`. O FFmpeg aponta para `releases/download/latest/…`, que é móvel: o SHA-256 pinado deixa de
+bater quando o BtbN publica outro build, e uma instalação nova falha (alto, mas falha). Isso bloqueia o
+release do EDT-65 também.
+
+Passos:
+1. **Pins por plataforma.** `PINNED_BROWSER` e `FFMPEG_BUILD` viram tabelas por plataforma
+   (`win64`, `linux64`), com um seletor que falha alto com código e `hint` em plataforma sem pin
+   (`E_PLATFORM_UNSUPPORTED` ou equivalente, registrado no catálogo de diagnósticos). Mesma versão do Chrome
+   nas duas.
+2. **FFmpeg em tag imutável.** Trocar `latest` por uma release datada do BtbN (`autobuild-AAAA-MM-DD-…`) que
+   tenha `win64-lgpl-8.1` e `linux64-lgpl-8.1`. Se a versão atual (`n8.1.3-39-g660b5aa7db`) não existir em tag
+   datada, re-pinar as duas plataformas na mesma tag nova; registrar em `PROVENANCE.md`/`THIRD-PARTY-NOTICES.md`.
+   O tar.xz do Linux precisa de extração (`tar -xJf`); a guarda de licença (sem `--enable-gpl`) roda nos dois.
+3. **Linux funcionando.** `setup`, `doctor`, `browser install`, `render` e o gate completo no contêiner.
+   Dockerfile em `scripts/linux/Dockerfile` (só libs do sistema e Node; nada de npm global além do
+   projeto), e `scripts/linux/gate.ps1` ou `.ts` que monta o checkout **somente leitura** (cópia para
+   dentro do contêiner, `node_modules` próprio) e roda `node scripts/ci.ts`. Sem GitHub Actions, sem
+   serviço externo.
+4. **Comparação.** O gate em `software` dos dois lados; `catalog/goldens.json` é o manifest. Relatório
+   em `docs/determinismo-plataformas.md`: quantos frames com hash idêntico entre Windows e Linux, quantos
+   só passam por PSNR (≥ 50 dB) e quais falham. Diferença por fonte/rasterização vira achado documentado,
+   não ajuste de golden. Se algum golden falha no Linux, parar e devolver ao planejador.
+5. Spec: `docs/contract.md` §9 (GPU/plataformas) diz que Linux x64 é suportado e o que foi medido.
+6. Teste unitário dos seletores de pin (plataforma sem pin falha alto) e do caminho tar.xz. Gate completo
+   verde no Windows e no Linux.
