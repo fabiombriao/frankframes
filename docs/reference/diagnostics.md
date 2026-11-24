@@ -9,6 +9,11 @@ Gerado por `node scripts/generate-reference.ts` a partir do código. Não edite 
 | `E_BROWSER_TIMEOUT` | erro | render |
 | `E_CANCELED` | erro | render |
 | `E_CODEC_UNSUPPORTED` | erro | licença/encode |
+| `E_CODEX_AUTH` | erro | geração |
+| `E_CODEX_FAILED` | erro | geração |
+| `E_CODEX_MISSING` | erro | geração |
+| `E_CODEX_OUTPUT` | erro | geração |
+| `E_CODEX_TIMEOUT` | erro | geração |
 | `E_CONTRACT` | erro | render |
 | `E_CURVE_INVALID` | erro | contrato |
 | `E_DUPLICATE_ID` | erro | contrato |
@@ -23,6 +28,12 @@ Gerado por `node scripts/generate-reference.ts` a partir do código. Não edite 
 | `E_FPS_INVALID` | erro | contrato |
 | `E_FRAMES_INPUT` | erro | frames |
 | `E_FRAMES_TIME` | erro | frames |
+| `E_GEN_DURATION_MISMATCH` | erro | geração |
+| `E_GEN_EXHAUSTED` | erro | geração |
+| `E_GEN_FORBIDDEN` | erro | geração |
+| `E_GEN_FORMAT_MISMATCH` | erro | geração |
+| `E_GEN_OUT_EXISTS` | erro | geração |
+| `E_GEN_REQUEST_INVALID` | erro | geração |
 | `E_GPL_ENCODER` | erro | licença/encode |
 | `E_H264_NOT_OPTED_IN` | erro | licença/encode |
 | `E_INTERNAL` | erro | render |
@@ -52,6 +63,7 @@ Gerado por `node scripts/generate-reference.ts` a partir do código. Não edite 
 | `E_VAR_UNKNOWN` | erro | render |
 | `E_VOLUME_INVALID` | erro | contrato |
 | `E_WHISPER_MISSING` | erro | transcrição |
+| `W_GEN_FRAME_BLANK` | aviso | geração |
 | `W_KEYFRAME_CURVE_IGNORED` | aviso | contrato |
 | `W_KEYFRAME_OUT_OF_RANGE` | aviso | contrato |
 | `W_MOTION_JUMP` | aviso | contrato |

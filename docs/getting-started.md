@@ -157,6 +157,20 @@ node packages/cli/src/cli.ts skill install --cursor    # .cursor/rules/<nome>.md
 Quem edita `skills/` roda `node scripts/sync-skill.ts` para atualizar a cópia publicada em `packages/cli/skill/`
 (e a tabela de presets da skill de geração, que sai do código).
 
+## Gerar a partir de texto
+
+Com o Codex CLI instalado e logado na sua conta ChatGPT, um pedido em texto vira uma composição conferida e um
+rascunho em MP4:
+
+```bash
+codex login                                    # uma vez; entra com a conta ChatGPT
+node packages/cli/src/cli.ts generate "abertura de 6 s para o relatório do trimestre" -o out/abertura
+```
+
+O comando confere o HTML (lint, formato, duração), renderiza `out/abertura/draft.mp4`, confere três frames e abre o
+Studio com o resultado. O Codex só enxerga texto (skill, contrato, catálogo, presets); mídia sua nunca é enviada.
+Detalhes, opções, o que sai da máquina e os códigos de erro: [docs/generate.md](generate.md).
+
 ## Problemas comuns
 
 | Sintoma | Causa | Correção |

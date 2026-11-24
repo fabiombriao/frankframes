@@ -25,7 +25,10 @@ import { installBlockFromUrl, listBlocks, readBlock } from "@frankframes/catalog
 import { runBatchCommand } from "./batch-command.ts";
 import { buildCatalogIndex, publishCatalog, serveCatalog } from "./catalog-server.ts";
 import { runFramesCommand } from "./frames-command.ts";
+import { runGenerateCommand } from "./generate-command.ts";
 import { startGallery } from "./gallery.ts";
+import { openBrowser } from "./open-browser.ts";
+import { lintReport } from "./lint-report.ts";
 import { runDoctor, runInit, runSkillInstall } from "./onboarding.ts";
 import { defaultOutput, guardEncoder } from "./render-guard.ts";
 import { runSetup } from "./setup.ts";
@@ -46,6 +49,10 @@ uso:
   frankframes render --batch lote.json [--concurrency N] [--json]
   frankframes frames <video.mp4|.webm> [--at 10%,50%,90%|1.5,3] [-o pasta] [--json]
                                     (extrai PNGs de instantes-chave e marca frames chapados: confira o render)
+  frankframes generate "<pedido>" [-o pasta] [--format 16:9|9:16|1:1] [--duration S] [--attempts N]
+                                    [--model M] [--timeout S] [--project pasta] [--no-render] [--no-studio]
+                                    [--force] [--keep-context] [--json]
+                                    (gera o vídeo a partir de texto com o Codex CLI; exige \`codex login\` com conta ChatGPT)
   frankframes preview <arquivo.html> [--open]
   frankframes studio <arquivo.html> [--port N]
   frankframes transcribe <audio> [--provider local|groq|openai-compatible] [--language pt] [--json]
@@ -69,6 +76,7 @@ ambiente:
   FFMPEG_PATH / FFPROBE_PATH     binários usados no render
   FRANKFRAMES_FFMPEG_MODE        "distribution" bloqueia binário GPL; padrão "user-provided" (avisa)
   FRANKFRAMES_ALLOW_H264=1       libera H.264 via libopenh264
+  FRANKFRAMES_CODEX              caminho do Codex CLI para o \`generate\` (padrão: \`codex\` no PATH)
 
 lint e render saem com código 1 em erro. Em lote, saem com 1 se algum job falhar; o relatório fica em batch-report.json.`;
 
@@ -211,6 +219,11 @@ async function main(): Promise<void> {
     process.exitCode = await runFramesCommand(argv.slice(1));
     return;
   }
+  // `generate` também: pedido em texto e flags próprias (`--format`, `--attempts`…).
+  if (argv[0] === "generate") {
+    process.exitCode = await runGenerateCommand(argv.slice(1));
+    return;
+  }
   let cli: Cli;
   try {
     cli = parseCli(argv);
@@ -327,23 +340,10 @@ async function main(): Promise<void> {
   }
 
   if (cli.command === "lint") {
-    const composition = loadComposition(readFileSync(entry, "utf8"));
+    const html = readFileSync(entry, "utf8");
+    const composition = loadComposition(html);
     if (cli.json) {
-      process.stdout.write(
-        `${JSON.stringify(
-          {
-            file: entry,
-            ok: composition.ok,
-            id: composition.id,
-            fps: composition.fps,
-            duration: composition.duration,
-            clips: composition.clips.map((c) => ({ id: c.id, start: c.start, end: c.end, media: c.isMedia, sub: c.isSubComposition })),
-            diagnostics: composition.diagnostics,
-          },
-          null,
-          2,
-        )}\n`,
-      );
+      process.stdout.write(`${JSON.stringify(lintReport(html, entry), null, 2)}\n`);
     } else {
       const { duration } = composition;
       const seconds = duration.kind === "unresolved" ? "não resolvida" : `${duration.seconds.toFixed(3)}s`;
@@ -559,8 +559,7 @@ async function main(): Promise<void> {
     const url = `${server.url}${basename(entry)}`;
     process.stdout.write(`preview ${url}\n${prepared.totalFrames} frames · ${prepared.seconds.toFixed(3)}s · Ctrl+C encerra\n`);
     if (cli.flags.includes("--open")) {
-      const { exec } = await import("node:child_process");
-      exec(`${process.platform === "win32" ? "start" : process.platform === "darwin" ? "open" : "xdg-open"} "${url}"`);
+      openBrowser(url);
     }
 
     let recompiling = false;
