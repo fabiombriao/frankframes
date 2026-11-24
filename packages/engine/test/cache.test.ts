@@ -2,11 +2,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, readdir, utimes, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, rm, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import { evictCache, extractFramesCached, frameCacheKey } from "../src/cache.ts";
+import { evictCache, extractFramesCached, fileDigest, frameCacheKey } from "../src/cache.ts";
 import { assetPath } from "../src/home.ts";
 
 const run = promisify(execFile);
@@ -127,4 +127,72 @@ test("cancelar no meio da extração não deixa .tmp- nem .complete falso, e a c
   const again = await extractFramesCached(options);
   assert.equal(again.hit, false, "sem .complete falso: a extração acontece de novo");
   assert.ok(again.frameCount > 0);
+});
+
+/** `readdir` que devolve [] só para ENOENT (o temporário ainda não existe ou já foi limpo); qualquer outro erro sobe. */
+async function listOrEmpty(dir: string): Promise<string[]> {
+  try {
+    return await readdir(dir);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+    throw error;
+  }
+}
+
+test("cancelamentos em paralelo, com o FFmpeg escrevendo, não deixam .tmp- nem trocam o erro de cancelamento", { timeout: 300_000 }, async (t) => {
+  const dir = await mkdtemp(join(tmpdir(), "ff-cache-cancel-par-"));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const made = await makeClip(dir, 40, "640x360");
+  if (made === undefined) return t.skip("ffmpeg não encontrado");
+  const cacheRoot = join(dir, "cache");
+  const digest = await fileDigest(made.clip);
+  const fps = { num: 30, den: 1 };
+
+  // Janelas distintas = chaves distintas: cada chamada é dona da própria extração (nenhuma só espera outra).
+  // Rodadas de 12 em paralelo: carga alta demais atrasa o início do FFmpeg e o abort cai antes de ele escrever.
+  const cancelOne = async (index: number): Promise<void> => {
+    const offset = index * 0.05;
+    const key = frameCacheKey({ digest, fps, offset, duration: 30 });
+    const controller = new AbortController();
+    const pending = extractFramesCached({
+      ffmpeg: made.ffmpeg, input: made.clip, outDir: join(cacheRoot, "x"), fps,
+      offset, duration: 30, root: cacheRoot, signal: controller.signal,
+    });
+    // O abort cai com o FFmpeg já escrevendo, em pontos diferentes (1, 5, 9... frames no temporário).
+    const frames = 1 + (index % 6) * 4;
+    // Vigia sequencial: no máximo uma leitura em voo e nenhuma depois do abort, para que nenhum handle do teste
+    // esteja aberto no temporário quando a limpeza do extractInto rodar (no Windows isso vira EBUSY/ENOTEMPTY).
+    let finished = false;
+    let watcherError: unknown;
+    const watcher = (async (): Promise<void> => {
+      while (!finished) {
+        const temp = (await listOrEmpty(cacheRoot)).find((name) => name.startsWith(`${key}.tmp-`));
+        if (temp !== undefined && (await listOrEmpty(join(cacheRoot, temp))).length >= frames) {
+          controller.abort();
+          return;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 2));
+      }
+    })().catch((error: unknown) => {
+      // Erro real de leitura (não ENOENT): encerra a chamada e o teste falha com ele, em vez de sumir.
+      watcherError = error;
+      controller.abort();
+    });
+    try {
+      // O cancelamento tem de chegar como cancelamento, nunca como falha da limpeza (EBUSY, ENOTEMPTY...).
+      await assert.rejects(pending, (error: Error) => error.name === "AbortError", `chamada ${index}`);
+    } finally {
+      finished = true;
+      await watcher;
+    }
+    if (watcherError !== undefined) throw watcherError;
+    // A promessa só rejeita depois da limpeza: conferir na hora, sem esperar. Só o temporário desta chamada
+    // (o das outras ainda em extração é legítimo).
+    const left = (await readdir(cacheRoot)).filter((name) => name.startsWith(`${key}.tmp-`));
+    assert.deepEqual(left, [], `chamada ${index} deixou temporário`);
+  };
+  for (let round = 0; round < 8; round += 1) {
+    await Promise.all(Array.from({ length: 12 }, (_, i) => cancelOne(round * 12 + i)));
+  }
+  assert.deepEqual(await readdir(cacheRoot), [], "nada sobra no cache depois de todos os cancelamentos");
 });

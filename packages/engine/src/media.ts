@@ -5,6 +5,21 @@ import { promisify } from "node:util";
 
 const run = promisify(execFile);
 
+/**
+ * Como `execFile`, mas só resolve ou rejeita depois que o processo saiu. No abort o Node rejeita na hora do kill, com o filho
+ * ainda vivo e com arquivos abertos; quem limpa a saída em seguida esbarra em EBUSY (Windows) ou em arquivo novo.
+ */
+function runUntilExit(file: string, args: string[], options: { maxBuffer: number; signal?: AbortSignal }): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const child = execFile(file, args, options, (error) => {
+      const settle = (): void => (error === null ? resolve() : reject(error));
+      // Falha ao subir o processo (sem pid) ou já saiu: nada a esperar.
+      if (child.pid === undefined || child.exitCode !== null || child.signalCode !== null) settle();
+      else child.once("exit", settle);
+    });
+  });
+}
+
 export interface MediaManifestEntry {
   /** `data-clip-id` do `<video>` que será substituído. */
   clipId: string;
@@ -78,7 +93,7 @@ export async function extractFrames(options: ExtractOptions): Promise<{ frameCou
     "-y",
     `${options.outDir}/%06d.jpg`,
   ];
-  await run(options.ffmpeg, args, { maxBuffer: 16 << 20, ...(options.signal !== undefined ? { signal: options.signal } : {}) });
+  await runUntilExit(options.ffmpeg, args, { maxBuffer: 16 << 20, ...(options.signal !== undefined ? { signal: options.signal } : {}) });
   const files = (await readdir(options.outDir)).filter((name) => name.endsWith(".jpg"));
   if (files.length === 0) throw new Error(`nenhum frame extraído de ${options.input}`);
   return { frameCount: files.length, pattern: `${options.outDir}/%06d.jpg` };
