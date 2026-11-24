@@ -15,6 +15,7 @@ Gerado por `node scripts/generate-reference.ts` a partir do código. Não edite 
 | `E_DURATION` | erro | render |
 | `E_DURATION_INVALID` | erro | contrato |
 | `E_DURATION_UNRESOLVED` | erro | contrato |
+| `E_ENCODE` | erro | render |
 | `E_ENCODER_MISSING` | erro | licença/encode |
 | `E_FADE_INVALID` | erro | contrato |
 | `E_FFMPEG_GPL` | erro | licença/encode |

@@ -83,14 +83,18 @@ function throwIfCanceled(signal: AbortSignal | undefined, stage: RenderStage): v
 }
 
 /**
+ * Falha do FFmpeg alimentado por pipe: `E_ENCODE` no estágio `encode`, com a stderr dele na mensagem e um hint
+ * acionável (o pipe caiu por causa do FFmpeg, do disco ou da entrada, nunca por um defeito da composição).
+ */
+export function encodeFailure(error: unknown): RenderError | undefined {
+  if (!(error instanceof PipeEncodeError)) return undefined;
+  return new RenderError("E_ENCODE", "encode", `${error.message} (confira o FFmpeg com \`frankframes doctor\` e o espaço livre em disco, e rode de novo)`);
+}
+
+/**
  * Falha do runtime do motion durante a prontidão da página (conflito de posse, alvo
  * proibido, JSON inválido): sai com código próprio em vez de "erro interno".
  */
-/** Falha do FFmpeg alimentado por pipe: vira erro do estágio `encode` com a stderr dele na mensagem. */
-function encodeFailure(error: unknown): RenderError | undefined {
-  return error instanceof PipeEncodeError ? new RenderError("E_INTERNAL", "encode", error.message) : undefined;
-}
-
 function motionFailure(error: unknown): RenderError | undefined {
   const message = error instanceof Error ? error.message : String(error);
   const match = /E_MOTION_[A-Z_]+: [^\r\n]*/.exec(message);

@@ -9,7 +9,9 @@ import { promisify } from "node:util";
 import { crc32, deflateSync } from "node:zlib";
 import { buildFramePipeArgs, buildFrameSequenceArgs } from "@frankframes/encode";
 import { retryOnceIfTransient } from "@frankframes/engine";
+import { toErrorPayload } from "../src/errors.ts";
 import { PipeEncodeError, encodeWhileCapturing } from "../src/pipe-encode.ts";
+import { encodeFailure } from "../src/render.ts";
 
 const run = promisify(execFile);
 const FFMPEG = process.env.FFMPEG_PATH ?? "ffmpeg";
@@ -151,6 +153,15 @@ test("FFmpeg cai no meio: a captura para e o erro traz a stderr dele", { timeout
       assert.ok(error instanceof PipeEncodeError, `esperava PipeEncodeError, veio ${String(error)}`);
       assert.match(error.message, /FFmpeg terminou com/);
       assert.match(error.message, /png|Invalid|decod|Error/i, "a stderr do FFmpeg precisa estar na mensagem");
+      // Como o render a vê: E_ENCODE no estágio encode, com stderr e hint, e o payload --json não rebaixa o código (EDT-62).
+      const render = encodeFailure(error);
+      assert.ok(render !== undefined);
+      assert.equal(render.code, "E_ENCODE");
+      assert.equal(render.stage, "encode");
+      assert.match(render.message, /png|Invalid|decod|Error/i);
+      assert.match(render.message, /frankframes doctor/, "o hint precisa mandar conferir o FFmpeg");
+      assert.equal(toErrorPayload(render).code, "E_ENCODE");
+      assert.equal(toErrorPayload(render).stage, "encode");
       return true;
     });
     assert.ok(delivered < total, `a captura não parou: ${delivered} de ${total} frames entregues`);
@@ -324,4 +335,10 @@ test("retry de falha transitória recomeça o pipe do zero: FFmpeg novo, sem fra
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
+});
+
+test("encodeFailure só reconhece PipeEncodeError: o resto segue a classificação normal (EDT-62)", () => {
+  assert.equal(encodeFailure(new Error("Protocol error TargetCloseError")), undefined);
+  assert.equal(encodeFailure("texto"), undefined);
+  assert.equal(encodeFailure(new PipeEncodeError("FFmpeg terminou com código 1"))?.code, "E_ENCODE");
 });

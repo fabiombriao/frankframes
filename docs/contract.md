@@ -604,7 +604,8 @@ argumentos de saída; coberto por teste com `framemd5`). O disco só guarda o v�
   termina de fechar o vídeo; `encode` 80→90 é só essa cauda (esperar o FFmpeg depois do último frame); `assemble`
   segue depois. Em `onProgress`, `capture 75` significa "todos os frames entregues", não "vídeo pronto".
 - **Falha alta nos dois sentidos.** Erro no pipe (`EPIPE`) ou FFmpeg que morre derruba a captura na hora (os workers
-  presos no backpressure são liberados) com a stderr do FFmpeg na mensagem: `E_INTERNAL`, `stage: "encode"`. Falha da
+  presos no backpressure são liberados) com a stderr do FFmpeg na mensagem: `E_ENCODE`, `stage: "encode"`, hint para conferir o FFmpeg com
+  `frankframes doctor` e o espaço livre em disco. Falha da
   captura mata o FFmpeg. Cancelamento encerra os dois e não deixa `.partial`. Um frame que nunca chega faz o encode
   falhar em vez de fechar um vídeo curto.
 - **Repetição (EDT-72).** A repetição única de falha transiente do browser reinicia o pipe do zero: FFmpeg novo,

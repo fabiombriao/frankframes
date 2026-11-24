@@ -95,12 +95,9 @@ export function startPipeEncoder(options: PipeEncoderOptions): PipeEncoder {
     });
   });
 
+  // `kill()` não lança quando o processo já saiu (devolve false): nada a tratar aqui.
   function killSync(): void {
-    try {
-      child.kill();
-    } catch {
-      /* já saiu */
-    }
+    child.kill();
   }
   // Antes dos outros handlers de saída: o diretório de trabalho só pode ser apagado com o FFmpeg já morto.
   process.prependOnceListener("exit", killSync);
@@ -131,6 +128,7 @@ export function startPipeEncoder(options: PipeEncoderOptions): PipeEncoder {
       const stdin = child.stdin!;
       if (stdin.write(png)) return;
       // Buffer interno cheio: espera esvaziar (backpressure), ou o FFmpeg cair, ou o pipe quebrar.
+      // O erro do pipe (EPIPE) já foi anotado em `stdinBroken` pelo ouvinte acima: a falha de verdade é lançada logo abaixo.
       await Promise.race([once(stdin, "drain"), closedPromise]).catch(() => undefined);
       if (failure !== undefined) throw failure;
       if (closed || stdinBroken) {

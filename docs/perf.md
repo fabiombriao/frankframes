@@ -220,6 +220,7 @@ JSON: `h1-20261123-1938.json`, `frame-software-20261123-1949.json`, `frame-hardw
 | H4 | `h4` | 21,7 / 16,8 | 106 / 113 / 116 (hw); 132 / 137 / 153 (sw) | pixels idênticos; PNG ~2× maior |
 | H1 | `h1` | 22,1 / 18,8 | 104 / 106 / 112 (hw, igual); 119,5 / 122 / 130 (sw) | só software (EDT-77: hardware mantém 2 esperas) |
 | H2+H3 | `h23` | 22,2 / 16,6² | 83,3 / 87,5 / 89,6 (hw); 110,5 / 109,4 / 120,5 (sw) | encode junto da captura, sem PNG em disco; disco 382/453 MB → < 1 MB; vídeo sem ganho claro |
+| H5 | `h5` / `h5d` | 20,2 / 15,9 (6 workers, standard) | 92,5 (hw) / 116,1 (sw) com 6 workers, standard; 81,9 / 113,4 em draft | sem mudança: 6 workers é o joelho em hardware (6 ≈ 8, 4 e 12 pioram 10–22%); em software 4 ≈ 6 (≤ 4%); `defaultWorkerCount` mantido |
 
 ² `captureFps` do `h23` inclui o encode rodando junto: não é comparável com as linhas anteriores (use `s/min`).
 
@@ -298,5 +299,77 @@ Comando: `node scripts/bench-capture.ts --label h23 --runs 3 --out C:/Users/robe
 `scripts/bench-capture.ts` passou a medir o pico do `workDir` por amostragem (`ff-render-*` no temporário), porque os
 frames não existem mais ao fim do render nem o `keepWorkDir` pode ficar ligado sem mudar o que se mede.
 
-Número final do EDT-62 (hardware, `s/min`): **159 → 83,3** (draft) e **167 → 89,6** (high), cerca de −47% desde o baseline;
-software **211 → 110,5** (draft) e **228 → 120,5** (high), também cerca de −47%. Faltam H5 (workers) e, fora da 1.0, H6.
+## H5 — varredura de workers (sem mudança no padrão)
+
+Pergunta do plano: com o encode agora no mesmo conjunto de núcleos da captura, o número ótimo de workers mudou?
+`defaultWorkerCount` (metade dos núcleos, teto 8, 768 MB por browser) = **6** nesta máquina (12 threads, 15,9 GiB).
+Regra de decisão: só muda se a curva mostrar um joelho claramente diferente (ganho > 5% além do ruído).
+
+Método: `bench-capture --workers 2,4,6,8,12`, `standard`, 3 execuções, mediana (faixa mín–máx entre parênteses),
+`motion` 1080p 300 frames. Vídeo: só software, 1 rodada fria + 2 quentes (cache de extração). Mesma máquina de uso normal
+do titular (CPU de fundo ~20–40%).
+
+`s/min` (menor é melhor):
+
+| workers | motion hardware | motion software | vídeo software (quente) |
+|---|---|---|---|
+| 2 | 156,4 (154,6–158,7) | 151,3 (148,9–159,8) | 126,6 (124,6–128,7) |
+| 4 | 101,9 (100,0–104,1) | **114,3** (112,8–116,4) | **96,2** (92,7–99,7) |
+| **6 (padrão)** | **92,5** (85,2–97,6) | 116,1 (113,7–116,6) | 100,2 (98,3–102,0) |
+| 8 | **92,1** (89,3–92,2) | 125,1 (121,7–125,6) | 105,6 (104,1–107,1) |
+| 12 | 105,0 (102,7–107,8) | 137,3 (129,6–141,0) | 114,2 (113,2–115,1) |
+
+`captureFps` (inclui o encode junto; hardware / software motion / vídeo): 2 → 11,7 / 12,1 / 14,7; 4 → 18,2 / 16,1 / 19,7;
+6 → 20,2 / 15,9 / 19,0; 8 → 20,2 / 14,8 / 17,9; 12 → 17,7 / 13,4 / 16,5. Pico de disco do `workDir`: 0 MB (motion) e 7 MB
+(vídeo) em todos os pontos: o número de workers não mexe nele.
+
+Leitura:
+- **Hardware:** o joelho está em 6–8 (92,5 e 92,1 são iguais dentro do ruído); 4 perde ~10% e 12 perde ~14% (browsers demais
+  disputando a GPU e a CPU). O padrão 6 já é o ponto ótimo.
+- **Software `motion`:** 4 e 6 empatam (114,3 contra 116,1, 1,6%, dentro da faixa); 8 e 12 pioram (+8% e +18%).
+- **Vídeo (software):** 4 contra 6 dá 96,2 contra 100,2 (4%), abaixo dos 5% e com faixas que se tocam; 8 e 12 pioram.
+  Uma rodada fria só (1 amostra por ponto) mostra a mesma ordem (101,1 / 111,2 / 112,2 / 122,4 para 4 / 6 / 8 / 12).
+- **Conclusão: `defaultWorkerCount` não muda.** Nenhum joelho passa de 5% além do ruído; mexer na regra por 4% de
+  um cenário só seria ajustar a esta máquina. A regra continua uma só para os dois modos de GPU.
+- Os 6 workers de hoje também são a metade dos núcleos: dobrar (12) é sempre pior, o que confirma o teto de 8 e
+  a regra "metade dos núcleos".
+- Comparação cruzada com o `h23` (mesmos pontos, 6 workers, `standard`): hardware 87,5 → 92,5 e software 109,4 → 116,1.
+  A diferença (6%) é o ruído de outra sessão de medição com a máquina em uso (o `h23` inteiro foi medido em outro
+  horário); compare dentro de uma varredura, não entre elas.
+
+JSON: `h5-20261123-2317.json` (`--label h5`), `h5d-*.json` (varredura `draft`, abaixo).
+
+**Mesma curva em `draft`** (`motion`, 3 execuções, mediana; `s/min`, faixa mín–máx):
+
+| workers | hardware | software |
+|---|---|---|
+| 4 | 100,3 (97,2–100,6) | 114,0 (113,6–114,1) |
+| **6 (padrão)** | **81,9** (81,4–84,8) | 113,4 (109,5–118,8) |
+| 8 | 82,7 (81,0–83,0) | 111,6 (108,7–113,3) |
+
+Hardware repete o `standard` (6 ≈ 8, 4 perde 22%). Em software 4, 6 e 8 ficam a ~2% entre si, dentro do ruído: não há joelho.
+O 6 em `draft` hardware (81,9) bate com o `h23` (83,3), o que dá confiança de que a curva do `standard` é só deslocada
+pelo ruído de sessão.
+
+**Lote (`--concurrency`).** `workersPerJob(concurrency, default)` divide os workers entre trabalhos (`floor(6 / c)`); a
+curva acima já mostra que 2 workers por trabalho (concurrency 3) rende ~156 s/min por trabalho, contra ~92 s/min de um
+trabalho com 6 — duas sessões de 3 workers somam mais que uma de 6, mas cada vídeo demora mais. Não foi medido o
+lote de ponta a ponta (decisão do plano: "se barato"; o ganho depende do tamanho do lote e não muda o padrão).
+
+## Número final do EDT-62
+
+`s/min` e `captureFps` do `motion` 1080p, 300 frames, workers = 6, mediana de 3, baseline → `h23` (estado final; o H5 não
+mudou código nem padrão). `captureFps` do `h23` inclui o encode andando junto e **não é comparável** com o do baseline
+(use `s/min`).
+
+| modo | preset | s/min baseline → final | Δ | captureFps baseline → final |
+|---|---|---|---|---|
+| hardware | draft | 159 → 83,3 | −48% | 13,3 → 22,2 |
+| hardware | standard | 164 → 87,5 | −47% | — → 21,2 |
+| hardware | high | 167 → 89,6 | −46% | — → 21,5 |
+| software | draft | 211 → 110,5 | −48% | 9,6 → 16,6 |
+| software | standard | 219 → 109,4 | −50% | — → 16,8 |
+| software | high | 228 → 120,5 | −47% | — → 15,9 |
+
+Por hipótese: H4 −33% (hardware) / −37% (software) em `s/min` `draft`, H1 só em software (−10%), H2+H3 −20% (hardware) e −8 a −11%
+(software), H5 sem mudança (padrão confirmado). Disco: 382/453 MB de PNG → < 1 MB. Falta H6 (fora da 1.0).
