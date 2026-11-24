@@ -80,7 +80,7 @@ export interface SessionOptions {
 export interface Session {
   /** Leva a composição ao tempo exato do frame. Idempotente e fora de ordem. */
   seekFrame: (frame: number, fps: { num: number; den: number }) => Promise<void>;
-  /** PNG do frame atual + hash. Em software depende do `seekFrame` anterior ter assentado o paint (uma espera por frame); em hardware espera de novo. */
+  /** PNG do frame atual + hash. Depende do `seekFrame` anterior ter assentado o paint: uma espera por frame, em software e em hardware. */
   capture: () => Promise<{ png: Buffer; sha256: string }>;
   /** Erros de script na página: qualquer um derruba o render. */
   pageErrors: () => string[];
@@ -399,9 +399,8 @@ async function startSession(
           );
           const required = first ? 3 : conservative;
           if (required === 1) {
-            // Software: o seek já assentou o paint (`seekFrame` espera `__ff.settle`), uma espera por frame.
-            // Hardware mantém a segunda espera: sem ela os hashes com vários workers pioram (EDT-77).
-            if (gpu === "hardware") await settlePaint();
+            // O seek já assentou o paint (`seekFrame` espera `__ff.settle`): uma espera por frame, em qualquer modo.
+            // Com `--disable-gpu-compositing` em hardware (EDT-77) não precisa de espera a mais.
             const single = await shot();
             return { png: single, sha256: createHash("sha256").update(single).digest("hex") };
           }

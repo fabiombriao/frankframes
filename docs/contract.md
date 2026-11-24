@@ -644,10 +644,10 @@ O contrato promete isto ao autor, e o engine tem que cumprir:
    por essa regra.
 6. **Uma captura por frame, depois do paint.** A primeira captura de cada sessão é descartada; depois
    de cada seek, `__ff.settle` espera dois frames de compositor e um `setTimeout` (que cai **depois** do
-   paint) antes do screenshot. Em **software** a captura usa essa espera do seek: **uma espera de paint por
-   frame** (EDT-62/H1). Em **hardware** há uma espera a mais, dentro da captura, porque o hardware com vários
-   workers já não reproduz hash na mesma máquina (EDT-77) e tirar a espera o piorou. Com software + `--disable-gpu-compositing`, uma leitura já é estável —
-   medido em 3 comparações dos 24 blocos e 2 renders de vídeo real.
+   paint) antes do screenshot. A captura usa essa espera do seek, em software e em hardware: **uma espera de paint
+   por frame** (EDT-62/H1); não existe espera a mais dentro da captura. Com `--disable-gpu-compositing` uma leitura
+   já é estável: em software, medido em 3 comparações dos 24 blocos e 2 renders de vídeo real; em hardware, ver o
+   item de hardware da lista abaixo (EDT-77).
    O screenshot é PNG pedido com `optimizeForSpeed: true` (EDT-62/H4): o Chrome usa compressão mais barata,
    os **pixels decodificados são idênticos** aos do PNG padrão (conferido nos 240 frames dos goldens, diferença
    zero em todos os canais), mas os bytes são outros e o arquivo fica ~2× maior. O hash por frame é o SHA-256 do
@@ -656,6 +656,13 @@ O contrato promete isto ao autor, e o engine tem que cumprir:
    screenshots consecutivos idênticos (para hardware ou máquina sob carga).
    - em software, `--disable-gpu-compositing`: o compositor SwiftShader re-apresenta raster parcial em
      camadas com `clip-path`/`transform`;
+   - em hardware, `--disable-gpu-compositing` também (EDT-77), em Windows, macOS e Linux. Com vários workers, o
+     compositor de GPU não reproduzia o hash na mesma máquina: 110 de 240 frames instáveis com 6 workers, 0 com 1
+     worker, e esperar mais (1 a 3 esperas extras, ou 100 ms de atraso fixo) não resolvia (103 a 152 instáveis).
+     Com a flag, 0 de 240 em 5 rodadas intercaladas, inclusive com a CPU em 61–78%. O ANGLE segue no driver real
+     (WebGL e canvas na GPU); só o compositor vira software, como em `software`. Custo medido: ~5% de fps com a
+     segunda espera mantida (47,8 → 45,7 fps); sem a segunda espera a captura em hardware fica mais rápida que
+     antes (~55 fps contra ~46). A promessa do item é a mesma: hardware é igual **nesta máquina**, não entre máquinas;
    - **composição com vídeo roda sempre em software.** O compositor de GPU atrasa a textura da `<img>`
      fora de banda de forma não determinística (medido: 54 de 90 frames divergentes em D3D11, 0 em
      SwiftShader). `--gpu hardware` explícito é honrado, com o risco assumido.

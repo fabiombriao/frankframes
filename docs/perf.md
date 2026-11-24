@@ -177,13 +177,14 @@ Os frames ficam no disco até o fim do encode, então o pico é o total. Extrapo
 (aceite do EDT-64): **~2,5 GB (hardware) a ~3 GB (software)** com este conteúdo; conteúdo com mais detalhe fotográfico
 pesa mais por frame. H2/H3 (pipe em ordem, sem PNG em disco) reduzem isso.
 
-## H1 — uma espera de paint por frame, só em software (entregue)
+## H1 — uma espera de paint por frame (entregue em software; em hardware desde o EDT-77, opção D)
 
 Mudança: `packages/engine/src/capture.ts`. Em software, `capture()` não repete o `settle` que o `seekFrame` já fez; em
-**hardware as duas esperas continuam** (decisão do planejador: o H1 vale só para software por causa do EDT-77 —
-hardware com vários workers já não reproduz hash na mesma máquina, e tirar a espera piorou). Contador de teste:
-`FRANKFRAMES_CAPTURE_PROFILE=1` expõe `__ff.settleCount`; `determinism.test.ts` exige 1 espera por frame não-primeiro
-em software e 2 em hardware.
+**hardware as duas esperas continuaram na entrega do H1** (decisão do planejador: hardware com vários workers já não reproduzia hash
+na mesma máquina, e tirar a espera piorou). **Atualização (EDT-77, opção D):** hardware passou a rodar com `--disable-gpu-compositing`
+e a segunda espera saiu; hoje é uma espera por frame em hardware e em software (0/240 instáveis em 5 rodadas, ~55 fps contra ~46). Contador de teste:
+`FRANKFRAMES_CAPTURE_PROFILE=1` expõe `__ff.settleCount`; `determinism.test.ts` exigia 1 espera por frame não-primeiro
+em software e 2 em hardware; hoje exige 1 nos dois.
 
 **Pixels e determinismo** (`examples/cena-dupla`, 240 frames, `render` com hashes por frame)
 - Software: **240/240 hashes iguais** antes e depois (e estável entre rodadas).
@@ -218,7 +219,7 @@ JSON: `h1-20261123-1938.json`, `frame-software-20261123-1949.json`, `frame-hardw
 |---|---|---|---|---|
 | baseline | `baseline` | 13,3 / 9,6 | 159 / 164 / 167 (hw); 211 / 219 / 228 (sw) | este documento |
 | H4 | `h4` | 21,7 / 16,8 | 106 / 113 / 116 (hw); 132 / 137 / 153 (sw) | pixels idênticos; PNG ~2× maior |
-| H1 | `h1` | 22,1 / 18,8 | 104 / 106 / 112 (hw, igual); 119,5 / 122 / 130 (sw) | só software (EDT-77: hardware mantém 2 esperas) |
+| H1 | `h1` | 22,1 / 18,8 | 104 / 106 / 112 (hw, igual); 119,5 / 122 / 130 (sw) | software na entrega; hardware desde o EDT-77/D (1 espera) |
 | H2+H3 | `h23` | 22,2 / 16,6² | 83,3 / 87,5 / 89,6 (hw); 110,5 / 109,4 / 120,5 (sw) | encode junto da captura, sem PNG em disco; disco 382/453 MB → < 1 MB; vídeo sem ganho claro |
 | H5 | `h5` / `h5d` | 20,2 / 15,9 (6 workers, standard) | 92,5 (hw) / 116,1 (sw) com 6 workers, standard; 81,9 / 113,4 em draft | sem mudança: 6 workers é o joelho em hardware (6 ≈ 8, 4 e 12 pioram 10–22%); em software 4 ≈ 6 (≤ 4%); `defaultWorkerCount` mantido |
 

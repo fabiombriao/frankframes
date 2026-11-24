@@ -40,7 +40,7 @@ const DETERMINISM_FLAGS = [
 
 /**
  * `software`: SwiftShader, reprodutível entre máquinas, mais lento.
- * `hardware`: ANGLE no driver real, mais rápido; o pixel passa a depender do driver.
+ * `hardware`: ANGLE no driver real, mais rápido; o pixel passa a depender do driver (compositor em software).
  */
 export function gpuFlags(mode: ResolvedGpuMode, platform: string = process.platform): string[] {
   if (mode === "software") {
@@ -53,9 +53,13 @@ export function gpuFlags(mode: ResolvedGpuMode, platform: string = process.platf
       "--disable-gpu-compositing",
     ];
   }
-  if (platform === "win32") return ["--use-angle=d3d11"];
-  if (platform === "darwin") return ["--use-angle=metal"];
-  return ["--use-gl=angle", "--use-angle=gl-egl", "--enable-gpu-rasterization", "--ignore-gpu-blocklist"];
+  // EDT-77: com vários workers, o compositor de GPU não reproduzia hash na mesma máquina (110 de 240 frames
+  // instáveis com 6 workers; 0 com 1 worker). Só o compositor vira software, como em `software`: o ANGLE segue
+  // no driver real e WebGL/canvas continuam na GPU. Medido: 0/240 instáveis em 5 rodadas intercaladas.
+  const semCompositorGpu = "--disable-gpu-compositing";
+  if (platform === "win32") return ["--use-angle=d3d11", semCompositorGpu];
+  if (platform === "darwin") return ["--use-angle=metal", semCompositorGpu];
+  return ["--use-gl=angle", "--use-angle=gl-egl", "--enable-gpu-rasterization", "--ignore-gpu-blocklist", semCompositorGpu];
 }
 
 export function chromeArgs(options: { viewport: Viewport; gpu: ResolvedGpuMode }): string[] {

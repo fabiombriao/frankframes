@@ -122,7 +122,7 @@ test("captura em software: uma espera de paint por frame (o seek assenta; captur
   assert.deepEqual(settles, [1, 1, 1, 1, 1], `esperas de paint por frame (frames 1..5): ${settles.join(",")}`);
 });
 
-test("captura em hardware: duas esperas de paint por frame (EDT-77)", { timeout: 120_000 }, async (t) => {
+test("captura em hardware: uma espera de paint por frame (EDT-77)", { timeout: 120_000 }, async (t) => {
   try {
     await resolveChrome();
   } catch {
@@ -135,5 +135,5 @@ test("captura em hardware: duas esperas de paint por frame (EDT-77)", { timeout:
     t.skip(`GPU resolvida como ${result.resolved}: não há hardware nesta máquina`);
     return;
   }
-  assert.deepEqual(result.settles, [2, 2, 2, 2, 2], `esperas de paint por frame (frames 1..5): ${result.settles.join(",")}`);
+  assert.deepEqual(result.settles, [1, 1, 1, 1, 1], `esperas de paint por frame (frames 1..5): ${result.settles.join(",")}`);
 });
