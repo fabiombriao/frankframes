@@ -45,9 +45,10 @@
           "points": 3,
           "labels": [
             "plataforma",
-            "qa"
+            "qa",
+            "pos-1.0"
           ],
-          "acceptance": "Em VM sem Node global, sem Chrome e sem FFmpeg, `frankframes doctor` aponta exatamente o que instalar e o `init` + `render` funciona após o postinstall.",
+          "acceptance": "Pós-1.0 por decisão do titular (2026-11-24, confirmada duas vezes). Não reabrir nem perguntar de novo sem pedido dele. Em VM sem Node global, sem Chrome e sem FFmpeg, `frankframes doctor` aponta exatamente o que instalar e o `init` + `render` funciona após o postinstall.",
           "jiraKey": "EDT-5"
         },
         {
@@ -55,9 +56,10 @@
           "points": 5,
           "labels": [
             "plataforma",
-            "ci"
+            "ci",
+            "pos-1.0"
           ],
-          "acceptance": "Build e gate rodam sem a máquina local: FFmpeg Linux LGPL pinado por SHA-256, libs do Chrome headless no container, cache por versão e relatório de falha por etapa. Só entra quando houver VPS.",
+          "acceptance": "Pós-1.0 por decisão do titular (2026-11-24, confirmada duas vezes). Não reabrir nem perguntar de novo sem pedido dele. Build e gate rodam sem a máquina local: FFmpeg Linux LGPL pinado por SHA-256, libs do Chrome headless no container, cache por versão e relatório de falha por etapa. Só entra quando houver VPS.",
           "jiraKey": "EDT-34"
         }
       ],
@@ -199,9 +201,10 @@
           "summary": "Embarcar whisper.cpp (MIT) com licença e hash",
           "points": 5,
           "labels": [
-            "transcricao"
+            "transcricao",
+            "pos-1.0"
           ],
-          "acceptance": "Binário pinado por SHA-256, LICENSE ao lado, modo local funciona sem compilação do usuário.",
+          "acceptance": "Pós-1.0 por decisão do titular (2026-11-24, confirmada duas vezes). Não reabrir nem perguntar de novo sem pedido dele. Binário pinado por SHA-256, LICENSE ao lado, modo local funciona sem compilação do usuário.",
           "jiraKey": "EDT-19"
         },
         {

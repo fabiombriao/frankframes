@@ -58,6 +58,7 @@ Node ≥ 22.18 (TypeScript roda direto, sem build). Nada de bundler.
 | CI | gate local (`scripts/ci.ts`); **GitHub Actions proibido** (`.omp/RULES.md`) |
 | Plataformas | `win64` e `linux64` com browser e FFmpeg pinados por SHA-256; outra plataforma falha alto. Gate Linux em Docker (`scripts/linux/gate.ts`) |
 | Transcrição | local só por comando explícito; nunca baixa sozinho |
+| Escopo da 1.0 | EDT-5, EDT-19, EDT-34 e EDT-63 ficam **pós-1.0** (titular, 2026-11-24, decidido duas vezes; rótulo `pos-1.0` no Jira). "Terminar o Jira" não os reabre; não perguntar de novo |
 | Distribuição | tarball único `@frankframes/cli` compilado por `scripts/build-release.ts`, instalado com `npm i -g`; os pacotes do monorepo seguem TS sem build; sem instalador nativo (`docs/release.md`) |
 
 ## Jira

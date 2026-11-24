@@ -7,6 +7,12 @@ execução (Sonnet 5.5), revisa o diff, roda `node scripts/ci.ts` e faz commit/p
 Partes: **A — Studio** (EDT-39..46), **B — Motion** (EDT-47..56), **C — Geração e 1.0** (EDT-58..65).
 A ordem global entre as partes fica na seção "Ordem global" ao fim, mantida pelo planejamento.
 
+**Fora da 1.0 (decisão do titular, 2026-11-24, tomada duas vezes):** EDT-5 (doctor em VM Windows
+limpa), EDT-19 (whisper.cpp embarcado), EDT-34 (CI em servidor próprio) e EDT-63 (catálogo remoto)
+são pós-1.0. Eles têm o rótulo `pos-1.0` no Jira e aparecem em "Pendências conhecidas" no `CHANGELOG.md`.
+Um pedido de "terminar tudo do Jira" não os reabre, e não se pergunta de novo: só voltam se o titular
+pedir.
+
 **Vídeo real para testes (decisão do titular):** todo teste manual ou de integração que precise de
 vídeo de verdade usa `C:\Users\rober\Downloads\video-teste.mp4`. Ele tem H.264 1080×1920 (vertical) a
 30 fps, 8,08 s, AAC estéreo 44,1 kHz e 10 MB. Fica fora do repositório. Teste automatizado do gate
