@@ -53,6 +53,7 @@ node packages/cli/src/cli.ts preview examples/hello.html --open
 node packages/cli/src/cli.ts render examples/hello.html -o out/hello.mp4 --preset draft --workers 4
 node packages/cli/src/cli.ts render entrada.html --gpu software --no-loudness
 node packages/cli/src/cli.ts render entrada.html --json
+node packages/cli/src/cli.ts render --batch lote.json --concurrency 2   # lote com variáveis: docs/batch.md
 node packages/cli/src/cli.ts blocks list
 node packages/cli/src/cli.ts blocks add title-card ./meu-video
 node packages/cli/src/cli.ts blocks index --json          # índice com sha256 de cada bloco

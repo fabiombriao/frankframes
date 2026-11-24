@@ -4,9 +4,9 @@ import { assertCodecAllowed, assertFfmpegAllowed, containerFor, detectFfmpeg } f
 import type { VideoCodec } from "@frankframes/encode";
 import type { FfmpegPair } from "@frankframes/producer";
 
-/** Saída padrão: `out/<nome>.<contêiner>` a partir do diretório atual. */
-export function defaultOutput(entry: string, codec: VideoCodec): string {
-  return resolve("out", `${basename(entry, extname(entry))}.${containerFor(codec)}`);
+/** Saída padrão: `<pasta>/<nome>.<contêiner>`; sem pasta, `out/` a partir do diretório atual. */
+export function defaultOutput(entry: string, codec: VideoCodec, dir: string = resolve("out")): string {
+  return resolve(dir,`${basename(entry, extname(entry))}.${containerFor(codec)}`);
 }
 
 /**

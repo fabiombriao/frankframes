@@ -26,3 +26,7 @@ export {
   renderPreviewAudio,
 } from "./preview-audio.ts";
 export type { PreviewAudioDisabled, PreviewAudioMix, PreviewAudioOptions } from "./preview-audio.ts";
+export { applyVariables, collectVariables, VariableError, VARIABLE_KEY } from "./variables.ts";
+export type { VariableErrorCode } from "./variables.ts";
+export { BatchError, assertBatchEntries, parseBatchFile, runBatch, workersPerJob } from "./batch.ts";
+export type { BatchJob, BatchJobReport, BatchRenderChoices, BatchReport, BatchSpec, GpuChoice, RunBatchOptions } from "./batch.ts";

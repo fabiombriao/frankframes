@@ -961,3 +961,31 @@ nomes no parsing. O núcleo não ganha um segundo nome para o mesmo conceito, ne
 Composições sem atributos de motion (§7b) compilam exatamente como antes: o compilador não grava
 `data-ff-motion` e o runtime de motion não cria animação. Pontos de `data-keyframes` só com `volume`
 continuam idênticos: mesmo `RawClip.keyframes`, mesma mixagem, nenhum alvo de motion.
+
+## 11. Variáveis
+
+Uma composição pode ser um **modelo**: os pontos que mudam de uma versão para outra são marcados no HTML e
+recebem valor na hora do render (`render --batch`, `RenderOptions.vars`; ver `docs/batch.md`). Sem `vars`, nada
+muda: o valor autoral fica e os atributos abaixo são inertes.
+
+1. **Marcar texto.** `data-var="titulo"` troca o texto do elemento pelo valor de `titulo`, com escape de `&`, `<`
+   e `>` (o valor é sempre texto, nunca HTML). O elemento só pode conter texto (ou nada): filho elemento ou
+   comentário é `E_VAR_INVALID`, e também elemento void/sem fechamento (`<img>`), `<script>` e `<style>`.
+2. **Marcar atributo.** `data-var-attr="src:foto; data-duration:tempo"` troca (ou cria) os atributos listados,
+   pares `atributo:variável` separados por `;`. O valor é escapado para aspas duplas (`&`, `"`). Os próprios
+   `data-var` e `data-var-attr` não podem ser alvo, e o mesmo atributo duas vezes no mesmo elemento é
+   `E_VAR_INVALID`.
+3. **Nome da variável.** `^[A-Za-z_][A-Za-z0-9_-]*$`. Forma inválida (na marcação ou nas `vars`) é
+   `E_VAR_INVALID`.
+4. **Conferência nos dois sentidos.** Chave usada no HTML e ausente das `vars` é `E_VAR_MISSING` (a mensagem lista
+   todas as que faltam); chave das `vars` que nenhum elemento usa é `E_VAR_UNKNOWN` (erro de digitação não passa
+   calado). Os valores das `vars` são texto; qualquer outro tipo é `E_VAR_INVALID`.
+5. **Ordem.** As variáveis entram **depois** de as sub-composições (§5) serem unidas e **antes** do contrato (§3, §7):
+   um `data-duration`, `data-start` ou `data-fps` trocado por variável é o valor que o contrato resolve, e
+   `data-var` dentro de uma sub-composição vale como no arquivo principal. Todo o resto do arquivo (comentários,
+   indentação, ordem dos atributos) fica como o autor escreveu.
+6. **Erros.** `E_VAR_MISSING`, `E_VAR_UNKNOWN` e `E_VAR_INVALID` são códigos de render com `stage: "compile"`, saem em
+   `render --json` e bloqueiam o render antes de abrir o Chrome. `E_BATCH_INVALID` (arquivo de lote malformado) é do
+   lote, não de uma composição.
+7. **Lint.** O lint não valida `data-var`/`data-var-attr`: as variáveis só existem na hora do render, quando há `vars`
+   para conferir.

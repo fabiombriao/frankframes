@@ -67,6 +67,27 @@ Frames extraídos de vídeo ficam em cache: `<assetHome>/cache/frames`, com teto
 mais antigo primeiro. Dentro do repo, `<assetHome>` é `vendor/`; fora do repo, o cache fica em
 `~/.frankframes/cache/frames`.
 
+### Lote e variáveis
+
+Marque no HTML o que muda (`<h1 data-var="titulo">Oferta</h1>`, `<img data-var-attr="src:foto">`) e liste as versões
+num arquivo de lote:
+
+```json
+{ "version": 1, "defaults": { "preset": "draft" },
+  "jobs": [
+    { "id": "a", "entry": "meu-video/index.html", "out": "out/a.mp4", "vars": { "titulo": "Oferta A", "foto": "a.jpg" } },
+    { "id": "b", "entry": "meu-video/index.html", "out": "out/b.mp4", "vars": { "titulo": "Oferta B", "foto": "b.jpg" } }
+  ] }
+```
+
+```bash
+node packages/cli/src/cli.ts render --batch lote.json --concurrency 2
+```
+
+Sai um MP4 por job e um `batch-report.json` ao lado do arquivo de lote. Formato, concorrência e relatório em
+`docs/batch.md`; variáveis em `docs/contract.md` §11. Para vários HTML sem variáveis:
+`render a.html b.html -o out/lote/`.
+
 ## 6. Editar a composição
 
 O contrato completo está em [`docs/contract.md`](contract.md). O mínimo:

@@ -2,6 +2,7 @@
 import puppeteer from "puppeteer-core";
 import { chromeArgs } from "./args.ts";
 import type { ResolvedGpuMode } from "./args.ts";
+import { browserSignalOptions } from "./signals.ts";
 
 const SOFTWARE_RENDERERS = /swiftshader|llvmpipe|lavapipe|softpipe|mesa offscreen|basic render|software/i;
 
@@ -27,6 +28,7 @@ export function probeRenderer(executablePath: string): Promise<RendererInfo> {
       headless: true,
       args: chromeArgs({ viewport: { width: 320, height: 200 }, gpu: "hardware" }),
       defaultViewport: { width: 320, height: 200, deviceScaleFactor: 1 },
+      ...browserSignalOptions(),
     });
     try {
       const page = await browser.newPage();

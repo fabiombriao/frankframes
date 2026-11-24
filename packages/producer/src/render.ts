@@ -16,6 +16,7 @@ import { annotateCompiled, materializeClipIds, mergeSubCompositions } from "./co
 import { resolveFfmpeg } from "./ffmpeg.ts";
 import { mixAudio } from "./audio.ts";
 import { audioClipsFor } from "./preview-audio.ts";
+import { VariableError, applyVariables } from "./variables.ts";
 
 const run = promisify(execFile);
 
@@ -117,6 +118,8 @@ export interface PrepareOptions {
   onProgress?: (stage: RenderStage, percent: number, message?: string) => void;
   /** Aborta entre as etapas e mata o FFmpeg de probe/extração em andamento (`E_CANCELED`). */
   signal?: AbortSignal;
+  /** Variáveis de dados (§11): trocam `data-var` / `data-var-attr` antes do contrato. Sem isso, vale o valor autoral. */
+  vars?: Record<string, string>;
 }
 
 export interface PreparedComposition {
@@ -165,7 +168,19 @@ export async function prepare(options: PrepareOptions): Promise<PreparedComposit
   const merged = await mergeSubCompositions(source, entryDir, entry);
   warnings.push(...merged.warnings);
 
-  const materialized = materializeClipIds(merged.html);
+  // Variáveis entram depois de inlinar as sub-composições (um data-var dentro de uma vale igual) e antes do
+  // contrato: duração e tempo trocados por variável são validados normalmente.
+  let compiledSource = merged.html;
+  if (options.vars !== undefined) {
+    try {
+      compiledSource = applyVariables(compiledSource, options.vars).html;
+    } catch (error) {
+      if (error instanceof VariableError) throw new RenderError(error.code, "compile", error.message);
+      throw error;
+    }
+  }
+
+  const materialized = materializeClipIds(compiledSource);
   const parsed = loadComposition(materialized);
   if (!parsed.ok) {
     throw new RenderError(
@@ -288,6 +303,8 @@ export interface RenderOptions {
    * parcial. Rejeita com `RenderError("E_CANCELED", <estágio atual>, …)`.
    */
   signal?: AbortSignal;
+  /** Variáveis de dados (§11), aplicadas antes do contrato. */
+  vars?: Record<string, string>;
 }
 
 export interface RenderResult {
@@ -340,6 +357,7 @@ async function renderPipeline(
     ...(options.ffprobe !== undefined ? { ffprobe: options.ffprobe } : {}),
     onProgress: progress,
     ...signalOption,
+    ...(options.vars !== undefined ? { vars: options.vars } : {}),
   });
   const pair = await resolveFfmpeg();
   const ffmpeg = options.ffmpeg ?? pair.ffmpeg;

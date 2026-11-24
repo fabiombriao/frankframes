@@ -4,6 +4,7 @@ Gerado por `node scripts/generate-reference.ts` a partir do código. Não edite 
 
 | Código | Severidade | Origem |
 |---|---|---|
+| `E_BATCH_INVALID` | erro | render |
 | `E_BROWSER_CLOSED` | erro | render |
 | `E_BROWSER_TIMEOUT` | erro | render |
 | `E_CANCELED` | erro | render |
@@ -43,6 +44,9 @@ Gerado por `node scripts/generate-reference.ts` a partir do código. Não edite 
 | `E_START_INVALID` | erro | contrato |
 | `E_TRANSCRIBE_UNAVAILABLE` | erro | transcrição |
 | `E_TRANSITION_PARTNER` | erro | contrato |
+| `E_VAR_INVALID` | erro | render |
+| `E_VAR_MISSING` | erro | render |
+| `E_VAR_UNKNOWN` | erro | render |
 | `E_VOLUME_INVALID` | erro | contrato |
 | `E_WHISPER_MISSING` | erro | transcrição |
 | `W_KEYFRAME_CURVE_IGNORED` | aviso | contrato |

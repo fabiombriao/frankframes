@@ -8,6 +8,7 @@ import type { GpuMode, ResolvedGpuMode, Viewport } from "./args.ts";
 import { BrowserError } from "./failures.ts";
 import { resolveChrome } from "./launch.ts";
 import { probeRenderer, resolveGpuMode } from "./probe.ts";
+import { browserSignalOptions } from "./signals.ts";
 import type { RendererInfo } from "./probe.ts";
 import type { ServerFailure, StaticServer } from "./server.ts";
 
@@ -241,6 +242,7 @@ export async function openSession(options: SessionOptions): Promise<Session> {
       args: chromeArgs({ viewport: options.viewport, gpu }),
       defaultViewport: { ...options.viewport, deviceScaleFactor: 1 },
       timeout: limits.launchMs,
+      ...browserSignalOptions(),
     });
   } catch (error) {
     if (error instanceof Error && error.name === "TimeoutError") {

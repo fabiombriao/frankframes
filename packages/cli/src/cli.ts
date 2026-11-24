@@ -22,6 +22,7 @@ import {
 import type { PreviewAudioConfig } from "@frankframes/engine";
 import { installLocalModel, resolveProvider } from "@frankframes/transcribe";
 import { installBlockFromUrl, listBlocks, readBlock } from "@frankframes/catalog";
+import { runBatchCommand } from "./batch-command.ts";
 import { buildCatalogIndex, publishCatalog, serveCatalog } from "./catalog-server.ts";
 import { startGallery } from "./gallery.ts";
 import { runDoctor, runInit, runSkillInstall } from "./onboarding.ts";
@@ -38,6 +39,8 @@ uso:
   frankframes render <arquivo.html> [-o saida.mp4] [--codec av1|vp9|h264] [--preset draft|standard|high]
                                     [--workers N] [--gpu auto|software|hardware] [--no-loudness]
                                     [--keep] [--json]
+  frankframes render a.html b.html [c.html…] -o <pasta>/ [--concurrency N] [opções de render]
+  frankframes render --batch lote.json [--concurrency N] [--json]
   frankframes preview <arquivo.html> [--open]
   frankframes studio <arquivo.html> [--port N]
   frankframes transcribe <audio> [--provider local|groq|openai-compatible] [--language pt] [--json]
@@ -62,16 +65,24 @@ ambiente:
   FRANKFRAMES_FFMPEG_MODE        "distribution" bloqueia binário GPL; padrão "user-provided" (avisa)
   FRANKFRAMES_ALLOW_H264=1       libera H.264 via libopenh264
 
-lint e render saem com código 1 em erro.`;
+lint e render saem com código 1 em erro. Em lote, saem com 1 se algum job falhar; o relatório fica em batch-report.json.`;
 
 interface Cli {
   command: string;
   file?: string;
+  /** Todos os argumentos posicionais depois do comando (`render a.html b.html`). */
+  files: string[];
   json: boolean;
   out?: string;
   codec: VideoCodec;
   preset: Preset;
   workers?: number;
+  /** `render --batch <arquivo>`: lote descrito em JSON (docs/batch.md). */
+  batch?: string;
+  /** `render` em lote: jobs ao mesmo tempo. */
+  concurrency?: number;
+  /** Opções de render escritas na linha de comando (o lote em arquivo não as aceita). */
+  given: string[];
   keep: boolean;
   provider?: string;
   language?: string;
@@ -85,16 +96,35 @@ interface Cli {
 }
 
 function parseCli(argv: string[]): Cli {
-  const cli: Cli = { command: "help", json: false, codec: "av1", preset: "standard", keep: false, flags: [] };
+  const cli: Cli = { command: "help", files: [], given: [], json: false, codec: "av1", preset: "standard", keep: false, flags: [] };
   const positional: string[] = [];
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]!;
     if (arg === "--json") cli.json = true;
     else if (arg === "--keep") cli.keep = true;
     else if (arg === "--help" || arg === "-h") cli.command = "help";
-    else if (arg === "-o" || arg === "--out") cli.out = argv[++i];
-    else if (arg === "--codec") cli.codec = (argv[++i] ?? "av1") as VideoCodec;
-    else if (arg === "--preset") cli.preset = (argv[++i] ?? "standard") as Preset;
+    else if (arg === "-o" || arg === "--out") {
+      cli.out = argv[++i];
+      cli.given.push("-o");
+    }
+    else if (arg === "--codec") {
+      cli.codec = (argv[++i] ?? "av1") as VideoCodec;
+      cli.given.push("--codec");
+    }
+    else if (arg === "--preset") {
+      cli.preset = (argv[++i] ?? "standard") as Preset;
+      cli.given.push("--preset");
+    }
+    else if (arg === "--batch") {
+      const value = argv[++i];
+      if (value === undefined || value.startsWith("-")) throw new Error("--batch precisa do arquivo do lote, por exemplo --batch lote.json");
+      cli.batch = value;
+    }
+    else if (arg === "--concurrency") {
+      const value = Number(argv[++i]);
+      if (!Number.isInteger(value) || value < 1) throw new Error("--concurrency precisa de um inteiro maior ou igual a 1");
+      cli.concurrency = value;
+    }
     else if (arg === "--workers") cli.workers = Number(argv[++i]);
     else if (arg === "--provider") cli.provider = argv[++i];
     else if (arg === "--language") cli.language = argv[++i];
@@ -105,7 +135,10 @@ function parseCli(argv: string[]): Cli {
     }
     else if (arg === "--port") cli.port = Number(argv[++i]);
     else if (arg === "--root") cli.root = argv[++i];
-    else if (arg === "--gpu") cli.gpu = (argv[++i] ?? "auto") as "auto" | "software" | "hardware";
+    else if (arg === "--gpu") {
+      cli.gpu = (argv[++i] ?? "auto") as "auto" | "software" | "hardware";
+      cli.given.push("--gpu");
+    }
     else if (arg.startsWith("-")) {
       const known = ["--open", "--check", "--fonts-only", "--cursor", "--apply", "--size", "--no-loudness"];
       if (!known.includes(arg)) throw new Error(`opção desconhecida: ${arg}`);
@@ -115,6 +148,7 @@ function parseCli(argv: string[]): Cli {
   }
   if (positional.length > 0) cli.command = positional[0]!;
   if (positional.length > 1) cli.file = positional[1]!;
+  cli.files = positional.slice(1);
   return cli;
 }
 
@@ -243,6 +277,37 @@ async function main(): Promise<void> {
     }
     process.exitCode = 0;
     return;
+  }
+
+  if (cli.command === "render" && (cli.batch !== undefined || cli.files.length > 1)) {
+    const conflict = cli.batch !== undefined
+      ? [...cli.files.map(() => "um HTML"), ...cli.given, ...(cli.flags.includes("--no-loudness") ? ["--no-loudness"] : []), ...(cli.keep ? ["--keep"] : [])]
+      : cli.keep ? ["--keep"] : [];
+    if (conflict.length > 0) {
+      process.stderr.write(
+        cli.batch !== undefined
+          ? `--batch já traz entradas e opções no arquivo do lote; remova: ${[...new Set(conflict)].join(", ")}\n`
+          : "--keep não vale em lote (cada job apaga a própria pasta de trabalho)\n",
+      );
+      process.exit(2);
+    }
+    process.exitCode = await runBatchCommand({
+      files: cli.files,
+      ...(cli.batch !== undefined ? { batchFile: cli.batch } : {}),
+      ...(cli.out !== undefined ? { out: cli.out } : {}),
+      codec: cli.codec,
+      preset: cli.preset,
+      ...(cli.gpu !== undefined ? { gpu: cli.gpu } : {}),
+      ...(cli.workers !== undefined ? { workers: cli.workers } : {}),
+      ...(cli.concurrency !== undefined ? { concurrency: cli.concurrency } : {}),
+      noLoudness: cli.flags.includes("--no-loudness"),
+      json: cli.json,
+    });
+    return;
+  }
+  if (cli.concurrency !== undefined) {
+    process.stderr.write("--concurrency só vale em lote (várias entradas ou --batch)\n");
+    process.exit(2);
   }
 
   const entry = cli.file;
