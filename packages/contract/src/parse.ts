@@ -237,7 +237,7 @@ function buildClip(
           `data-start="${value}" em ${label} dentro do clip "${id}" é ignorado: ele não vira clip e o motion dele usa o início do clip dono`,
           {
             clipId: id,
-            hint: "tire o data-start e use delay= (ou o time de data-keyframes) relativo ao clip, ou mova o elemento para o topo da composição ou para um host de sub-composição",
+            hint: "tire o data-start e use at= (ou o time de data-keyframes) relativo ao clip, ou mova o elemento para o topo da composição ou para um host de sub-composição",
           },
         ),
       );

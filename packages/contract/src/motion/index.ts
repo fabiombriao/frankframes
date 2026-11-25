@@ -375,6 +375,37 @@ interface PlanInput {
   transition?: { overlap: number; partnerStart: number };
 }
 
+/** Fração da duração total que o trecho `index` ocupa, se ele usa a mola `css` (do offset da chave ao da próxima). */
+function springSpan(keys: MotionKey[], index: number, css: string): number | null {
+  const key = keys[index]!;
+  const next = keys[index + 1];
+  return key.easing !== css || next === undefined ? null : next.offset - key.offset;
+}
+
+/**
+ * Menor `dur` (s) em que toda mola do preset assenta, ou seja, o limite abaixo do qual o plano dá
+ * `E_CURVE_INVALID`. `authored` é o `curve=` do autor, se houver. 0 quando nenhum trecho usa mola.
+ */
+export function springMinSeconds(preset: PresetDef, authored?: string): number {
+  const curve = resolveCurve(authored ?? preset.curve).curve;
+  if (curve?.spring === undefined) return 0;
+  // Os offsets das chaves não dependem dos valores dos parâmetros: os padrões bastam.
+  const params: Record<string, number> = {};
+  const distances: Record<string, MotionValue> = {};
+  const dirs: Record<string, Direction> = {};
+  for (const spec of preset.params) {
+    if (spec.kind === "distance") distances[spec.key] = spec.default;
+    else if (spec.kind === "dir") dirs[spec.key] = spec.default;
+    else params[spec.key] = spec.default;
+  }
+  const curveFor = (name: string): string => (authored !== undefined ? curve.css : resolveCurve(name).curve!.css);
+  const spans = preset
+    .build({ curve: curve.css, curveFor, params, distances, dirs })
+    .flatMap((part) => part.keys.map((_, index) => springSpan(part.keys, index, curve.css)))
+    .filter((span): span is number => span !== null);
+  return spans.length === 0 ? 0 : springSettleSeconds(curve.spring) / (Math.min(...spans) * preset.cycles(params));
+}
+
 /** Valida parâmetros e calcula o intervalo e as chaves de um atributo. */
 function planPreset(input: PlanInput): Planned | "failed" | "waiting" {
   const { kind, preset, params, attrName, where, D, error } = input;
@@ -537,9 +568,9 @@ function planPreset(input: PlanInput): Planned | "failed" | "waiting" {
       list.map((part) => ({
         prop: part.prop,
         keys: part.keys.map((key, index) => {
-          const next = part.keys[index + 1];
-          if (key.easing !== spring.css || next === undefined) return key;
-          const seconds = (next.offset - key.offset) * total;
+          const span = springSpan(part.keys, index, spring.css);
+          if (span === null) return key;
+          const seconds = span * total;
           const easing = emitEasing(spring, seconds);
           if (easing === null) {
             minimum = springSettleSeconds(spring.spring!);

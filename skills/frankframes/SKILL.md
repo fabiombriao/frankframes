@@ -169,8 +169,9 @@ O lint não valida variáveis. Para gerar um vídeo inteiro a partir de um pedid
 ## Legendas e áudio
 
 - `frankframes captions <audio> -o legendas.html` gera a composição de legendas. Se o provedor devolver
-  tempos por palavra, a saída é **karaokê**: cada palavra acende quando é falada
-  (`animation-delay` absoluto) e as anteriores ficam na cor de destaque. Com `--motion "<preset de
+  tempos por palavra, a saída é **karaokê**: legendas curtas, de até 4 palavras (`--max-words N`; a que ficaria
+  menos que 0,4 s na tela, ou menos que o tempo da mola do `--motion`, é juntada à vizinha e pode passar disso),
+  em que só a palavra que está sendo falada fica na cor de destaque e as outras ficam brancas. Com `--motion "<preset de
   entrada>"` (ex.: `--motion "subir"`), cada palavra também entra com esse preset, na hora em que é falada.
 - Papel no mix: `data-audio-role="voice"` faz a música com `data-audio-role="music"` abaixar 9 dB.
 - Entrega sai normalizada a −14 LUFS; use `--no-loudness` só para pós-produção externa.

@@ -140,9 +140,11 @@ O contrato completo está em [`docs/contract.md`](contract.md). O mínimo:
 frankframes captions audio.wav -o legendas.html --size 1080x1920
 ```
 
-Se o provedor devolver tempos por palavra, a legenda sai em **karaokê**: cada palavra acende no
-instante exato (`animation-delay` absoluto) e as já faladas ficam na cor de destaque. Sem palavras,
-o texto quebra em linhas equilibradas e a fonte encolhe para caber na largura segura.
+Se o provedor devolver tempos por palavra, a legenda sai em **karaokê**: a fala é dividida em legendas
+curtas, de até 4 palavras (`--max-words N`; a que ficaria pouco tempo na tela é juntada à vizinha e pode
+passar disso), e só a palavra que está sendo falada fica na cor de destaque, as outras em branco (regras em
+`docs/transcribe.md`). Sem palavras, sai uma legenda por frase: o texto quebra em linhas equilibradas e a fonte
+encolhe para caber na largura segura.
 
 Para cada palavra entrar com movimento, acrescente `--motion` com um preset de entrada
 (`frankframes captions audio.wav -o legendas.html --motion "subir dur=0.3"`): com tempos por palavra, a

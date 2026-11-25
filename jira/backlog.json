@@ -267,6 +267,20 @@
             "Spec em docs/transcribe.md; teste que falharia sem a mudança (openai.test.ts confere os campos do formulário); gate verde."
           ],
           "jiraKey": "EDT-93"
+        },
+        {
+          "summary": "Legenda do `captions` em frases curtas e destaque na palavra que está sendo falada",
+          "points": 2,
+          "labels": [
+            "captions"
+          ],
+          "acceptance": [
+            "Achado na edição do A001 em 2026-11-25: `captions` punha o segmento inteiro do provedor numa caixa só (até 24 palavras, fonte encolhida a 39 px), e o karaokê pintava as palavras já faladas de vez, sem distinguir a que está sendo falada.",
+            "Com tempo por palavra, cada segmento vira legendas de até `maxWords` palavras (padrão 4, opção `--max-words N`), quebrando também depois de pontuação e em pausa maior que 0,35 s; cada legenda vai do início da primeira palavra até o início da seguinte (a última, até o fim do segmento). Sem palavras, segue por frase como hoje.",
+            "No karaokê, só a palavra que está sendo falada fica na cor de destaque (da sua entrada até a entrada da próxima palavra da legenda); antes e depois ela fica branca.",
+            "Spec em docs/transcribe.md e CHANGELOG; testes que falhariam sem a mudança (divisão em legendas curtas, quebra por pontuação e pausa, e destaque só no intervalo da palavra num seek em Chrome); gate verde."
+          ],
+          "jiraKey": "EDT-95"
         }
       ],
       "jiraKey": "EDT-18"
@@ -608,6 +622,20 @@
             "Spec em docs/contract.md (Quem abre fecha); teste que falharia sem a mudança (parallel-close.test.ts, com fake e com Chrome real); gate verde."
           ],
           "jiraKey": "EDT-92"
+        },
+        {
+          "summary": "Dica do W_NESTED_START_IGNORED mandava usar `delay=`, parâmetro que o motion não aceita",
+          "points": 1,
+          "labels": [
+            "bug",
+            "contrato"
+          ],
+          "acceptance": [
+            "Achado na edição do A001 em 2026-11-25: seguir a dica (`delay=`) gera E_MOTION_PARAM, porque o parâmetro de atraso dos presets é `at=`.",
+            "A dica de W_NESTED_START_IGNORED diz `at=`; docs/reference gerado de novo.",
+            "Teste que falharia sem a mudança (nested-start.test.ts confere a dica); gate verde."
+          ],
+          "jiraKey": "EDT-96"
         }
       ],
       "jiraKey": "EDT-26"

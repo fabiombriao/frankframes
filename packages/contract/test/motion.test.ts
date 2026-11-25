@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { parse } from "parse5";
-import { CODES, emitEasing, evaluateCurve, listPresets, loadComposition, mergeSegments, motionElements, parseCurve, parseMotionValue, resolveCurve, sampleTracks, splitText, unitRanks } from "../src/index.ts";
+import { CODES, emitEasing, evaluateCurve, listPresets, loadComposition, mergeSegments, motionElements, parseCurve, parseMotionValue, resolveCurve, sampleTracks, splitText, springMinSeconds, unitRanks } from "../src/index.ts";
 import type { Composition } from "../src/index.ts";
 
 const SUAVE = "cubic-bezier(0.34, 0.1, 0.18, 1)";
@@ -774,6 +774,22 @@ test("saltar dur=0.3 dá E_CURVE_INVALID (mola não assenta) e o padrão assenta
   // meio ciclo curto demais para a mola
   assert.equal(clip('data-emphasis="quicar curve=mola"').ok, false);
   assert.equal(clip('data-emphasis="quicar curve=mola dur=2"').ok, true);
+});
+
+test("springMinSeconds é a mesma fronteira do E_CURVE_INVALID em todo preset com mola (EDT-95)", () => {
+  assert.equal(springMinSeconds(listPresets("enter").find((p) => p.name === "saltar")!), 0.59);
+  assert.equal(springMinSeconds(listPresets("enter").find((p) => p.name === "subir")!), 0);
+  let checked = 0;
+  for (const preset of [...listPresets("enter"), ...listPresets("exit"), ...listPresets("emphasis")]) {
+    const min = Number(springMinSeconds(preset, "mola").toFixed(6));
+    assert.ok(min >= 0.59, `${preset.name}: ${min}`);
+    const repeat = preset.kind === "emphasis" ? " repeat=3" : "";
+    const planned = (dur: number): Composition => clip(`data-${preset.kind}="${preset.name} curve=mola dur=${dur}${repeat}"`, 100);
+    assert.deepEqual(codes(planned(min)), [], `${preset.name} em ${min} s`);
+    assert.deepEqual(codes(planned(Number((min - 0.01).toFixed(6)))), ["E_CURVE_INVALID"], `${preset.name} abaixo de ${min} s`);
+    checked++;
+  }
+  assert.ok(checked > 20, `${checked} presets`);
 });
 
 test("presets: parâmetro de outro preset é rejeitado", () => {

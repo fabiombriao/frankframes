@@ -33,7 +33,8 @@ for (const [width, height] of [[1080, 1920], [1920, 1080]] as const) {
 
       const dir = await tempDir(t, "ff-caption-box-");
       const entry = join(dir, "index.html");
-      await writeFile(entry, buildCaptionComposition([longSegment(karaoke)], { width, height }));
+      // `maxWords` do tamanho do texto: o teste é da caixa com o texto longo inteiro, sem dividir.
+      await writeFile(entry, buildCaptionComposition([longSegment(karaoke)], { width, height, maxWords: LONG_TEXT.split(" ").length }));
 
       const prepared = await prepare({ entry });
       const server = await startServer(prepared.entryDir, { page: { path: basename(prepared.entry), html: prepared.compiledHtml } });
@@ -62,7 +63,12 @@ for (const [width, height] of [[1080, 1920], [1920, 1080]] as const) {
   }
 }
 
-test("karaokê acende a palavra no instante certo",{ timeout: 300_000 }, async (t) => {
+const WHITE = "rgb(255, 255, 255)";
+const LIT = "rgb(255, 212, 0)"; // #ffd400
+/** Com 1000 fps, o número do frame é o instante em milissegundos. */
+const MILLISECONDS = { num: 1000, den: 1 };
+
+test("karaokê: só a palavra que está sendo falada fica na cor de destaque, em qualquer ordem de seek (EDT-95)", { timeout: 300_000 }, async (t) => {
   try {
     await resolveChrome();
   } catch {
@@ -77,10 +83,11 @@ test("karaokê acende a palavra no instante certo",{ timeout: 300_000 }, async (
       {
         start: 0,
         end: 2,
-        text: "um dois",
+        text: "um dois três",
         words: [
-          { start: 0.5, end: 1.0, word: "um" },
-          { start: 1.5, end: 2.0, word: "dois" },
+          { start: 0.2, end: 0.6, word: "um" },
+          { start: 0.7, end: 1.1, word: "dois" },
+          { start: 1.2, end: 1.6, word: "três" },
         ],
       },
     ], { width: 640, height: 360, fontSize: 40 }),
@@ -90,18 +97,62 @@ test("karaokê acende a palavra no instante certo",{ timeout: 300_000 }, async (
   const server = await startServer(prepared.entryDir, { page: { path: basename(prepared.entry), html: prepared.compiledHtml } });
   const session = await openSessionFor(server, { url: `${server.url}${basename(entry)}`, viewport: prepared.viewport, gpu: "software" });
   try {
-    const colors = () =>
-      session.evaluate<string[]>(`[...document.querySelectorAll("span.w")].map((span) => getComputedStyle(span).color)`);
+    const colorsAt = async (ms: number): Promise<string[]> => {
+      await session.seekFrame(ms, MILLISECONDS);
+      return session.evaluate<string[]>(`[...document.querySelectorAll("span.w")].map((span) => getComputedStyle(span).color)`);
+    };
 
-    await session.seekFrame(6, prepared.fps); // 0,2 s: ninguém falou ainda
-    const before = await colors();
-    assert.equal(before.length, 2);
-    assert.ok(before[0]!.includes("0.62"), `antes do tempo a palavra deveria estar apagada: ${before[0]}`);
+    assert.deepEqual(await colorsAt(900), [WHITE, LIT, WHITE], "no meio da 2ª palavra");
+    assert.deepEqual(await colorsAt(100), [WHITE, WHITE, WHITE], "antes de alguém falar");
+    assert.deepEqual(await colorsAt(650), [LIT, WHITE, WHITE], "entre duas palavras a anterior segue acesa");
+    assert.deepEqual(await colorsAt(1850), [WHITE, WHITE, LIT], "a última fica acesa até o fim da legenda");
+    // Volta no tempo depois de todas as animações anteriores terem terminado: com fill none isto falha.
+    assert.deepEqual(await colorsAt(400), [LIT, WHITE, WHITE], "seek para trás reacende a 1ª");
+    assert.deepEqual(await colorsAt(699), [LIT, WHITE, WHITE], "1 ms antes da 2ª");
+    assert.deepEqual(await colorsAt(700), [WHITE, LIT, WHITE], "no início exato da 2ª, só ela");
+    assert.deepEqual(session.pageErrors(), []);
+  } finally {
+    await session.close();
+    await server.close();
+  }
+});
 
-    await session.seekFrame(21, prepared.fps); // 0,7 s: "um" já foi
-    const after = await colors();
-    assert.notEqual(after[0], before[0], "a primeira palavra precisa acender");
-    assert.ok(after[1]!.includes("0.62"), "a segunda ainda não foi falada");
+test("karaokê: com decimais quebrados, em cada troca de palavra há exatamente uma acesa (EDT-95)", { timeout: 300_000 }, async (t) => {
+  try {
+    await resolveChrome();
+  } catch {
+    return t.skip("Chrome não encontrado");
+  }
+
+  const words = Array.from({ length: 30 }, (_, i) => {
+    const start = 0.1 + i * 0.2137;
+    return { word: `p${i}`, start, end: start + 0.2 };
+  });
+  const dir = await tempDir(t, "ff-karaoke-edges-");
+  const entry = join(dir, "index.html");
+  await writeFile(entry, buildCaptionComposition([{ start: 0, end: 7, text: "x", words }], { width: 640, height: 360, maxWords: words.length }));
+
+  const prepared = await prepare({ entry });
+  const server = await startServer(prepared.entryDir, { page: { path: basename(prepared.entry), html: prepared.compiledHtml } });
+  const session = await openSessionFor(server, { url: `${server.url}${basename(entry)}`, viewport: prepared.viewport, gpu: "software" });
+  try {
+    const litAt = async (ms: number): Promise<number[]> => {
+      await session.seekFrame(ms, MILLISECONDS);
+      return session.evaluate<number[]>(
+        `[...document.querySelectorAll("span.w")].flatMap((span, i) => getComputedStyle(span).color === "${LIT}" ? [i] : [])`,
+      );
+    };
+    const starts = words.map((word) => Math.round(word.start * 1000));
+    const expected: Array<[number, number[]]> = starts.flatMap((ms, i): Array<[number, number[]]> => [
+      [ms - 1, i === 0 ? [] : [i - 1]],
+      [ms, [i]],
+    ]);
+    const wrong: string[] = [];
+    for (const [ms, lit] of [...expected, ...[...expected].reverse()]) {
+      const got = await litAt(ms);
+      if (got.join() !== lit.join()) wrong.push(`${ms} ms: acesas [${got}], esperado [${lit}]`);
+    }
+    assert.deepEqual(wrong, []);
   } finally {
     await session.close();
     await server.close();

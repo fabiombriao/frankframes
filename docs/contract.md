@@ -443,13 +443,20 @@ serializer do HTML, que escapa o texto. Unidades explícitas só ganham `data-ff
 a fonte, o tamanho e a cor continuam herdados.
 
 **Legendas.** `buildCaptionComposition(segments, { motion: { enter, exit? } })` e a flag
-`frankframes captions --motion "<preset de entrada>"` ligam o split nas legendas: o bloco da fala recebe
-`data-split="word"`, `data-enter` e `data-exit`; com palavras temporizadas, cada palavra leva
-`data-unit="<início da palavra − início do segmento>"` e o `stagger` é 0, de modo que a entrada acompanha a
-fala. Sem palavras com tempo, as palavras do texto entram em sequência e o `stagger` encolhe (até 0.06 s)
-para a última terminar dentro da fala. A duração do preset é limitada à fala e as âncoras são limitadas a
-`D − dur`. O gerador passa o resultado pelo contrato: o que ainda não couber (mola curta demais para a fala,
-saída sem espaço depois da última entrada) falha na geração com o diagnóstico, nunca vira legenda inválida.
+`frankframes captions --motion "<preset de entrada>"` ligam o split nas legendas: o bloco de cada legenda
+recebe `data-split="word"`, `data-enter` e `data-exit`. Com palavras temporizadas o segmento sai dividido em
+legendas curtas (`docs/transcribe.md`), cada palavra leva `data-unit="<início da palavra − início da legenda>"`
+e o `stagger` é 0, de modo que a entrada acompanha a fala. Depois das quebras, a legenda mais curta que a
+duração mínima é juntada à seguinte do mesmo segmento (a última, à anterior) até nenhuma ficar abaixo, mesmo
+que passe de `maxWords`. A mínima é o maior valor entre 0,4 s e o que as molas do motion pedem: para a entrada
+mais a saída, a menor `dur` em que cada trecho com mola assenta (§7b.11; `saltar`: 0,59 s), do preset ou de
+`curve=`; sem mola, 0,4 s. Um segmento inteiro mais curto que a mínima fica como uma legenda só, sem erro da
+divisão. A `dur` do autor abaixo do que a mola pede não é corrigida: continua `E_CURVE_INVALID`. A mínima não
+reserva sozinha o espaço da saída depois da entrada da última palavra. Sem palavras com tempo, a legenda é o segmento
+inteiro, as palavras do texto entram em sequência e o `stagger` encolhe (até 0.06 s) para a última terminar
+dentro dela. A duração do preset é limitada à duração da legenda (`D`) e as âncoras são limitadas a `D − dur`.
+O gerador passa o resultado pelo contrato: o que ainda não couber (mola curta demais para a legenda, saída sem
+espaço depois da última entrada) falha na geração com o diagnóstico, nunca vira legenda inválida.
 
 **Legendas: layout (EDT-89).** A caixa `.caption` é centralizada por `left:0; right:0; margin-inline:auto;
 width:fit-content` e cresce até `max-width: 84%` do quadro (`box-sizing: border-box`, padding incluído). Não usa

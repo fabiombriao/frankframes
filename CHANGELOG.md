@@ -8,6 +8,13 @@ FrankFrames — proprietário (ver `LICENSE`). Versões seguem `MAJOR.MINOR.PATC
 
 - Legenda por Groq ou OpenAI-compatível sai em karaokê: o pedido agora solicita tempo por palavra, que antes nunca
   vinha, e `captions` diz se a legenda saiu em karaokê (com quantas palavras) ou por frase.
+- Karaokê sai em legendas curtas, de até 4 palavras (`--max-words N` ou `maxWords`), com quebra também em
+  pontuação e em pausa acima de 0,35 s; antes cada frase do provedor virava uma caixa só, com a fonte encolhida.
+  Nenhuma legenda fica menos de 0,4 s na tela, nem menos que o tempo de a mola do `--motion` assentar (`saltar`:
+  0,59 s): a curta é juntada à vizinha do mesmo segmento, mesmo passando de N palavras.
+- Destaque só na palavra que está sendo falada: as outras ficam brancas, em vez de cinza antes da fala e na cor de
+  destaque depois dela.
+- A dica do `W_NESTED_START_IGNORED` manda usar `at=`; mandava usar `delay=`, que nenhum preset aceita.
 
 ### Sub-composições
 

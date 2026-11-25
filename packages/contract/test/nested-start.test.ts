@@ -40,8 +40,11 @@ test("W_NESTED_START_IGNORED: um aviso por barra do vertical-chart antigo, sem b
     found.map((d) => /data-clip-id="([^"]+)"/.exec(d.message)?.[1]),
     ["bar-q1", "bar-q2", "bar-q3", "bar-q4"],
   );
-  assert.match(found[0]!.hint ?? "", /delay/);
-  assert.match(found[0]!.hint ?? "", /sub-composição/);
+  // O atraso dos presets é `at=`; `delay=` não existe e segui-lo dava E_MOTION_PARAM (EDT-96).
+  const hint = found[0]!.hint ?? "";
+  assert.ok(hint.includes("at="), hint);
+  assert.ok(!hint.includes("delay="), hint);
+  assert.match(hint, /sub-composição/);
   // Só avisa: nenhum erro, e a barra continua sem virar clip.
   assert.equal(c.diagnostics.filter((d) => d.severity === "error").length, 0);
   assert.deepEqual(c.clips.map((clip) => clip.id), ["plot"]);

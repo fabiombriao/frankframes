@@ -60,6 +60,8 @@ interface Cli {
   language?: string;
   /** `captions --motion`: preset de entrada por palavra (§7b.8). */
   motion?: string;
+  /** `captions --max-words`: palavras por legenda, no karaokê. */
+  maxWords?: number;
   port?: number;
   root?: string;
   gpu?: "auto" | "software" | "hardware";
@@ -103,6 +105,11 @@ function parseCli(argv: string[]): Cli {
       const value = argv[++i];
       if (value === undefined || value.startsWith("-")) throw new Error('--motion precisa de um preset de entrada, por exemplo --motion "subir"');
       cli.motion = value;
+    }
+    else if (arg === "--max-words") {
+      const value = Number(argv[++i]);
+      if (!Number.isInteger(value) || value < 1) throw new Error("E_CAPTIONS: --max-words precisa de um inteiro maior ou igual a 1, por exemplo --max-words 4");
+      cli.maxWords = value;
     }
     else if (arg === "--port") cli.port = Number(argv[++i]);
     else if (arg === "--root") cli.root = argv[++i];
@@ -391,6 +398,7 @@ async function main(): Promise<void> {
         ...(Number.isFinite(width) ? { width } : {}),
         ...(Number.isFinite(height) ? { height } : {}),
         ...(cli.motion !== undefined ? { motion: { enter: cli.motion } } : {}),
+        ...(cli.maxWords !== undefined ? { maxWords: cli.maxWords } : {}),
       });
       await writeFile(outPath, html, "utf8");
       const spoken = countKaraokeWords(segments);

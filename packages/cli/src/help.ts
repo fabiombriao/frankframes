@@ -55,6 +55,8 @@ uso:
   frankframes studio <arquivo.html> [--port N]
   frankframes transcribe <audio> [--provider local|groq|openai-compatible] [--language pt] [--json]
   frankframes captions <audio> [-o legenda.html] [--size 1920x1080] [--language pt] [--motion "<preset de entrada>"]
+                                    [--max-words N]  (karaokê: até N palavras por legenda, padrão 4; juntar para
+                                                      dar o tempo mínimo na tela, 0,4 s ou o da mola, pode passar de N)
   frankframes models install whisper-large-v3-turbo
   frankframes blocks list
   frankframes blocks add <slug> [destino]

@@ -396,9 +396,10 @@ test("legendas com motion renderizam sem erro de página e as palavras entram no
         start: 0,
         end: 3,
         text: "olá mundo lindo",
+        // pausas de 0,2 s: o segmento continua numa legenda só (acima de 0,35 s ele seria dividido)
         words: [
-          { start: 0, end: 0.5, word: "olá" },
-          { start: 1, end: 1.5, word: "mundo" },
+          { start: 0, end: 0.8, word: "olá" },
+          { start: 1, end: 1.8, word: "mundo" },
           { start: 2, end: 2.5, word: "lindo" },
         ],
       },
