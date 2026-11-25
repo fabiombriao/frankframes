@@ -143,6 +143,19 @@ function escapeHtml(text: string): string {
   return text.replace(/[&<>"']/g, (character) => ESCAPES[character] ?? character);
 }
 
+/** Segmentos que viram clip: tempos finitos e duração positiva. */
+const usableSegments = (segments: CaptionSegment[]): CaptionSegment[] =>
+  segments.filter((segment) => Number.isFinite(segment.start) && Number.isFinite(segment.end) && segment.end > segment.start);
+
+/** Palavras que ligam o karaokê num segmento; sem nenhuma, ele sai por frase. */
+const karaokeWords = (segment: CaptionSegment): CaptionWord[] =>
+  (segment.words ?? []).filter((word) => Number.isFinite(word.start) && word.word.trim() !== "");
+
+/** Quantas palavras a composição acende em karaokê; 0 = legenda inteira por frase. */
+export function countKaraokeWords(segments: CaptionSegment[]): number {
+  return usableSegments(segments).reduce((sum, segment) => sum + karaokeWords(segment).length, 0);
+}
+
 /**
  * Transforma segmentos de transcrição numa composição de legendas: um clip por
  * segmento, com `data-start`/`data-duration` exatos e texto escapado.
@@ -158,9 +171,7 @@ export function buildCaptionComposition(segments: CaptionSegment[], options: Cap
   const fontSize = baseFontSize;
   const bottom = options.bottom ?? Math.round(height * 0.08);
 
-  const usable = segments
-    .filter((segment) => Number.isFinite(segment.start) && Number.isFinite(segment.end) && segment.end > segment.start)
-    .sort((a, b) => a.start - b.start);
+  const usable = usableSegments(segments).sort((a, b) => a.start - b.start);
 
   if (usable.length === 0) throw new Error("nenhum segmento válido para gerar legendas");
 
@@ -176,7 +187,7 @@ export function buildCaptionComposition(segments: CaptionSegment[], options: Cap
       // Karaokê: cada palavra acende no seu instante. Como a animação CSS roda no
       // tempo do documento, o atraso é o `word.start` absoluto — o clip só fica
       // visível a partir do `data-start` do segmento.
-      const words = (segment.words ?? []).filter((word) => Number.isFinite(word.start) && word.word.trim() !== "");
+      const words = karaokeWords(segment);
       const fitted =
         options.motion === undefined
           ? undefined

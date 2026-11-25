@@ -14,7 +14,7 @@ export { applyPatches, applyTransition, deleteClip, duplicateClip, editCompositi
 export { editKeyframes, mergeKeyframePoints } from "./keyframes-edit.ts";
 export type { KeyframePoint, KeyframeProp, KeyframeRequest } from "./keyframes-edit.ts";
 export type { ClipLocation, ClipPatch, CompositionPatch, DeleteRequest, DuplicateRequest, DuplicateResult, SplitRequest, TrimStartRequest, TransitionRequest } from "./edit.ts";
-export { buildCaptionComposition } from "./captions.ts";
+export { buildCaptionComposition, countKaraokeWords } from "./captions.ts";
 export type { CaptionOptions, CaptionSegment } from "./captions.ts";
 export { mixAudio, buildAudioGraph, codecArgs, enforceTruePeak, truePeakCorrectionDb, AudioTruePeakError, AUDIO_ERROR_CODES, TRUE_PEAK_MARGIN_DB } from "./audio.ts";
 export type { AudioClip, AudioFormat, AudioGraph, MixOptions } from "./audio.ts";

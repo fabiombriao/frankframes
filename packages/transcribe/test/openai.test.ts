@@ -97,6 +97,22 @@ test("envia multipart, autorização e converte segments/words", async () => {
   }
 });
 
+test("pede tempo por palavra e por segmento: sem isso a legenda nunca sai em karaokê (EDT-93)", async (t) => {
+  let sent: FormData | undefined;
+  t.mock.method(globalThis, "fetch", async (_url: unknown, init?: RequestInit) => {
+    sent = init?.body as FormData;
+    return new Response(JSON.stringify({ text: "olá", segments: [] }), { headers: { "content-type": "application/json" } });
+  });
+
+  await withInput(async (file) => {
+    const transcriber = createOpenAiCompatible({ name: "fake", baseUrl: "http://127.0.0.1:1/v1", apiKey: "segredo", model: "whisper-test" });
+    await transcriber.transcribe(file);
+  });
+
+  assert.deepEqual(sent?.getAll("timestamp_granularities[]"), ["word", "segment"]);
+  assert.equal(sent?.get("response_format"), "verbose_json");
+});
+
 test("resposta sem segments mantém text e devolve lista vazia", async () => {
   const server = createServer((_request, response) => {
     response.writeHead(200, { "content-type": "application/json" });

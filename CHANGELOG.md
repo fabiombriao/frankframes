@@ -2,6 +2,19 @@
 
 FrankFrames — proprietário (ver `LICENSE`). Versões seguem `MAJOR.MINOR.PATCH`.
 
+## Próxima versão
+
+### Legendas
+
+- Legenda por Groq ou OpenAI-compatível sai em karaokê: o pedido agora solicita tempo por palavra, que antes nunca
+  vinha, e `captions` diz se a legenda saiu em karaokê (com quantas palavras) ou por frase.
+
+### Sub-composições
+
+- Sub-composição embutida sai como entrou: `<br>` não dobra mais (o espaço entre linhas da legenda por frase saía
+  em dobro), `<img>` não ganha tag de fechamento, comentários mantêm o texto, SVG fica no namespace SVG e o CSS e o
+  JavaScript de `<style>`/`<script>` não são escapados.
+
 ## 1.0.0 — 2026-11-24
 
 Primeira versão de produção: HTML vira MP4 de forma determinística, com editor, catálogo, legendas, mix de

@@ -3,6 +3,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { html as p5html, parse } from "parse5";
+import type { DefaultTreeAdapterTypes } from "parse5";
 import { loadComposition } from "@frankframes/contract";
 import { annotateTiming, mergeSubCompositions } from "../src/compile.ts";
 import { tempDir } from "../../../scripts/test-support/temp.ts";
@@ -41,6 +43,44 @@ test("sub-composição de arquivo é inlinada com caminhos reescritos", async (t
   assert.ok(merged.html.includes('data-clip-id="inner"'), "clips da sub-composição precisam entrar");
   assert.ok(merged.html.includes('src="cards/pic.png"'), "caminho relativo precisa ser reescrito");
   assert.ok(!merged.html.includes("data-composition-src"), "host não pode continuar externo");
+});
+
+/** Nós do documento que o navegador monta a partir da saída. */
+function* parsedNodes(node: DefaultTreeAdapterTypes.Node): Generator<DefaultTreeAdapterTypes.Node> {
+  yield node;
+  for (const child of "childNodes" in node ? node.childNodes : []) yield* parsedNodes(child);
+}
+
+test("sub-composição embutida sai como entrou: vazios, comentário, texto cru e SVG (EDT-94)", async (t) => {
+  const dir = await tempDir(t, "ff-clone-");
+  await writeFile(
+    join(dir, "sub.html"),
+    `<html><head><style>.x > b { color: red }</style></head><body>
+      <div data-composition-id="sub" data-duration="1"><!-- nota --><p>a<br>b</p><img src="x.png">
+        <svg viewBox="0 0 1 1"><path d="M0 0"/><foreignObject><br></foreignObject></svg>
+        <script>if (1 < 2 && 2 > 1) {}</script>
+      </div></body></html>`,
+  );
+
+  const { html } = await mergeSubCompositions(
+    `<div data-composition-id="main" data-root="true"><div data-composition-id="h" data-start="0" data-composition-src="sub.html"></div></div>`,
+    dir,
+  );
+
+  assert.ok(html.includes("<p>a<br>b</p>"), html);
+  assert.ok(!html.includes("</br>"), html);
+  assert.ok(html.includes('<img src="x.png">') && !html.includes("</img>"), html);
+  assert.ok(html.includes("<!-- nota -->"), html);
+  assert.ok(html.includes("<style>.x > b { color: red }</style>"), html);
+  assert.ok(html.includes("<script>if (1 < 2 && 2 > 1) {}</script>"), html);
+
+  const nodes = [...parsedNodes(parse(html))];
+  // `</br>` vira mais um <br> no parser: a saída precisa ter os mesmos 2 da origem.
+  assert.equal(nodes.filter((node) => node.nodeName === "br").length, 2, html);
+  const path = nodes.find((node) => node.nodeName === "path") as DefaultTreeAdapterTypes.Element | undefined;
+  const svg = path?.parentNode as DefaultTreeAdapterTypes.Element | undefined;
+  assert.equal(svg?.nodeName, "svg", html);
+  assert.equal(svg?.namespaceURI, p5html.NS.SVG);
 });
 
 test("referência circular é recusada com aviso, sem loop", async (t) => {

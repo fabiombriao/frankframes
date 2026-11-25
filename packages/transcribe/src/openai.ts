@@ -66,6 +66,10 @@ export function createOpenAiCompatible(config: OpenAiCompatibleConfig): Transcri
       form.append("file", blob, basename(file));
       form.append("model", config.model);
       form.append("response_format", "verbose_json");
+      // Sem pedir `word` o provedor não devolve tempo por palavra e a legenda nunca sai em karaokê.
+      // `segment` vai junto: pedir granularidade substitui o padrão, e `segments` é obrigatório.
+      form.append("timestamp_granularities[]", "word");
+      form.append("timestamp_granularities[]", "segment");
       if (options?.language) form.append("language", options.language);
 
       const response = await fetch(endpoint, {

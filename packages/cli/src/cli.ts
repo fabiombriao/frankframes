@@ -13,6 +13,7 @@ import {
   PreviewAudioError,
   RenderError,
   buildCaptionComposition,
+  countKaraokeWords,
   prepare,
   renderComposition,
   renderPreviewAudio,
@@ -392,7 +393,9 @@ async function main(): Promise<void> {
         ...(cli.motion !== undefined ? { motion: { enter: cli.motion } } : {}),
       });
       await writeFile(outPath, html, "utf8");
-      process.stdout.write(`${outPath} · ${result.segments.length} segmento(s) · ${result.provider}\n`);
+      const spoken = countKaraokeWords(segments);
+      const mode = spoken > 0 ? `karaokê (${spoken} palavras)` : "por frase: o provedor não devolveu tempo por palavra";
+      process.stdout.write(`${outPath} · ${result.segments.length} segmento(s) · ${result.provider} · ${mode}\n`);
       process.exitCode = 0;
       return;
     } catch (error) {

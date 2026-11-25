@@ -1,5 +1,6 @@
 // FrankFrames — proprietário. Ver LICENSE na raiz.
 import { test } from "node:test";
+import type { TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { createServer } from "node:http";
@@ -14,18 +15,12 @@ import { tempDir } from "../../../scripts/test-support/temp.ts";
 const run = promisify(execFile);
 const CLI = fileURLToPath(new URL("../src/cli.ts", import.meta.url));
 
-test("captions gera composição de legendas a partir do provedor", { timeout: 120_000 }, async (t) => {
+/** Roda `captions` contra um provedor falso que devolve `reply`; entrega o stdout e o HTML escrito. */
+async function runCaptions(t: TestContext, reply: unknown): Promise<{ out: string; stdout: string; html: string }> {
   const server = createServer((request, response) => {
-    let body = "";
-    request.on("data", (chunk: Buffer) => (body += chunk.toString()));
+    request.resume();
     request.on("end", () => {
-      response.writeHead(200, { "content-type": "application/json" }).end(
-        JSON.stringify({
-          text: "olá mundo",
-          segments: [{ start: 0, end: 1.5, text: "olá mundo", no_speech_prob: 0.01 }],
-          words: [{ start: 0, end: 0.6, word: "olá" }, { start: 0.6, end: 1.5, word: "mundo" }],
-        }),
-      );
+      response.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(reply));
     });
   });
   const listening = Promise.withResolvers<void>();
@@ -39,7 +34,7 @@ test("captions gera composição de legendas a partir do provedor", { timeout: 1
   const out = join(dir, "legenda.html");
 
   try {
-    await run(process.execPath, [CLI, "captions", audio, "-o", out, "--size", "1080x1920"], {
+    const { stdout } = await run(process.execPath, [CLI, "captions", audio, "-o", out, "--size", "1080x1920"], {
       encoding: "utf8",
       env: {
         ...process.env,
@@ -48,21 +43,40 @@ test("captions gera composição de legendas a partir do provedor", { timeout: 1
         GROQ_API_KEY: "",
       },
     });
+    return { out, stdout, html: await readFile(out, "utf8") };
   } finally {
     server.closeAllConnections();
     const closed = Promise.withResolvers<void>();
     server.close(() => closed.resolve());
     await closed.promise;
   }
+}
 
-  const html = await readFile(out, "utf8");
+const SEGMENTS = [{ start: 0, end: 1.5, text: "olá mundo", no_speech_prob: 0.01 }];
+
+test("captions com tempo por palavra sai em karaokê e a linha diz quantas palavras (EDT-93)", { timeout: 120_000 }, async (t) => {
+  // A palavra em branco não acende: a contagem é a do producer, não o tamanho da lista do provedor.
+  const { out, stdout, html } = await runCaptions(t, {
+    text: "olá mundo",
+    segments: SEGMENTS,
+    words: [{ start: 0, end: 0.6, word: "olá" }, { start: 0.6, end: 1.5, word: "mundo" }, { start: 1.2, end: 1.4, word: " " }],
+  });
+
+  assert.equal(stdout, `${out} · 1 segmento(s) · openai · karaokê (2 palavras)\n`);
   const composition = loadComposition(html);
   assert.equal(composition.ok, true, JSON.stringify(composition.diagnostics));
   assert.deepEqual([composition.width, composition.height], [1080, 1920]);
   assert.equal(composition.clips.length, 1);
   assert.equal(composition.clips[0]!.start, 0);
   assert.equal(composition.clips[0]!.end, 1.5);
-  // O provedor devolveu `words`: a saída entra em modo karaokê.
   assert.equal((html.match(/class="w"/g) ?? []).length, 2);
   assert.ok(html.includes(">olá<") && html.includes(">mundo<"));
+});
+
+test("captions sem tempo por palavra sai por frase e a linha diz o motivo (EDT-93)", { timeout: 120_000 }, async (t) => {
+  const { out, stdout, html } = await runCaptions(t, { text: "olá mundo", segments: SEGMENTS });
+
+  assert.equal(stdout, `${out} · 1 segmento(s) · openai · por frase: o provedor não devolveu tempo por palavra\n`);
+  assert.equal(loadComposition(html).ok, true);
+  assert.equal((html.match(/class="w"/g) ?? []).length, 0);
 });

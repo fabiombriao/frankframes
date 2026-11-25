@@ -153,6 +153,20 @@
           ],
           "acceptance": "Um .gitattributes na raiz fixa texto em LF (* text=auto eol=lf) e marca binários (png, mp4, mov, wav, woff2, ttf, webm) como binary. Com core.autocrlf=true, um git stash/checkout não reescreve docs/reference/*.md nem catalog/goldens.json em CRLF, e o teste de referência não falha por fim de linha. O renormalize (git add --renormalize .) entra no mesmo commit e não altera nenhum PNG.",
           "jiraKey": "EDT-69"
+        },
+        {
+          "summary": "Sub-composição embutida dobrava cada <br> e trocava comentários por \"undefined\"",
+          "points": 1,
+          "labels": [
+            "bug",
+            "producer"
+          ],
+          "acceptance": [
+            "Achado no teste com vídeo real em 2026-11-25: a legenda por frase, embutida como sub-composição, saiu com o dobro do espaço entre linhas. O cloneNode de packages/producer/src/compile.ts não copia namespaceURI nem data: o parse5 serializa <br> como <br></br> (que o navegador lê como duas quebras), <img> como <img></img> e comentário como <!--undefined-->.",
+            "O nó embutido mantém namespace e conteúdo: <br>, <img> e demais elementos vazios saem sem tag de fechamento, comentários mantêm o texto, e SVG dentro da sub-composição continua no namespace SVG.",
+            "Teste que falharia sem a mudança (mergeSubCompositions com <br>, <img>, comentário e SVG numa sub-composição); gate verde."
+          ],
+          "jiraKey": "EDT-94"
         }
       ],
       "jiraKey": "EDT-10"
@@ -239,6 +253,20 @@
             "Teste em Chrome que falharia sem a mudança: legenda longa mede mais que 50% da largura em 1080x1920 e 1920x1080, sem passar de 84%; gate verde."
           ],
           "jiraKey": "EDT-89"
+        },
+        {
+          "summary": "Legenda por Groq/OpenAI nunca saía em karaokê: o pedido não solicitava tempo por palavra",
+          "points": 1,
+          "labels": [
+            "bug",
+            "transcribe"
+          ],
+          "acceptance": [
+            "Achado no teste com vídeo real em 2026-11-25 (video-teste.mp4): `captions` com Groq gerou só legenda por frase. O pedido a /audio/transcriptions ia sem `timestamp_granularities[]`, e o Groq/OpenAI só devolvem `words` quando ele vem com `word`; com o campo, o mesmo áudio devolve 24 palavras com tempo.",
+            "O provedor OpenAI-compatível pede `timestamp_granularities[]=word` e `timestamp_granularities[]=segment`; `captions` diz na saída se a legenda saiu em karaokê (quantas palavras) ou por frase porque o provedor não devolveu tempo por palavra.",
+            "Spec em docs/transcribe.md; teste que falharia sem a mudança (openai.test.ts confere os campos do formulário); gate verde."
+          ],
+          "jiraKey": "EDT-93"
         }
       ],
       "jiraKey": "EDT-18"

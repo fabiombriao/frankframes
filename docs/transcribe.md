@@ -35,6 +35,8 @@ interface Transcriber {
 ```
 
 `segments` é obrigatório; `words` degrada (legenda por frase quando o provedor não retorna palavra).
+O provedor remoto pede `timestamp_granularities[]=word,segment` (um campo do formulário para cada valor), e a
+linha de saída do `captions` informa se a legenda saiu em karaokê, com o total de palavras, ou por frase.
 
 ## Estado do modo local
 

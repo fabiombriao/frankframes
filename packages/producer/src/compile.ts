@@ -11,7 +11,8 @@ interface P5Node {
   tagName?: string;
   attrs?: Array<{ name: string; value: string }>;
   childNodes?: P5Node[];
-  content?: { childNodes: P5Node[] };
+  content?: P5Node & { childNodes: P5Node[] };
+  parentNode?: P5Node;
   value?: string;
 }
 
@@ -43,13 +44,17 @@ function* walk(nodes: P5Node[] | undefined): Generator<P5Node> {
   }
 }
 
+/**
+ * Cópia profunda de um nó do parse5, com todos os campos. O serializador usa o `namespaceURI` para
+ * reconhecer elemento vazio (sem ele sai `<br></br>`, que o navegador lê como dois `<br>`), o `data`
+ * para o texto do comentário e o `parentNode`, religado à cópia, para não escapar `<style>`/`<script>`.
+ */
 function cloneNode(node: P5Node): P5Node {
-  const copy: P5Node = { nodeName: node.nodeName };
-  if (node.tagName !== undefined) copy.tagName = node.tagName;
-  if (node.value !== undefined) copy.value = node.value;
+  const copy: P5Node = { ...node };
+  delete copy.parentNode;
   if (node.attrs) copy.attrs = node.attrs.map((a) => ({ ...a }));
-  if (node.childNodes) copy.childNodes = node.childNodes.map(cloneNode);
-  if (node.content) copy.content = { childNodes: node.content.childNodes.map(cloneNode) };
+  if (node.childNodes) copy.childNodes = node.childNodes.map((child) => Object.assign(cloneNode(child), { parentNode: copy }));
+  if (node.content) copy.content = cloneNode(node.content) as NonNullable<P5Node["content"]>;
   return copy;
 }
 
