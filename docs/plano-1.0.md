@@ -4,6 +4,9 @@ Fonte de verdade da execução dos itens EDT-39 a EDT-65 (EDT-63 é pós-1.0). P
 a sessão de planejamento (Opus 5.5) mantém este arquivo, manda um item por vez para a sessão de
 execução (Sonnet 5.5), revisa o diff, roda `node scripts/ci.ts` e faz commit/push/Jira.
 
+**Estado (2026-11-25): 1.0 concluída.** Release 1.0.0 em `c9bab5b`, `ci --release` 10/10; EDT-65, EDT-60 e EDT-1
+fechados no Jira. Abertos só os pós-1.0 abaixo.
+
 Partes: **A — Studio** (EDT-39..46), **B — Motion** (EDT-47..56), **C — Geração e 1.0** (EDT-58..65).
 A ordem global entre as partes fica na seção "Ordem global" ao fim, mantida pelo planejamento.
 
