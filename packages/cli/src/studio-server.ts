@@ -6,7 +6,7 @@ import { statIfPresent } from "./fs-util.ts";
 import { createServer } from "node:http";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
-import { basename, dirname, extname, join, resolve, sep } from "node:path";
+import { basename, dirname, extname, isAbsolute, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describePresets, listPresets, loadComposition, parseComposition, parseMotionValue } from "@frankframes/contract";
 import type { MotionKind, MotionSource, ResolvedClip } from "@frankframes/contract";
@@ -15,13 +15,16 @@ import type { PreviewAudioConfig, VideoOrientation } from "@frankframes/engine";
 import {
   applyPatches,
   applyTransition,
+  editCaptionText,
   editKeyframes,
   EditError,
   explicitClipIds,
+  hasCaptionMeta,
   mergeKeyframePoints,
   compileComposition,
   prepare,
   PreviewAudioError,
+  readCaptionFile,
   renderPreviewAudio,
   resolveFfmpeg,
   splitClip,
@@ -137,6 +140,21 @@ function sendJson(res: ServerResponse, status: number, value: unknown): void {
 function inside(root: string, relative: string): string | undefined {
   const target = resolve(root, relative);
   return target === root || target.startsWith(root.endsWith(sep) ? root : root + sep) ? target : undefined;
+}
+
+/** Erro cujo `hint` acionável chega ao Studio dentro de `diagnostics`. */
+function hintedError(status: number, code: string, message: string, hint: string | undefined): ReplyError {
+  return new ReplyError(status, code, message, [{ code, severity: "error", message, ...(hint === undefined ? {} : { hint }) }]);
+}
+
+/** Roda uma leitura ou edição de legendas e devolve a recusa do producer com o código e o hint dela. */
+function captionsStep<T>(step: () => T): T {
+  try {
+    return step();
+  } catch (error) {
+    if (!(error instanceof EditError)) throw error;
+    throw hintedError(error.code === "E_CAPTIONS_CUE_NOT_FOUND" ? 404 : 400, error.code, error.message, error.hint);
+  }
 }
 
 function errorCode(error: unknown): string {
@@ -351,7 +369,9 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
   const clients = new Set<ServerResponse>();
   let watcher: FSWatcher | undefined;
   let debounce: NodeJS.Timeout | undefined;
-  let preview: { mtimeMs: number; prepared: PreparedComposition; html: string } | undefined;
+  let preview: { mtimeMs: number; revision: number; prepared: PreparedComposition; html: string } | undefined;
+  /** Escritas fora do arquivo de entrada (legendas): o `mtime` dele não muda, então o cache do preview conta aqui. */
+  let revision = 0;
   let tmpCounter = 0;
   const history = new StudioHistory();
   let mutations: Promise<unknown> = Promise.resolve();
@@ -388,16 +408,20 @@ data: ${JSON.stringify(job)}
     },
   });
 
+  const scheduleChange = (): void => {
+    clearTimeout(debounce);
+    debounce = setTimeout(() => {
+      debounce = undefined;
+      for (const client of clients) client.write("data: change\n\n");
+    }, 80);
+    debounce.unref();
+  };
+
   const ensureWatcher = (): void => {
     if (watcher !== undefined) return;
     watcher = watch(entryDir, (_event, filename) => {
       if (filename !== null && String(filename) !== entryName) return;
-      clearTimeout(debounce);
-      debounce = setTimeout(() => {
-        debounce = undefined;
-        for (const client of clients) client.write("data: change\n\n");
-      }, 80);
-      debounce.unref();
+      scheduleChange();
     });
     watcher.on("error", (error: Error) => {
       process.stderr.write(`studio: watcher falhou: ${error.message}\n`);
@@ -416,10 +440,17 @@ data: ${JSON.stringify(job)}
     }
   };
 
+  /** O watcher só olha o arquivo de entrada: escrita em sub-composição recarrega o preview por aqui. */
+  const subCompositionChanged = (): void => {
+    revision += 1;
+    scheduleChange();
+  };
+
   /** Grava uma versão nova e registra no histórico. */
-  const commit = async (label: string, before: string, after: string): Promise<void> => {
-    await writeAtomic(entryPath, after);
-    history.record(label, before, after);
+  const commit = async (label: string, before: string, after: string, file = entryPath): Promise<void> => {
+    await writeAtomic(file, after);
+    history.record(label, file, before, after);
+    if (file !== entryPath) subCompositionChanged();
   };
 
   const validated = (next: string, message: string): ReturnType<typeof loadComposition> => {
@@ -456,7 +487,9 @@ data: ${JSON.stringify(job)}
 
   const loadPreview = async (): Promise<{ prepared: PreparedComposition; html: string }> => {
     const current = await stat(entryPath);
-    if (preview !== undefined && preview.mtimeMs === current.mtimeMs) {
+    // Lida antes do `prepare`: uma escrita durante a preparação deixa o cache vencido.
+    const seen = revision;
+    if (preview !== undefined && preview.mtimeMs === current.mtimeMs && preview.revision === seen) {
       return { prepared: preview.prepared, html: preview.html };
     }
     const prepared = await prepare({ entry: entryPath });
@@ -470,7 +503,7 @@ data: ${JSON.stringify(job)}
       // `autoplay: false`: o Studio abre pausado no 0 (§9d); só a recarga pós-edição restaura o play.
       preview: { fps: prepared.fps, frames: prepared.totalFrames, id: prepared.composition.id, reload: false, autoplay: false },
     }).replace(/<head[^>]*>/i, (head) => `${head}<base href="${SITE_PREFIX}">`);
-    preview = { mtimeMs: current.mtimeMs, prepared, html };
+    preview = { mtimeMs: current.mtimeMs, revision: seen, prepared, html };
     return { prepared, html };
   };
 
@@ -514,9 +547,75 @@ data: ${JSON.stringify(job)}
     send(res, 200, await readFile(target), MIME[extname(target).toLowerCase()] ?? "application/octet-stream");
   };
 
+  /** Arquivo de um `data-composition-src`: na pasta da entrada, sem URL, `..` nem segmento oculto. */
+  const subCompositionPath = (src: string): string | undefined => {
+    const hidden = src.split(/[\\/]/).some((part) => part !== "." && part.startsWith("."));
+    return /^[a-z][a-z0-9+.-]+:/i.test(src) || isAbsolute(src) || hidden ? undefined : inside(entryDir, src);
+  };
+
+  /** `undefined` quando o arquivo não existe (ou é pasta); outra falha de leitura aparece. */
+  const readIfPresent = (file: string): Promise<string | undefined> =>
+    readFile(file, "utf8").catch((error: NodeJS.ErrnoException) => {
+      if (error.code === "ENOENT" || error.code === "EISDIR") return undefined;
+      throw error;
+    });
+
+  /** Hosts de legendas (EDT-97): clips de topo cujo `data-composition-src` tem a meta do `captions`. */
+  const captionHostIds = async (clips: ResolvedClip[]): Promise<Set<string>> => {
+    const ids = new Set<string>();
+    for (const clip of clips) {
+      const file = clip.src === undefined ? undefined : subCompositionPath(clip.src);
+      const html = file === undefined ? undefined : await readIfPresent(file);
+      if (html !== undefined && hasCaptionMeta(html)) ids.add(clip.id);
+    }
+    return ids;
+  };
+
+  const captionsFile = async (hostId: string): Promise<{ src: string; file: string; html: string }> => {
+    const host = loadComposition(await readFile(entryPath, "utf8")).clips.find((clip) => clip.id === hostId);
+    if (host === undefined) {
+      throw hintedError(404, "E_CLIP_NOT_FOUND", `clip "${hostId}" não existe no topo da composição`, "recarregue a composição e escolha o host das legendas na timeline");
+    }
+    const refuse = (message: string): ReplyError =>
+      hintedError(400, "E_CAPTIONS_HOST", message, "escolha um clip cujo data-composition-src é um arquivo gerado por frankframes captions, dentro da pasta da composição");
+    const src = host.src;
+    if (src === undefined) throw refuse(`o clip "${hostId}" não tem data-composition-src`);
+    const file = subCompositionPath(src);
+    if (file === undefined) throw refuse(`o arquivo de "${hostId}" fica fora da pasta da composição: ${src}`);
+    const html = await readIfPresent(file);
+    if (html === undefined) throw refuse(`arquivo de legendas não encontrado: ${src}`);
+    return { src, file, html };
+  };
+
+  /** `GET /api/captions/<hostId>`: as legendas do arquivo, com tempos locais ao host. */
+  const listCaptions = async (hostId: string, res: ServerResponse): Promise<void> => {
+    const { src, html } = await captionsFile(hostId);
+    sendJson(res, 200, { src, cues: captionsStep(() => readCaptionFile(html)).cues });
+  };
+
+  /** `POST /api/captions/<hostId>/<cueId>` com `{text}`; ver `editCaptionText`. A árvore valida antes de gravar. */
+  const editCaption = async (hostId: string, cueId: string, req: IncomingMessage, res: ServerResponse): Promise<void> => {
+    const text = objectBody(await bodyJson(req)).text;
+    if (typeof text !== "string") throw hintedError(400, "E_BODY_INVALID", '"text" precisa ser texto', 'envie {"text": "texto da legenda"}');
+    const { file, html } = await captionsFile(hostId);
+    const next = captionsStep(() => editCaptionText(html, cueId, text));
+    const composition = await validatedTree(await readFile(entryPath, "utf8"), "a legenda deixaria o contrato inválido", new Map([[file, next]]));
+    const changed = next !== html;
+    if (changed) await commit(`editar legenda ${cueId}`, html, next, file);
+    sendJson(res, 200, {
+      ok: true,
+      id: cueId,
+      changed,
+      duration: durationOf(composition),
+      diagnostics: composition.diagnostics,
+      history: history.state(),
+    });
+  };
+
   const compositionPayload = async (): Promise<unknown> => {
     const source = await readFile(entryPath, "utf8");
     const composition = loadComposition(source);
+    const captionHosts = await captionHostIds(composition.clips);
     const explicit = explicitClipIds(source);
     // Elemento próprio de cada clip (ordinal 0): é o que o inspetor edita.
     const ownMotion = new Map<string, MotionSource>();
@@ -571,6 +670,7 @@ data: ${JSON.stringify(job)}
         keyframes: mergeKeyframePoints(clip.keyframes ?? [], ownMotion.get(clip.id)?.keyframes ?? []),
         descendantKeyframeTimes: [...(descendantTimes.get(clip.id) ?? [])].sort((a, b) => a - b),
         hasChildren: clip.children.length > 0 || clip.isSubComposition,
+        captions: parentId === null && captionHosts.has(clip.id),
         parentId,
         // Só clip de topo com data-clip-id explícito aceita ferramentas de edição.
         editable: parentId === null && explicit.has(clip.id),
@@ -691,9 +791,10 @@ data: ${JSON.stringify(job)}
    * Valida a árvore inteira, sub-composições incluídas (`loadComposition` sozinho só lê o arquivo de entrada): id
    * duplicado entre arquivos, raiz ausente ou duração sem resolver no arquivo inlinado barram a mutação.
    */
-  const validatedTree = async (next: string, message: string): Promise<void> => {
-    const compiled = await compileComposition({ entryHtml: next, entryDir, entryPath });
+  const validatedTree = async (next: string, message: string, files?: ReadonlyMap<string, string>): Promise<ReturnType<typeof loadComposition>> => {
+    const compiled = await compileComposition({ entryHtml: next, entryDir, entryPath, ...(files === undefined ? {} : { files }) });
     if (!compiled.composition.ok) throw new ReplyError(400, "E_CONTRACT_INVALID", message, compiled.composition.diagnostics);
+    return compiled.composition;
   };
 
   /**
@@ -1004,7 +1105,9 @@ data: ${JSON.stringify(job)}
   };
 
   const travel = async (direction: "undo" | "redo", res: ServerResponse): Promise<void> => {
-    const current = await readFile(entryPath, "utf8");
+    const file = history.target(direction) ?? entryPath;
+    // Sub-composição apagada fora do Studio é histórico vencido (409), não erro interno.
+    const current = file === entryPath ? await readFile(file, "utf8") : await readIfPresent(file);
     let target: string | undefined;
     try {
       target = direction === "undo" ? history.undo(current) : history.redo(current);
@@ -1017,12 +1120,14 @@ data: ${JSON.stringify(job)}
       return;
     }
     try {
-      await writeAtomic(entryPath, target);
+      await writeAtomic(file, target);
     } catch (error) {
       history.revert(direction);
       throw error;
     }
-    sendJson(res, 200, { ok: true, changed: true, duration: durationOf(loadComposition(target)), history: history.state() });
+    if (file !== entryPath) subCompositionChanged();
+    const entry = file === entryPath ? target : await readFile(entryPath, "utf8");
+    sendJson(res, 200, { ok: true, changed: true, duration: durationOf(loadComposition(entry)), history: history.state() });
   };
 
   /** Picos do arquivo-fonte de um clip com som. É leitura: não entra em `serial()`. */
@@ -1104,6 +1209,11 @@ data: ${JSON.stringify(job)}
       const waveformMatch = /^\/api\/waveform\/([^/]+)$/.exec(pathname);
       if (waveformMatch !== null) {
         await waveform(waveformMatch[1]!, res);
+        return;
+      }
+      const captionsMatch = /^\/api\/captions\/([^/]+)$/.exec(pathname);
+      if (captionsMatch !== null) {
+        await listCaptions(captionsMatch[1]!, res);
         return;
       }
       if (pathname === "/api/history") {
@@ -1220,6 +1330,11 @@ data: ${JSON.stringify(job)}
           return;
         }
         await serial(() => patchClip(rest, req, res));
+        return;
+      }
+      const captionMatch = /^\/api\/captions\/([^/]+)\/([^/]+)$/.exec(pathname);
+      if (captionMatch !== null) {
+        await serial(() => editCaption(captionMatch[1]!, captionMatch[2]!, req, res));
         return;
       }
       if (pathname === "/api/clips") {

@@ -466,6 +466,36 @@ fonte padrão é `round(min(altura × 0,055, largura × 0,065))` (1920×1080 →
 1080×1920 → 70 px em vez de 106); `fontSize` explícito manda. `maxCharsPerLine` continua `largura × 0,84 ÷
 (fonte × 0,55)`, agora coerente com a caixa que de fato chega a 84%.
 
+**Legendas: opções gravadas e edição do texto (EDT-97).** A composição gerada leva no `<head>` a
+`<meta name="frankframes:captions" content='{JSON}'>`, com o JSON escapado como atributo. O JSON tem `v: 1` e as
+opções de layout **já resolvidas**: `width`, `height`, `fontSize` (a fonte base), `maxChars`, `maxLines`, `bottom`,
+`highlight`, `maxWords` e, quando há motion, `motion: {enter, exit?}` como o autor pediu. É o que permite desenhar
+de novo uma legenda igual ao `captions`: gerador e edição usam a mesma função (`renderCue`).
+
+- `readCaptionFile(html)` devolve `{options, cues: [{id, start, end, text, words}]}`, com tempos em segundos da
+  própria sub-composição. `words` é `null` na legenda por frase; no karaokê, cada `.w` vira `{start, end, word}`
+  (`start` = `animation-delay`, `end` = `animation-delay + animation-duration`). Na legenda por frase `text` é o
+  texto das linhas, juntadas por um espaço.
+- `editCaptionText(html, id, text)` troca **só o elemento daquela legenda**, pela posição no arquivo: o resto
+  continua byte a byte. `data-clip-id`, `data-start` e `data-duration` não mudam; a quebra de linha e o
+  `font-size` são recalculados. O elemento é redesenhado por inteiro: atributo que alguém tenha acrescentado à
+  mão nele não sobrevive.
+  - **Mesmo número de palavras** (separadas por espaço): cada uma mantém o `animation-delay`, a
+    `animation-duration` e, com motion, o instante de onde sai o `data-unit` (o gravado: refazê-lo dos tempos
+    arredondados erraria por 1 ms). Reaplicar o mesmo texto não muda o arquivo.
+  - **Número diferente:** o intervalo do início da 1ª palavra ao fim da legenda (`data-start + data-duration`) é
+    repartido pelo número de caracteres de cada palavra nova, em milissegundos inteiros encadeados (uma acaba onde
+    a outra começa), cada uma com pelo menos 1 ms. Intervalo com menos milissegundos que palavras é
+    `E_ATTRIBUTE_INVALID`.
+  - **Por frase:** só o texto muda.
+  - Texto vazio ou só com espaços é `E_ATTRIBUTE_INVALID`. O texto é sempre texto: `<`, `&` e aspas são escapados.
+  - Com motion, `data-split`, `data-enter`, `data-exit` e os `data-unit` passam pelo mesmo ajuste da geração
+    (com número diferente de palavras, partindo do novo início de cada uma); o que não couber é
+    `E_ATTRIBUTE_INVALID`.
+- Arquivo sem a meta (gerado por versão anterior), com a meta ilegível ou com legenda fora do formato gerado é
+  `E_CAPTIONS_LEGACY` (`hint`: gere de novo com `frankframes captions`). `id` que não existe é
+  `E_CAPTIONS_CUE_NOT_FOUND`.
+
 **Limitações.** Em escritas cursivas (árabe) o modo `letter` perde a ligação entre letras, porque cada
 grafema vira uma caixa; use `word`. Ligaduras entre unidades vizinhas e o kerning entre elas se perdem. O
 resultado do `letter` depende da tabela Unicode do ICU: o teste de segmentação imprime a versão do Node e do
@@ -950,9 +980,32 @@ Qualquer outra falha de medição continua falhando alto.
   `(at − início) × data-playback-rate`. Clips que referenciavam o fim do original passam a referenciar a
   cópia, então nada mais na timeline se move.
 - **Desfazer/refazer** (`POST /api/undo`, `POST /api/redo`, `GET /api/history`). O histórico guarda até
-  200 versões completas do arquivo, só em memória, e some quando o Studio fecha. Se o arquivo mudou fora
-  do Studio, desfazer/refazer recusa com `409 E_HISTORY_STALE` e descarta o histórico em vez de
-  sobrescrever a mudança. Desfazer uma importação remove o clip, não o arquivo em `assets/`.
+  200 versões completas de arquivo, só em memória, e some quando o Studio fecha. Cada passo guarda **qual arquivo**
+  mudou (a entrada ou o arquivo de uma legenda, EDT-97), e desfazer/refazer restauram aquele arquivo. Se ele mudou
+  fora do Studio, desfazer/refazer recusa com `409 E_HISTORY_STALE` e descarta o histórico em vez de
+  sobrescrever a mudança (a conferência é por arquivo). Desfazer uma importação remove o clip, não o arquivo em `assets/`.
+- **Legendas** (EDT-97). Em `GET /api/composition`, o host cuja `data-composition-src` aponta para um arquivo com a
+  meta `frankframes:captions` (§7b.8) vem com `captions: true`. Vale para clip de topo: `<hostId>` é o id de um clip
+  de topo do arquivo da entrada.
+  - `GET /api/captions/<hostId>` → `{src, cues}` (as de `readCaptionFile`). Os tempos são os da sub-composição: na
+    timeline da entrada, somam o início do host.
+  - `POST /api/captions/<hostId>/<cueId>` com `{text}` grava o arquivo da legenda com `editCaptionText`. Antes de
+    gravar, a árvore inteira é validada com o conteúdo novo (`compileComposition`): na falha responde
+    `400 E_CONTRACT_INVALID` com os diagnósticos e o arquivo fica intacto. Sucesso devolve
+    `{ok, id, changed, duration, diagnostics, history}` e entra no histórico como `editar legenda <cueId>`; texto
+    que não muda o arquivo devolve `changed: false`, sem passo no histórico.
+  - Erros, todos com `hint`: `404 E_CLIP_NOT_FOUND` (host inexistente), `400 E_CAPTIONS_HOST` (o clip não é um host
+    de legendas utilizável: não tem `data-composition-src`, o caminho é URL, tem `..` ou segmento oculto, sai da
+    pasta da entrada ou o arquivo não existe), `400 E_CAPTIONS_LEGACY`, `404 E_CAPTIONS_CUE_NOT_FOUND`,
+    `400 E_ATTRIBUTE_INVALID` (texto vazio ou que não cabe) e `400 E_BODY_INVALID` (`text` ausente ou não é texto).
+  - O observador de arquivos só olha o arquivo da entrada: gravar uma legenda (ou desfazer essa gravação) recarrega
+    o preview por conta própria. Mudança feita **fora** do Studio num arquivo de sub-composição não recarrega o
+    preview sozinha.
+  - **Na tela:** com um host de legendas selecionado, o inspetor mostra a seção "Legendas", uma linha por legenda
+    com início–fim (tempo da timeline da entrada) e o texto. A linha sob o playhead fica marcada e acompanha o
+    tempo; tocar no tempo leva o playhead ao primeiro frame daquela legenda e pausa. Enter ou "Aplicar" envia a
+    linha; erro aparece na própria linha com código e `hint`. Texto digitado e ainda não aplicado sobrevive à
+    recarga da composição e mantém o Exportar desabilitado; selecionar outro clip descarta esse texto.
 - **Inspetor de Composição** (`POST /api/composition`, corpo `{duration?, width?, height?, fps?}`; EDT-84). Edita a
   raiz: `duration` (segundos, `> 0`; **`null` remove `data-duration`**, a duração passa a ser derivada dos clips, §7),
   `width` e `height` (inteiros `> 0`) e `fps` (`"30"`, `"30000/1001"` ou número). Campo ausente não é tocado; corpo sem

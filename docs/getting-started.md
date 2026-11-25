@@ -55,6 +55,13 @@ Na barra do topo:
   (por exemplo `legendas.html`) entra como sub-composição, com a duração da raiz do arquivo.
 - **Blocos** (painel lateral): clicar num bloco do catálogo o insere no playhead como sub-composição; a pasta do
   bloco é copiada para `blocks/<slug>/` (igual a `blocks add`). **Inserir texto** cria um `<div>` com "Texto".
+- **Legendas** (painel lateral): selecione na timeline o clip de um arquivo gerado por `captions` e o inspetor lista
+  cada legenda, com início–fim e o texto. Corrija o texto e tecle Enter (ou toque em **Aplicar**) para gravar no
+  arquivo das legendas; o preview recarrega e o desfazer vale para a edição. A linha sob o playhead fica marcada, e
+  tocar no tempo leva o playhead ao início dela. Com o mesmo número de palavras, cada uma mantém o tempo; mudando o
+  número, o tempo da legenda é repartido pelo tamanho das palavras. Enquanto houver texto não aplicado, o Exportar
+  espera, e selecionar outro clip descarta esse texto. Arquivo gerado por versão anterior não mostra a seção: gere de
+  novo com `captions` (regras em [`contract.md`](contract.md), §7b.8 e §9d).
 - **Dividir** (tecla `S`): corta o clip selecionado no playhead em dois, sem mover o resto da timeline.
 - **Desfazer / Refazer** (`Ctrl+Z`, `Ctrl+Shift+Z` ou `Ctrl+Y`): vale para toda edição feita no Studio
   nesta sessão. Se você editar o arquivo em outro programa, o histórico é descartado em vez de sobrescrever.
@@ -150,6 +157,8 @@ Para cada palavra entrar com movimento, acrescente `--motion` com um preset de e
 (`frankframes captions audio.wav -o legendas.html --motion "subir dur=0.3"`): com tempos por palavra, a
 palavra entra quando é falada; sem eles, as palavras entram em sequência. A duração se ajusta à fala
 (`docs/contract.md` §7b.8).
+
+Errou uma palavra? Não precisa transcrever de novo: o texto de cada legenda se corrige no Studio (seção 3).
 
 ## 7. Usar um bloco pronto
 

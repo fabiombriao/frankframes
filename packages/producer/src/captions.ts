@@ -1,6 +1,8 @@
 // FrankFrames — proprietário. Ver LICENSE na raiz.
+import { parse } from "parse5";
 import { DEFAULT_STAGGER, loadComposition, parseMotionValue, presetsOf, splitText, springMinSeconds } from "@frankframes/contract";
 import type { PresetDef } from "@frankframes/contract";
+import { EditError } from "./edit.ts";
 
 export interface CaptionWord {
   start: number;
@@ -232,6 +234,76 @@ function segmentCues(segment: CaptionSegment, maxWords: number, minSeconds: numb
   }));
 }
 
+/** Nome da `<meta>` que guarda as opções de layout de um arquivo de legendas (docs/contract.md §7b.8). */
+const CAPTIONS_META = "frankframes:captions";
+
+/** Opções de layout já resolvidas: com elas uma legenda é redesenhada igual à da geração. */
+export interface CaptionLayout {
+  v: 1;
+  width: number;
+  height: number;
+  /** Fonte base, antes do encolhimento por legenda. */
+  fontSize: number;
+  maxChars: number;
+  maxLines: number;
+  bottom: number;
+  highlight: string;
+  maxWords: number;
+  motion?: CaptionMotion;
+}
+
+/** Uma palavra do karaokê já com os tempos que vão para o arquivo. */
+export interface TimedWord {
+  word: string;
+  /** Instante da fala a partir do início da legenda (s): âncora do motion. */
+  at: number;
+  /** `animation-delay` e `animation-duration`, em milissegundos inteiros. */
+  fromMs: number;
+  forMs: number;
+}
+
+/** Uma legenda pronta para desenhar; `start` e `duration` são os textos de `data-start`/`data-duration`. */
+export interface CueSource {
+  id: string;
+  start: string;
+  duration: string;
+  text: string;
+  /** Vazio = legenda por frase. */
+  words: TimedWord[];
+}
+
+/** O elemento de uma legenda, sem recuo. Geração e edição passam por aqui. */
+export function renderCue(cue: CueSource, layout: Pick<CaptionLayout, "fontSize" | "maxChars" | "maxLines" | "motion">): string {
+  const lines = wrapLines(cue.text, layout.maxChars);
+  const size = fitFontSize(lines, layout.fontSize, layout.maxChars, layout.maxLines);
+  const { words } = cue;
+  const fitted =
+    layout.motion === undefined
+      ? undefined
+      : fitMotion(
+          layout.motion,
+          Number(cue.duration),
+          words.map((word) => word.at),
+          lines.reduce((sum, line) => sum + splitText(line, "word").filter((piece) => piece.unit).length, 0),
+          `legenda ${cue.id}`,
+        );
+  const body =
+    words.length > 0
+      ? words
+          .map((word, i) => {
+            const unit = fitted === undefined ? "" : ` data-unit="${fitted.anchors[i]!.toFixed(3)}"`;
+            const timing = `animation-delay:${(word.fromMs / 1000).toFixed(3)}s;animation-duration:${(word.forMs / 1000).toFixed(3)}s`;
+            return `<span class="w"${unit} style="${timing}">${escapeHtml(word.word)}</span>`;
+          })
+          .join(" ")
+      : lines.map((line) => escapeHtml(line)).join("<br>");
+  const motionAttrs =
+    fitted === undefined
+      ? ""
+      : ` data-split="${fitted.split}" data-enter="${escapeHtml(fitted.enter)}"${fitted.exit === undefined ? "" : ` data-exit="${escapeHtml(fitted.exit)}"`}`;
+  return `<div class="caption" data-clip-id="${escapeHtml(cue.id)}" data-start="${cue.start}" data-duration="${cue.duration}"${motionAttrs} style="font-size:${size}px">${body}</div>`;
+}
+
 /**
  * Transforma segmentos de transcrição numa composição de legendas com `data-start`/`data-duration` exatos
  * e texto escapado: um clip por segmento ou, com tempo por palavra, legendas curtas (`segmentCues`).
@@ -244,7 +316,6 @@ export function buildCaptionComposition(segments: CaptionSegment[], options: Cap
   // Proporcional à altura (16:9) e à largura (vertical): 1920×1080 → 59 px, 1080×1920 → 70 px.
   const baseFontSize = options.fontSize ?? Math.round(Math.min(height * 0.055, width * 0.065));
   const maxChars = options.maxCharsPerLine ?? Math.max(12, Math.round((width * 0.84) / (baseFontSize * 0.55)));
-  const fontSize = baseFontSize;
   const bottom = options.bottom ?? Math.round(height * 0.08);
 
   const maxWords = options.maxWords ?? DEFAULT_MAX_WORDS;
@@ -259,45 +330,30 @@ export function buildCaptionComposition(segments: CaptionSegment[], options: Cap
   const duration = Math.max(...usable.map((segment) => segment.end));
   const highlight = options.highlight ?? "#ffd400";
   const minSeconds = minCueSeconds(options.motion);
+  const layout: CaptionLayout = {
+    v: 1,
+    width,
+    height,
+    fontSize: baseFontSize,
+    maxChars,
+    maxLines: options.maxLines ?? 3,
+    bottom,
+    highlight,
+    maxWords,
+    ...(options.motion === undefined ? {} : { motion: options.motion }),
+  };
   const clips = usable
     .flatMap((segment) => segmentCues(segment, maxWords, minSeconds))
     .map((cue, index) => {
-      const start = cue.start.toFixed(3);
-      const length = (cue.end - cue.start).toFixed(3);
-      const lines = wrapLines(cue.text, maxChars);
-      const size = fitFontSize(lines, baseFontSize, maxChars, options.maxLines ?? 3);
-
       // Karaokê: cada palavra fica acesa do seu início até o da palavra seguinte (a última, até o fim
       // da legenda). Como a animação CSS roda no tempo do documento, o atraso é o `word.start` absoluto.
-      const words = cue.words;
-      const fitted =
-        options.motion === undefined
-          ? undefined
-          : fitMotion(
-              options.motion,
-              Number(length),
-              words.map((word) => word.start - cue.start),
-              lines.reduce((sum, line) => sum + splitText(line, "word").filter((piece) => piece.unit).length, 0),
-              `legenda ${index}`,
-            );
-      const body =
-        words.length > 0
-          ? words
-              .map((word, i) => {
-                const unit = fitted === undefined ? "" : ` data-unit="${fitted.anchors[i]!.toFixed(3)}"`;
-                const fromMs = toMs(Math.max(0, word.start));
-                const untilMs = toMs(words[i + 1]?.start ?? cue.end);
-                const timing = `animation-delay:${(fromMs / 1000).toFixed(3)}s;animation-duration:${(Math.max(0, untilMs - fromMs) / 1000).toFixed(3)}s`;
-                return `<span class="w"${unit} style="${timing}">${escapeHtml(word.word.trim())}</span>`;
-              })
-              .join(" ")
-          : lines.map((line) => escapeHtml(line)).join("<br>");
-      const motionAttrs =
-        fitted === undefined
-          ? ""
-          : ` data-split="${fitted.split}" data-enter="${escapeHtml(fitted.enter)}"${fitted.exit === undefined ? "" : ` data-exit="${escapeHtml(fitted.exit)}"`}`;
-
-      return `    <div class="caption" data-clip-id="cap-${index}" data-start="${start}" data-duration="${length}"${motionAttrs} style="font-size:${size}px">${body}</div>`;
+      const words = cue.words.map((word, i): TimedWord => {
+        const fromMs = toMs(Math.max(0, word.start));
+        const untilMs = toMs(cue.words[i + 1]?.start ?? cue.end);
+        return { word: word.word.trim(), at: word.start - cue.start, fromMs, forMs: Math.max(0, untilMs - fromMs) };
+      });
+      const source = { id: `cap-${index}`, start: cue.start.toFixed(3), duration: (cue.end - cue.start).toFixed(3), text: cue.text, words };
+      return `    ${renderCue(source, layout)}`;
     })
     .join("\n");
 
@@ -305,6 +361,7 @@ export function buildCaptionComposition(segments: CaptionSegment[], options: Cap
 <html lang="pt-BR">
 <head>
   <meta charset="utf-8">
+  <meta name="${CAPTIONS_META}" content='${escapeHtml(JSON.stringify(layout))}'>
   <title>legendas</title>
   <style>
     html, body { margin: 0; background: transparent; }
@@ -369,4 +426,215 @@ ${clips}
     }
   }
   return html;
+}
+
+interface HtmlNode {
+  nodeName: string;
+  value?: string;
+  attrs?: Array<{ name: string; value: string }>;
+  childNodes?: HtmlNode[];
+  content?: HtmlNode;
+  sourceCodeLocation?: { startOffset: number; endOffset: number; endTag?: unknown } | null;
+}
+
+const attributeOf = (node: HtmlNode, name: string): string | undefined => node.attrs?.find((item) => item.name === name)?.value;
+
+function* elementsOf(node: HtmlNode): Generator<HtmlNode> {
+  for (const child of node.childNodes ?? []) {
+    yield child;
+    yield* elementsOf(child);
+  }
+  if (node.content !== undefined) yield* elementsOf(node.content);
+}
+
+const textOf = (node: HtmlNode): string => (node.nodeName === "#text" ? (node.value ?? "") : (node.childNodes ?? []).map(textOf).join(""));
+
+const unreadable = (message: string): EditError => new EditError("E_CAPTIONS_LEGACY", message, "gere de novo com frankframes captions");
+
+const captionsMetaOf = (document: HtmlNode): HtmlNode | undefined => {
+  for (const node of elementsOf(document)) if (node.nodeName === "meta" && attributeOf(node, "name") === CAPTIONS_META) return node;
+  return undefined;
+};
+
+/** Diz se o HTML é um arquivo de legendas (tem a meta), sem conferir o conteúdo. */
+export function hasCaptionMeta(html: string): boolean {
+  return captionsMetaOf(parse(html) as unknown as HtmlNode) !== undefined;
+}
+
+function readLayout(raw: string): CaptionLayout {
+  let value: unknown;
+  try {
+    value = JSON.parse(raw);
+  } catch (error) {
+    throw unreadable(`a meta ${CAPTIONS_META} não é um JSON válido: ${(error as Error).message}`);
+  }
+  const layout = (typeof value === "object" && value !== null ? value : {}) as Partial<CaptionLayout>;
+  const positive = (item: unknown): boolean => typeof item === "number" && Number.isFinite(item) && item > 0;
+  const motion = layout.motion as Partial<CaptionMotion> | undefined;
+  if (
+    layout.v !== 1 ||
+    ![layout.width, layout.height, layout.fontSize, layout.maxChars, layout.maxLines, layout.maxWords].every(positive) ||
+    !Number.isFinite(layout.bottom) ||
+    typeof layout.highlight !== "string" ||
+    (motion !== undefined && (typeof motion?.enter !== "string" || (motion.exit !== undefined && typeof motion.exit !== "string")))
+  ) {
+    throw unreadable(`a meta ${CAPTIONS_META} não está no formato v: 1`);
+  }
+  return layout as CaptionLayout;
+}
+
+interface StoredCue {
+  id: string;
+  start: string;
+  duration: string;
+  text: string;
+  /** `null` = legenda por frase. `unit` é o `data-unit` gravado (com motion). */
+  words: Array<Omit<TimedWord, "at"> & { unit?: number }> | null;
+  /** Posição do elemento inteiro no arquivo. */
+  startOffset: number;
+  endOffset: number;
+}
+
+const SECONDS = /^\d+(\.\d+)?$/;
+
+function readTiming(style: string, property: string, id: string): number {
+  const found = new RegExp(`(?:^|;)\\s*${property}:\\s*(\\d+(?:\\.\\d+)?)s\\s*(?:;|$)`).exec(style);
+  if (found === null) throw unreadable(`legenda ${id}: palavra sem ${property} em segundos`);
+  return toMs(Number(found[1]));
+}
+
+function readCue(node: HtmlNode, id: string): StoredCue {
+  const start = attributeOf(node, "data-start") ?? "";
+  const duration = attributeOf(node, "data-duration") ?? "";
+  if (!SECONDS.test(start) || !SECONDS.test(duration)) throw unreadable(`legenda ${id}: data-start e data-duration precisam ser números`);
+  const location = node.sourceCodeLocation;
+  if (!location || !location.endTag) throw unreadable(`legenda ${id}: elemento sem tag de fechamento`);
+  const spans: HtmlNode[] = [];
+  let text = "";
+  for (const child of node.childNodes ?? []) {
+    if (child.nodeName === "#text") text += child.value ?? "";
+    else if (child.nodeName === "br") text += " ";
+    else if (child.nodeName === "span" && attributeOf(child, "class") === "w") {
+      spans.push(child);
+      text += textOf(child);
+    } else throw unreadable(`legenda ${id}: elemento <${child.nodeName}> fora do formato gerado`);
+  }
+  const words =
+    spans.length === 0
+      ? null
+      : spans.map((span) => {
+          const style = attributeOf(span, "style") ?? "";
+          const unit = attributeOf(span, "data-unit");
+          if (unit !== undefined && !SECONDS.test(unit)) throw unreadable(`legenda ${id}: data-unit precisa ser um número`);
+          return {
+            word: textOf(span),
+            fromMs: readTiming(style, "animation-delay", id),
+            forMs: readTiming(style, "animation-duration", id),
+            ...(unit === undefined ? {} : { unit: Number(unit) }),
+          };
+        });
+  return {
+    id,
+    start,
+    duration,
+    text: (words === null ? text : words.map((word) => word.word).join(" ")).replace(/\s+/g, " ").trim(),
+    words,
+    startOffset: location.startOffset,
+    endOffset: location.endOffset,
+  };
+}
+
+function parseCaptions(html: string): { options: CaptionLayout; cues: StoredCue[] } {
+  const document = parse(html, { sourceCodeLocationInfo: true }) as unknown as HtmlNode;
+  const meta = captionsMetaOf(document);
+  if (meta === undefined) throw unreadable(`arquivo sem a meta ${CAPTIONS_META}: não são legendas editáveis (versão antiga ou outro arquivo)`);
+  const options = readLayout(attributeOf(meta, "content") ?? "");
+  const cues: StoredCue[] = [];
+  const seen = new Set<string>();
+  for (const node of elementsOf(document)) {
+    if (node.nodeName !== "div" || !(attributeOf(node, "class") ?? "").split(/\s+/).includes("caption")) continue;
+    const id = attributeOf(node, "data-clip-id");
+    if (id === undefined || seen.has(id)) throw unreadable(id === undefined ? "legenda sem data-clip-id" : `data-clip-id repetido nas legendas: ${id}`);
+    seen.add(id);
+    cues.push(readCue(node, id));
+  }
+  return { options, cues };
+}
+
+/** Legenda lida de um arquivo; tempos em segundos da própria sub-composição. */
+export interface CaptionCue {
+  id: string;
+  start: number;
+  end: number;
+  text: string;
+  /** `null` = legenda por frase. */
+  words: CaptionWord[] | null;
+}
+
+export function readCaptionFile(html: string): { options: CaptionLayout; cues: CaptionCue[] } {
+  const { options, cues } = parseCaptions(html);
+  return {
+    options,
+    cues: cues.map((cue) => ({
+      id: cue.id,
+      start: Number(cue.start),
+      end: (toMs(Number(cue.start)) + toMs(Number(cue.duration))) / 1000,
+      text: cue.text,
+      words: cue.words?.map((word) => ({ start: word.fromMs / 1000, end: (word.fromMs + word.forMs) / 1000, word: word.word })) ?? null,
+    })),
+  };
+}
+
+/**
+ * Reparte `[fromMs, endMs]` entre as palavras pelo número de caracteres: milissegundos inteiros, encadeados,
+ * cada palavra com pelo menos 1 ms.
+ */
+function spreadWords(tokens: string[], fromMs: number, endMs: number): Array<Omit<TimedWord, "at">> {
+  const total = endMs - fromMs;
+  if (total < tokens.length) {
+    throw new EditError("E_ATTRIBUTE_INVALID", `a legenda não tem tempo para ${tokens.length} palavras (${Math.max(0, total)} ms)`, "use menos palavras nesta legenda");
+  }
+  const sizes = tokens.map((token) => [...token].length);
+  const characters = sizes.reduce((sum, size) => sum + size, 0);
+  const edges = [fromMs];
+  let before = 0;
+  for (let i = 1; i < tokens.length; i++) {
+    before += sizes[i - 1]!;
+    const wanted = fromMs + Math.round((total * before) / characters);
+    edges.push(Math.min(Math.max(wanted, edges[i - 1]! + 1), endMs - (tokens.length - i)));
+  }
+  edges.push(endMs);
+  return tokens.map((word, i) => ({ word, fromMs: edges[i]!, forMs: edges[i + 1]! - edges[i]! }));
+}
+
+/**
+ * Troca o texto de uma legenda e devolve o arquivo com só aquele elemento redesenhado (por posição; o resto fica
+ * byte a byte). Mesma quantidade de palavras mantém os tempos; outra quantidade os reparte.
+ */
+export function editCaptionText(html: string, cueId: string, text: string): string {
+  const { options, cues } = parseCaptions(html);
+  const cue = cues.find((item) => item.id === cueId);
+  if (cue === undefined) {
+    throw new EditError("E_CAPTIONS_CUE_NOT_FOUND", `legenda não encontrada: ${cueId}`, "recarregue a lista de legendas: o arquivo pode ter sido gerado de novo");
+  }
+  const tokens = text.trim().split(/\s+/).filter((token) => token !== "");
+  if (tokens.length === 0) throw new EditError("E_ATTRIBUTE_INVALID", `a legenda ${cueId} não pode ficar vazia`, "escreva o texto da legenda");
+  const anchorOf = (fromMs: number): number => fromMs / 1000 - Number(cue.start);
+  let words: TimedWord[] = [];
+  if (cue.words !== null) {
+    words =
+      tokens.length === cue.words.length
+        ? // A âncora gravada vale: a geração a calculou com a fala sem arredondar, e refazê-la erraria por 1 ms.
+          cue.words.map((word, i) => ({ word: tokens[i]!, fromMs: word.fromMs, forMs: word.forMs, at: word.unit ?? anchorOf(word.fromMs) }))
+        : spreadWords(tokens, cue.words[0]!.fromMs, toMs(Number(cue.start)) + toMs(Number(cue.duration))).map((word) => ({ ...word, at: anchorOf(word.fromMs) }));
+  }
+  const source: CueSource = { id: cue.id, start: cue.start, duration: cue.duration, text: tokens.join(" "), words };
+  let element: string;
+  try {
+    element = renderCue(source, options);
+  } catch (error) {
+    // O que `renderCue` recusa é motion que não cabe na legenda com este texto.
+    throw new EditError("E_ATTRIBUTE_INVALID", (error as Error).message, "use um texto que caiba no tempo da legenda ou gere de novo com outro motion");
+  }
+  return html.slice(0, cue.startOffset) + element + html.slice(cue.endOffset);
 }

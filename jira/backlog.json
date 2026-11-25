@@ -868,6 +868,22 @@
             "Testes que falhariam sem a mudança (bloco do catálogo e .html local inseridos pelo Studio no Chrome, render confere o bloco); gate verde."
           ],
           "jiraKey": "EDT-88"
+        },
+        {
+          "summary": "Studio: editar o texto das legendas do captions, letra por letra, sem sair do editor",
+          "points": 5,
+          "labels": [
+            "studio",
+            "legendas"
+          ],
+          "acceptance": [
+            "Pedido do titular em 2026-11-25, editando o vídeo A001 pelo celular: hoje a sub-composição de legendas é um bloco fechado no Studio; o campo Texto do inspetor é do host, e corrigir uma palavra exige editar compositions/legendas.html à mão.",
+            "Selecionar o host de uma sub-composição gerada por `frankframes captions` mostra no inspetor a lista de legendas (início, fim, texto); a legenda sob o playhead fica marcada e clicar numa leva o playhead ao início dela.",
+            "Editar o texto de uma legenda grava em compositions/legendas.html pelo mesmo código que gera a legenda no captions; mesma quantidade de palavras mantém o tempo de cada uma; quantidade diferente redistribui o intervalo da legenda pelo tamanho das palavras, em ms inteiros; o destaque da palavra falada continua certo.",
+            "Toda escrita passa pelo contrato antes do disco; texto vazio ou legenda de versão sem os metadados de layout falha com código registrado e hint; desfazer/refazer cobre a edição e o histórico recusa (E_HISTORY_STALE) se o arquivo de legendas mudou fora do Studio.",
+            "Testes que falhariam sem a mudança (API e no Chrome: corrigir uma letra, mudar a quantidade de palavras, desfazer); gate verde."
+          ],
+          "jiraKey": "EDT-97"
         }
       ],
       "jiraKey": "EDT-35"

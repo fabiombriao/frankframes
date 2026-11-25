@@ -32,7 +32,7 @@ export interface ClipPatch {
   singleQuoted?: string[];
 }
 
-/** Códigos das edições do Studio (`applyEdits`, split, trim, copy, keyframes): entram no `docs/reference/diagnostics.md`. */
+/** Códigos das edições do Studio (`applyEdits`, split, trim, copy, keyframes, legendas): entram no `docs/reference/diagnostics.md`. */
 export const EDIT_ERROR_CODES = [
   "E_CLIP_NOT_FOUND",
   "E_AMBIGUOUS_CLIP",
@@ -50,16 +50,20 @@ export const EDIT_ERROR_CODES = [
   "E_KEYFRAME_EXISTS",
   "E_KEYFRAME_PROP",
   "E_KEYFRAME_OUT_OF_RANGE",
+  "E_CAPTIONS_LEGACY",
+  "E_CAPTIONS_CUE_NOT_FOUND",
 ] as const;
 export type EditCode = (typeof EDIT_ERROR_CODES)[number];
 
 export class EditError extends Error {
   readonly code: EditCode;
+  readonly hint?: string;
 
-  constructor(code: EditError["code"], message: string) {
+  constructor(code: EditError["code"], message: string, hint?: string) {
     super(message);
     this.name = "EditError";
     this.code = code;
+    if (hint !== undefined) this.hint = hint;
   }
 }
 

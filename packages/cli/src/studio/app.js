@@ -1,7 +1,7 @@
 import { MAX_PX_PER_FRAME, chooseStep, clampZoom, lastFrameTime, isFrameLevel, nextTrack, peakSlice, pxSpan, roundToFrame, snap as snapTarget, snapMove, snapToFrame, tickLabel, trackGroup, trackRows, zoomAround } from "/timeline-math.js";
 import { keyframeMarks, keyframePropsFor, renderKeyframeSection, renderMotionSection, renderTransitionSection } from "/motion.js";
 import { compositionFields, compositionPatch, pastEndNotice } from "/composition.js";
-import { displayNumber, numericChanges } from "/inspector.js";
+import { activeCueIndex, captionFrame, displayNumber, numericChanges } from "/inspector.js";
 import { fitPlayerBox, playerViewport } from "/player-fit.js";
 
 (() => {
@@ -51,6 +51,10 @@ import { fitPlayerBox, playerViewport } from "/player-fit.js";
   const applyButton = document.getElementById("applyButton");
   const compositionDiagnostics = document.getElementById("compositionDiagnostics");
   const inspectorDiagnostics = document.getElementById("inspectorDiagnostics");
+  const captionsSection = document.getElementById("captionsSection");
+  const captionsStatus = document.getElementById("captionsStatus");
+  const captionsDiagnostics = document.getElementById("captionsDiagnostics");
+  const captionsList = document.getElementById("captionsList");
   const motionSection = document.getElementById("motionSection");
   const transitionSection = document.getElementById("transitionSection");
   const keyframeSection = document.getElementById("keyframeSection");
@@ -123,6 +127,8 @@ import { fitPlayerBox, playerViewport } from "/player-fit.js";
     history: { canUndo: false, canRedo: false, undo: null, redo: null },
     busy: false,
     motionPresets: null,
+    /* Legendas do host selecionado (EDT-97), ou null: { hostId, cues, rows, request, current }. */
+    captions: null,
     /* Keyframe selecionado: { clipId, time } com o tempo local ao clip, em segundos. */
     selectedKeyframe: null,
     keyframeProp: "opacity",
@@ -222,6 +228,7 @@ import { fitPlayerBox, playerViewport } from "/player-fit.js";
       keyframes: Array.isArray(raw.keyframes) ? raw.keyframes : [],
       descendantKeyframeTimes: Array.isArray(raw.descendantKeyframeTimes) ? raw.descendantKeyframeTimes : [],
       hasChildren: raw.hasChildren === true,
+      captions: raw.captions === true,
       parentId: typeof raw.parentId === "string" ? raw.parentId : null,
       editable: raw.editable === true,
     };
@@ -336,6 +343,10 @@ import { fitPlayerBox, playerViewport } from "/player-fit.js";
     } else if (!state.inspectorDirty) {
       fillComposition();
     }
+    /* A releitura vale mesmo com o inspetor sujo: desfazer e edição por fora mudam o arquivo das legendas. */
+    const previousCaptions = state.captions;
+    syncCaptions();
+    if (previousCaptions !== null && state.captions === previousCaptions) loadCaptions();
     checkLayerEffect();
   }
 
@@ -476,6 +487,7 @@ import { fitPlayerBox, playerViewport } from "/player-fit.js";
     inspectorEmpty.hidden = false;
     renderDiagnostics(inspectorDiagnostics, []);
     updateSelectionStyles();
+    syncCaptions();
   }
 
   function fillInspector() {
@@ -506,6 +518,200 @@ import { fitPlayerBox, playerViewport } from "/player-fit.js";
       renderTransitionSection(transitionSection, clip, state.clips, state.motionPresets, (change) => queueTransition(clip.id, change));
     }
     renderKeyframes(clip);
+    syncCaptions();
+  }
+
+  /* Legendas (EDT-97): o texto de cada legenda do host selecionado, editado aqui e gravado no arquivo delas. */
+
+  /* Mostra a seção do host selecionado; trocar de host recomeça a lista e descarta o que não foi aplicado. */
+  function syncCaptions() {
+    const clip = state.selectedId === null ? null : findClip(state.selectedId);
+    if (!clip || !clip.captions) {
+      captionsSection.hidden = true;
+      if (state.captions === null) return;
+      state.captions = null;
+      captionsList.replaceChildren();
+      updateExportButton();
+      return;
+    }
+    captionsSection.hidden = false;
+    if (state.captions !== null && state.captions.hostId === clip.id) return;
+    /* `request` numera as leituras: resposta atrasada não pinta por cima de uma mais nova. */
+    state.captions = { hostId: clip.id, cues: [], rows: new Map(), request: 0, current: null };
+    captionsList.replaceChildren();
+    renderDiagnostics(captionsDiagnostics, []);
+    captionsStatus.hidden = false;
+    captionsStatus.textContent = "carregando";
+    updateExportButton();
+    loadCaptions();
+  }
+
+  /* Texto digitado e ainda não aplicado: como no resto do inspetor, o Exportar espera. */
+  function captionsDirty() {
+    if (state.captions === null) return false;
+    for (const row of state.captions.rows.values()) {
+      if (row.input.value !== row.input.dataset.serverText) return true;
+    }
+    return false;
+  }
+
+  /* No Studio a recusa mostra o código além da mensagem e do hint. */
+  function withCodes(diagnostics, payload) {
+    return diagnostics.map((item) => {
+      const code = item.code ?? (payload && item.message === payload.message ? payload.code : undefined);
+      return code ? { ...item, message: code + ": " + item.message } : item;
+    });
+  }
+
+  async function loadCaptions() {
+    const panel = state.captions;
+    if (panel === null) return;
+    panel.request += 1;
+    const request = panel.request;
+    const stale = () => state.captions !== panel || panel.request !== request;
+    try {
+      const response = await fetch("/api/captions/" + encodeURIComponent(panel.hostId), { cache: "no-store", headers: { accept: "application/json" } });
+      const payload = await readJson(response);
+      if (stale()) return;
+      if (!response.ok) {
+        renderCaptions(panel, []);
+        const diagnostics = normalizeDiagnostics(payload);
+        renderDiagnostics(
+          captionsDiagnostics,
+          diagnostics.length ? withCodes(diagnostics, payload) : [{ severity: "error", message: payload.message || "HTTP " + response.status }],
+        );
+        return;
+      }
+      renderDiagnostics(captionsDiagnostics, []);
+      renderCaptions(panel, arrayOrEmpty(payload.cues));
+    } catch (error) {
+      if (stale()) return;
+      renderDiagnostics(captionsDiagnostics, [{ severity: "error", message: "Não foi possível ler as legendas: " + error.message }]);
+    }
+  }
+
+  /*
+   * Atualiza as linhas no lugar: linha que continua não sai do DOM (o foco fica nela) e texto ainda não aplicado
+   * não é sobrescrito. Os tempos mostrados são os da timeline (início do host mais o da legenda).
+   */
+  function renderCaptions(panel, cues) {
+    panel.cues = cues;
+    const host = findClip(panel.hostId);
+    const base = host !== null && host.start !== null ? host.start : 0;
+    const keep = new Set(cues.map((cue) => cue.id));
+    for (const [id, row] of panel.rows) {
+      if (keep.has(id)) continue;
+      row.item.remove();
+      panel.rows.delete(id);
+    }
+    cues.forEach((cue, index) => {
+      let row = panel.rows.get(cue.id);
+      if (row === undefined) {
+        row = createCaptionRow(panel, cue.id);
+        panel.rows.set(cue.id, row);
+      }
+      row.time.textContent = formatSeconds(base + cue.start) + " – " + formatSeconds(base + cue.end);
+      if (row.input.value === row.input.dataset.serverText) row.input.value = cue.text;
+      row.input.dataset.serverText = cue.text;
+      if (captionsList.children[index] !== row.item) captionsList.insertBefore(row.item, captionsList.children[index] ?? null);
+    });
+    captionsStatus.hidden = true;
+    panel.current = undefined;
+    paintCurrentCaption();
+    updateExportButton();
+  }
+
+  function createCaptionRow(panel, cueId) {
+    const item = document.createElement("li");
+    item.className = "caption-row";
+    item.dataset.cueId = cueId;
+    const form = document.createElement("form");
+    form.noValidate = true;
+    const time = document.createElement("button");
+    time.type = "button";
+    time.className = "caption-time";
+    time.title = "Levar o playhead ao início desta legenda";
+    const edit = document.createElement("div");
+    edit.className = "caption-edit";
+    const input = document.createElement("input");
+    input.type = "text";
+    input.className = "caption-text";
+    input.autocomplete = "off";
+    input.enterKeyHint = "done";
+    input.setAttribute("aria-label", "Texto da legenda " + cueId);
+    input.dataset.serverText = "";
+    const apply = document.createElement("button");
+    apply.type = "submit";
+    apply.className = "primary-button caption-apply";
+    apply.textContent = "Aplicar";
+    const diagnostics = document.createElement("div");
+    diagnostics.className = "diagnostics";
+    diagnostics.setAttribute("role", "status");
+    edit.append(input, apply);
+    form.append(time, edit, diagnostics);
+    item.append(form);
+
+    time.addEventListener("click", () => {
+      const host = findClip(panel.hostId);
+      const cue = panel.cues.find((entry) => entry.id === cueId);
+      if (host !== null && host.start !== null && cue !== undefined) seekPreview(host.start + cue.start);
+    });
+    input.addEventListener("input", () => updateExportButton());
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      queueCaption(panel.hostId, input, diagnostics, cueId);
+    });
+    return { item, time, input, diagnostics };
+  }
+
+  /* POST /api/captions/<host>/<legenda>; recusa aparece na própria linha, com o arquivo intacto. */
+  function queueCaption(hostId, input, diagnostics, cueId) {
+    const text = input.value;
+    mutationQueue = mutationQueue
+      .then(async () => {
+        const result = await mutate("POST", "/api/captions/" + encodeURIComponent(hostId) + "/" + encodeURIComponent(cueId), { text });
+        if (result.payload && result.payload.history) applyHistory(result.payload.history);
+        if (!result.ok) {
+          renderDiagnostics(diagnostics, withCodes(result.diagnostics, result.payload));
+          return;
+        }
+        renderDiagnostics(diagnostics, []);
+        /* O que foi enviado deixa de ser rascunho: a releitura traz o texto como ficou no arquivo. */
+        input.dataset.serverText = text;
+        updateExportButton();
+        await refreshComposition();
+      })
+      .catch((error) => {
+        renderDiagnostics(diagnostics, [{ severity: "error", message: "Falha ao salvar a legenda: " + error.message }]);
+      });
+    return mutationQueue;
+  }
+
+  /* Marca a legenda sob o playhead e a mantém à vista; com o foco na lista, a rolagem fica com quem edita. */
+  function paintCurrentCaption() {
+    const panel = state.captions;
+    if (panel === null) return;
+    const host = findClip(panel.hostId);
+    let id = null;
+    if (host !== null && host.start !== null) {
+      const local = state.playhead - host.start;
+      const inside = host.duration === null || local < host.duration - 0.0005;
+      const index = inside ? activeCueIndex(panel.cues, local) : -1;
+      if (index >= 0) id = panel.cues[index].id;
+    }
+    if (id === panel.current) return;
+    panel.current = id;
+    for (const [cueId, row] of panel.rows) {
+      row.item.classList.toggle("is-current", cueId === id);
+      if (cueId === id) row.item.setAttribute("aria-current", "true");
+      else row.item.removeAttribute("aria-current");
+    }
+    const current = id === null ? undefined : panel.rows.get(id);
+    if (current === undefined || captionsList.contains(document.activeElement)) return;
+    const top = current.item.offsetTop;
+    const bottom = top + current.item.offsetHeight;
+    if (top < captionsList.scrollTop) captionsList.scrollTop = top;
+    else if (bottom > captionsList.scrollTop + captionsList.clientHeight) captionsList.scrollTop = bottom - captionsList.clientHeight;
   }
 
   /* Keyframes (EDT-47) */
@@ -681,7 +887,7 @@ import { fitPlayerBox, playerViewport } from "/player-fit.js";
   /* Com export rodando o botão reabre o progresso; senão só vale sem edição pendente nem inspetor sujo. */
   function updateExportButton() {
     const running = exportRunning();
-    const blocked = !running && (state.busy || state.inflight > 0 || state.inspectorDirty);
+    const blocked = !running && (state.busy || state.inflight > 0 || state.inspectorDirty || captionsDirty());
     exportButton.disabled = blocked || state.exportDefaults === null;
     exportButton.textContent = running ? "Exportando " + Math.round(state.exportJob.percent) + "%" : "Exportar";
     exportButton.title = blocked
@@ -1617,6 +1823,7 @@ import { fitPlayerBox, playerViewport } from "/player-fit.js";
     playheadEl.style.left = (state.total > 0 ? clamp(state.playhead, 0, state.total) * state.pxPerSecond : 0) + "px";
     playheadEl.hidden = state.total <= 0;
     refreshKeyframeAddState();
+    paintCurrentCaption();
   }
 
   /* Arrasto */
@@ -2180,6 +2387,26 @@ import { fitPlayerBox, playerViewport } from "/player-fit.js";
       return;
     }
     button.click();
+  }
+
+  /* Leva o preview ao primeiro frame em `seconds` pelo scrub da própria barra, que também pausa. */
+  function seekPreview(seconds) {
+    let view = null;
+    let range = null;
+    try {
+      view = player.contentWindow;
+      range = player.contentDocument ? player.contentDocument.querySelector("[data-ff-scrub]") : null;
+    } catch (error) {
+      setConnection("preview inacessível: " + error.message, true);
+      return;
+    }
+    const meta = view === null ? undefined : view.__ffPreviewMeta;
+    if (range === null || !meta || !meta.fps) {
+      setConnection("preview sem barra de controle", true);
+      return;
+    }
+    range.value = String(captionFrame(seconds, meta.fps));
+    range.dispatchEvent(new view.Event("input"));
   }
 
   function togglePlayback() {

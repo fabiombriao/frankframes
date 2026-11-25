@@ -81,6 +81,14 @@
         <div id="compositionFormDiagnostics" class="diagnostics" role="status" aria-live="polite"></div>
       </form>
 
+      <!-- Legendas (EDT-97): fica antes dos campos do host, que no celular empurrariam a lista para fora da tela. -->
+      <section id="captionsSection" class="captions-section" aria-label="Legendas" hidden>
+        <h3 class="motion-heading">Legendas</h3>
+        <p id="captionsStatus" class="panel-status" role="status" aria-live="polite" hidden></p>
+        <div id="captionsDiagnostics" class="diagnostics" role="status" aria-live="polite"></div>
+        <ol id="captionsList" class="captions-list"></ol>
+      </section>
+
       <form id="inspector" hidden novalidate>
         <div class="clip-heading">
           <span id="clipTag" class="clip-tag">div</span>

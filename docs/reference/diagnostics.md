@@ -18,6 +18,9 @@ Gerado por `node scripts/generate-reference.ts` a partir do código. Não edite 
 | `E_CANCELED` | erro | render |
 | `E_CANCELLED` | erro | render |
 | `E_CAPTIONS` | erro | cli |
+| `E_CAPTIONS_CUE_NOT_FOUND` | erro | edição |
+| `E_CAPTIONS_HOST` | erro | studio |
+| `E_CAPTIONS_LEGACY` | erro | edição |
 | `E_CATALOG` | erro | studio |
 | `E_CLIP_NOT_FOUND` | erro | edição |
 | `E_CODEC_UNSUPPORTED` | erro | licença/encode |

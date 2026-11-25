@@ -2,7 +2,7 @@
 // Inspetor de clip e de composição (EDT-85): reescreve só o atributo que o usuário mudou e nunca arredonda o que veio da fonte.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { displayNumber, numericChanges } from "../src/studio/inspector.js";
+import { activeCueIndex, captionFrame, displayNumber, numericChanges } from "../src/studio/inspector.js";
 import { compositionFields, compositionPatch } from "../src/studio/composition.js";
 
 /** Um campo como o inspetor o preenche: `shown` é o texto exibido; `text` é o que o usuário deixou no campo. */
@@ -70,4 +70,22 @@ test("EDT-85: o inspetor da composição também não regrava a duração arredo
   assert.deepEqual(compositionPatch(data, { ...fields, width: "1280" }), { body: { width: 1280 }, error: null });
   assert.deepEqual(compositionPatch(data, fields), { body: null, error: null });
   assert.deepEqual(compositionPatch(data, { ...fields, duration: "70" }), { body: { duration: 70 }, error: null });
+});
+
+test("legendas: o playhead vai ao primeiro frame que já mostra a legenda (EDT-97)", () => {
+  assert.equal(captionFrame(0, { num: 30, den: 1 }), 0);
+  assert.equal(captionFrame(2, { num: 30, den: 1 }), 60);
+  assert.equal(captionFrame(1.1 + 0.5, { num: 30, den: 1 }), 48, "1,6000000000000003 s não pula para o frame 49");
+  assert.equal(captionFrame(2.01, { num: 30, den: 1 }), 61, "início entre frames: o seguinte, não o anterior");
+  assert.equal(captionFrame(1.001, { num: 30000, den: 1001 }), 30);
+  assert.equal(captionFrame(-0.5, { num: 30, den: 1 }), 0);
+});
+
+test("legendas: a linha sob o playhead vale do início até antes do fim (EDT-97)", () => {
+  const cues = [{ start: 0.2, end: 1.5 }, { start: 1.5, end: 3 }, { start: 3.4, end: 4 }];
+  assert.deepEqual(
+    [0, 0.2, 1.499, 1.5, 2.2 - 0.7, 3, 3.2, 3.4, 4, 9].map((local) => activeCueIndex(cues, local)),
+    [-1, 0, 0, 1, 1, -1, -1, 2, -1, -1],
+  );
+  assert.equal(activeCueIndex([], 1), -1);
 });

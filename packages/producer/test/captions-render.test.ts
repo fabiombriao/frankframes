@@ -5,7 +5,7 @@ import { writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { openSession, openSessionFor, resolveChrome, startServer } from "@frankframes/engine";
 import { prepare } from "../src/render.ts";
-import { buildCaptionComposition } from "../src/captions.ts";
+import { buildCaptionComposition, editCaptionText, readCaptionFile } from "../src/captions.ts";
 import { tempDir } from "../../../scripts/test-support/temp.ts";
 
 const LONG_TEXT = "essa legenda é bem longa e precisa ocupar toda a largura permitida do quadro sem ficar presa na metade da tela";
@@ -153,6 +153,52 @@ test("karaokê: com decimais quebrados, em cada troca de palavra há exatamente 
       if (got.join() !== lit.join()) wrong.push(`${ms} ms: acesas [${got}], esperado [${lit}]`);
     }
     assert.deepEqual(wrong, []);
+  } finally {
+    await session.close();
+    await server.close();
+  }
+});
+
+test("karaokê editado com outra quantidade de palavras: continua uma palavra acesa por vez, nos tempos repartidos (EDT-97)", { timeout: 300_000 }, async (t) => {
+  try {
+    await resolveChrome();
+  } catch {
+    return t.skip("Chrome não encontrado");
+  }
+
+  const generated = buildCaptionComposition([
+    { start: 0, end: 2, text: "um dois três", words: [{ start: 0.2, end: 0.6, word: "um" }, { start: 0.7, end: 0.9, word: "dois" }, { start: 1, end: 1.6, word: "três" }] },
+  ], { width: 640, height: 360, fontSize: 40 });
+  const edited = editCaptionText(generated, "cap-0", "a gente corrigiu esta frase toda");
+  const words = readCaptionFile(edited).cues[0]!.words!;
+  assert.equal(words.length, 6);
+
+  const dir = await tempDir(t, "ff-karaoke-edit-");
+  const entry = join(dir, "index.html");
+  await writeFile(entry, edited);
+
+  const prepared = await prepare({ entry });
+  const server = await startServer(prepared.entryDir, { page: { path: basename(prepared.entry), html: prepared.compiledHtml } });
+  const session = await openSessionFor(server, { url: `${server.url}${basename(entry)}`, viewport: prepared.viewport, gpu: "software" });
+  try {
+    const litAt = async (ms: number): Promise<number[]> => {
+      await session.seekFrame(ms, MILLISECONDS);
+      return session.evaluate<number[]>(
+        `[...document.querySelectorAll("span.w")].flatMap((span, i) => getComputedStyle(span).color === "${LIT}" ? [i] : [])`,
+      );
+    };
+    const starts = words.map((word) => Math.round(word.start * 1000));
+    const expected: Array<[number, number[]]> = starts.flatMap((ms, i): Array<[number, number[]]> => [
+      [ms - 1, i === 0 ? [] : [i - 1]],
+      [ms, [i]],
+    ]);
+    const wrong: string[] = [];
+    for (const [ms, on] of [...expected, [1999, [5]] as [number, number[]], ...[...expected].reverse()]) {
+      const got = await litAt(ms);
+      if (got.join() !== on.join()) wrong.push(`${ms} ms: acesas [${got}], esperado [${on}]`);
+    }
+    assert.deepEqual(wrong, []);
+    assert.deepEqual(session.pageErrors(), []);
   } finally {
     await session.close();
     await server.close();

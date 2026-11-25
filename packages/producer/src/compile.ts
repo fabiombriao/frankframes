@@ -77,6 +77,8 @@ function rewriteUrls(nodes: P5Node[] | undefined, prefix: string): void {
 }
 
 interface MergeContext {
+  /** Conteúdo que vale no lugar do disco, por caminho resolvido (validar antes de gravar). */
+  files: ReadonlyMap<string, string>;
   entryDir: string;
   depth: number;
   ancestors: string[];
@@ -116,7 +118,7 @@ async function inlineNode(node: P5Node, ctx: MergeContext): Promise<void> {
     return;
   }
 
-  const html = await readFile(absolute, "utf8");
+  const html = ctx.files.get(absolute) ?? (await readFile(absolute, "utf8"));
   const document = parse(html) as unknown as P5Node;
   const root = [...walk(document.childNodes)].find((candidate) => candidate.nodeName !== "#text" && attr(candidate, "data-composition-id") !== undefined);
   const inlined = [...headAssets(document), ...(root?.childNodes ?? []).map(cloneNode)];
@@ -161,10 +163,15 @@ export interface MergeResult {
  * inline numa única página, reescrevendo caminhos relativos. Não resolve tempo:
  * isso é o passo de anotação, que precisa do contrato já resolvido.
  */
-export async function mergeSubCompositions(entryHtml: string, entryDir: string, entryPath?: string): Promise<MergeResult> {
+export async function mergeSubCompositions(
+  entryHtml: string,
+  entryDir: string,
+  entryPath?: string,
+  files: ReadonlyMap<string, string> = new Map(),
+): Promise<MergeResult> {
   const document = parse(entryHtml) as unknown as P5Node;
   const entry = resolve(entryPath ?? resolve(entryDir, "index.html"));
-  const ctx: MergeContext = { entryDir: resolve(entryDir), depth: 0, ancestors: [entry], warnings: [] };
+  const ctx: MergeContext = { files, entryDir: resolve(entryDir), depth: 0, ancestors: [entry], warnings: [] };
   await inlineAll(document.childNodes, ctx);
   return { html: serialize(document as never), warnings: ctx.warnings };
 }
@@ -288,8 +295,10 @@ export async function compileComposition(options: {
   entryDir: string;
   entryPath?: string;
   mediaDurations?: Record<string, number>;
+  /** Sub-composições ainda não gravadas, por caminho resolvido: valem no lugar do disco. */
+  files?: ReadonlyMap<string, string>;
 }): Promise<{ html: string; composition: Composition; warnings: string[]; annotations: number }> {
-  const merged = await mergeSubCompositions(options.entryHtml, options.entryDir, options.entryPath);
+  const merged = await mergeSubCompositions(options.entryHtml, options.entryDir, options.entryPath, options.files);
   const materialized = materializeClipIds(merged.html);
   const composition = loadComposition(materialized, { mediaDurations: options.mediaDurations ?? {} });
   if (!composition.ok) {
