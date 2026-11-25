@@ -159,7 +159,101 @@ test("karaokê: com decimais quebrados, em cada troca de palavra há exatamente 
   }
 });
 
-test("karaokê editado com outra quantidade de palavras: continua uma palavra acesa por vez, nos tempos repartidos (EDT-97)", { timeout: 300_000 }, async (t) => {
+/** Palavra que contém o instante, numa fala encadeada; vazio antes da primeira e a partir do fim da última. */
+const spokenAt = (starts: number[], end: number, ms: number): number[] => (ms < starts[0]! || ms >= end ? [] : [starts.findLastIndex((start) => start <= ms)]);
+
+/** Por legenda, os índices das palavras na cor de destaque. */
+const LIT_BY_CAPTION = `[...document.querySelectorAll(".caption")].map((caption) => [...caption.querySelectorAll("span.w")].flatMap((span, i) => getComputedStyle(span).color === "${LIT}" ? [i] : []))`;
+
+test("karaokê: no instante exato de 390 trocas aleatórias acende só a palavra que começa, para frente e para trás (EDT-99)", { timeout: 300_000 }, async (t) => {
+  try {
+    await resolveChrome();
+  } catch {
+    return t.skip("Chrome não encontrado");
+  }
+
+  // Gerador fixo: com estes instantes, animation-duration acendia duas palavras em 107 das trocas.
+  let seed = 7;
+  const random = (n: number): number => (seed = (seed * 48271) % 2147483647) % n;
+  // Dez legendas no ar ao mesmo tempo, cada uma com 40 palavras: uma sessão só para todas as trocas.
+  const blocks = Array.from({ length: 10 }, () => {
+    const starts = [100 + random(50)];
+    while (starts.length < 40) starts.push(starts.at(-1)! + 60 + random(400));
+    return { starts, end: starts.at(-1)! + 500 };
+  });
+  const segments = blocks.map(({ starts, end }, b) => ({
+    start: 0,
+    end: end / 1000,
+    text: "x",
+    words: starts.map((ms, i) => ({ word: `b${b}p${i}`, start: ms / 1000, end: (starts[i + 1] ?? end) / 1000 })),
+  }));
+
+  const dir = await tempDir(t, "ff-karaoke-random-");
+  const entry = join(dir, "index.html");
+  await writeFile(entry, buildCaptionComposition(segments, { width: 640, height: 360, fontSize: 12, maxWords: 40 }));
+
+  const prepared = await prepare({ entry });
+  const server = await startServer(prepared.entryDir, { page: { path: basename(prepared.entry), html: prepared.compiledHtml } });
+  const session = await openSessionFor(server, { url: `${server.url}${basename(entry)}`, viewport: prepared.viewport, gpu: "software" });
+  try {
+    const changes = blocks.flatMap(({ starts }) => starts.slice(1));
+    assert.equal(changes.length, 390);
+    const wrong: string[] = [];
+    for (const ms of [...changes, ...[...changes].reverse()]) {
+      await session.seekFrame(ms, MILLISECONDS);
+      const got = await session.evaluate<number[][]>(LIT_BY_CAPTION);
+      assert.equal(got.length, blocks.length);
+      blocks.forEach(({ starts, end }, b) => {
+        const lit = spokenAt(starts, end, ms);
+        if (got[b]!.join() !== lit.join()) wrong.push(`${ms} ms, legenda ${b}: acesas [${got[b]}], esperado [${lit}]`);
+      });
+    }
+    assert.equal(wrong.length, 0, `${wrong.length} divergências, as primeiras:\n${wrong.slice(0, 10).join("\n")}`);
+    assert.deepEqual(session.pageErrors(), []);
+  } finally {
+    await session.close();
+    await server.close();
+  }
+});
+
+test("karaokê a 24, 25, 30 e 60 fps: em todos os frames acende só a palavra do instante, também voltando no tempo (EDT-99)", { timeout: 300_000 }, async (t) => {
+  try {
+    await resolveChrome();
+  } catch {
+    return t.skip("Chrome não encontrado");
+  }
+
+  // 717→800 e 933→1000 acendiam duas palavras nos frames que caem em 800 e 1000 ms.
+  const starts = [200, 700, 717, 800, 933, 1000];
+  const words = starts.map((ms, i) => ({ word: `p${i}`, start: ms / 1000, end: (starts[i + 1] ?? 2000) / 1000 }));
+  const dir = await tempDir(t, "ff-karaoke-fps-");
+  const entry = join(dir, "index.html");
+  await writeFile(entry, buildCaptionComposition([{ start: 0, end: 2, text: "x", words }], { width: 640, height: 360, fontSize: 20, maxWords: words.length }));
+
+  const prepared = await prepare({ entry });
+  const server = await startServer(prepared.entryDir, { page: { path: basename(prepared.entry), html: prepared.compiledHtml } });
+  const session = await openSessionFor(server, { url: `${server.url}${basename(entry)}`, viewport: prepared.viewport, gpu: "software" });
+  try {
+    const wrong: string[] = [];
+    for (const fps of [24, 25, 30, 60]) {
+      const frames = Array.from({ length: 2 * fps }, (_, frame) => frame);
+      // A volta começa no último frame, quando as animações das cinco primeiras palavras já terminaram.
+      for (const frame of [...frames, ...[...frames].reverse()]) {
+        await session.seekFrame(frame, { num: fps, den: 1 });
+        const [got] = await session.evaluate<number[][]>(LIT_BY_CAPTION);
+        const lit = spokenAt(starts, 2000, (frame * 1000) / fps);
+        if (got!.join() !== lit.join()) wrong.push(`${fps} fps, frame ${frame}: acesas [${got}], esperado [${lit}]`);
+      }
+    }
+    assert.deepEqual(wrong, []);
+    assert.deepEqual(session.pageErrors(), []);
+  } finally {
+    await session.close();
+    await server.close();
+  }
+});
+
+test("karaokê editado com outra quantidade de palavras: continua uma palavra acesa por vez, nos tempos mantidos e repartidos (EDT-97, EDT-98)", { timeout: 300_000 }, async (t) => {
   try {
     await resolveChrome();
   } catch {
@@ -169,9 +263,11 @@ test("karaokê editado com outra quantidade de palavras: continua uma palavra ac
   const generated = buildCaptionComposition([
     { start: 0, end: 2, text: "um dois três", words: [{ start: 0.2, end: 0.6, word: "um" }, { start: 0.7, end: 0.9, word: "dois" }, { start: 1, end: 1.6, word: "três" }] },
   ], { width: 640, height: 360, fontSize: 40 });
-  const edited = editCaptionText(generated, "cap-0", "a gente corrigiu esta frase toda");
+  const edited = editCaptionText(generated, "cap-0", "um a gente corrigiu isto três");
   const words = readCaptionFile(edited).cues[0]!.words!;
   assert.equal(words.length, 6);
+  // A primeira e a última não mudaram: ficam com os tempos que tinham.
+  assert.deepEqual([words[0]!, words[5]!].map((word) => [word.start, word.end]), [[0.2, 0.7], [1, 2]]);
 
   const dir = await tempDir(t, "ff-karaoke-edit-");
   const entry = join(dir, "index.html");

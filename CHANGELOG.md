@@ -26,6 +26,10 @@ FrankFrames — proprietário (ver `LICENSE`). Versões seguem `MAJOR.MINOR.PATC
   0,59 s): a curta é juntada à vizinha do mesmo segmento, mesmo passando de N palavras.
 - Destaque só na palavra que está sendo falada: as outras ficam brancas, em vez de cinza antes da fala e na cor de
   destaque depois dela.
+- No instante exato da troca de palavra acende só a que começa; antes, em parte das trocas, a que terminava seguia
+  acesa junto, e um frame que caísse nesse instante saía com duas palavras destacadas. Cada palavra passa a gravar
+  início e fim (`animation-delay:<início>s,<fim>s`). Legenda no formato antigo guarda o CSS antigo: gere de novo com
+  `captions` para receber a correção; o Studio não a edita (`E_CAPTIONS_LEGACY`).
 - A dica do `W_NESTED_START_IGNORED` manda usar `at=`; mandava usar `delay=`, que nenhum preset aceita.
 
 ### Sub-composições

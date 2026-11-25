@@ -127,7 +127,10 @@ test("API: a composição marca o host de legendas e GET devolve as legendas com
       listed.json.cues.map((cue: { id: string; start: number; end: number; text: string }) => [cue.id, cue.start, cue.end, cue.text]),
       [["cap-0", 0, 1.5, "essa é a legneda"], ["cap-1", 1.5, 3, "agora vem outra"], ["cap-2", 3, 4.5, "fim do vídeo"]],
     );
-    assert.equal(listed.json.cues[0].words.length, 4);
+    assert.deepEqual(
+      listed.json.cues[0].words.map((word: { start: number; end: number }) => [word.start, word.end]),
+      [[0, 0.375], [0.375, 0.75], [0.75, 1.125], [1.125, 1.5]],
+    );
   }));
 
 test("API: POST grava só o arquivo das legendas, registra no histórico e recarrega o preview (EDT-97)", () =>

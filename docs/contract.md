@@ -466,6 +466,19 @@ fonte padrão é `round(min(altura × 0,055, largura × 0,065))` (1920×1080 →
 1080×1920 → 70 px em vez de 106); `fontSize` explícito manda. `maxCharsPerLine` continua `largura × 0,84 ÷
 (fonte × 0,55)`, agora coerente com a caixa que de fato chega a 84%.
 
+**Legendas: destaque da palavra (EDT-95, EDT-99).** No karaokê, cada palavra é
+`<span class="w" [data-unit="…"] style="animation-delay:<início>s,<fim>s">`, com o início e o fim do destaque no
+tempo da própria sub-composição, em milissegundos inteiros escritos com três casas (`14.100s,14.440s`). O span não
+leva `animation-duration`. No CSS gerado, `.w` é branca e roda `animation-name: hl-on, hl-off`, com
+`animation-duration: 0s` e `animation-fill-mode: forwards`: `hl-on` pinta a cor de destaque no 1º atraso e `hl-off`
+volta ao branco no 2º (a última da lista vence). Antes do início a palavra é branca; do fim em diante, também. Cada
+palavra fica acesa até o início da seguinte (a última, até o fim da legenda), e o fim de uma é gravado com o
+**mesmo texto** do início da seguinte: o navegador faz a mesma comparação para as duas, então no instante da troca
+acende só a que começa, nunca duas nem nenhuma. Com duração no lugar do fim, o arredondamento no Chrome deixava a
+palavra que termina acesa junto da nova em parte das trocas. `forwards` é obrigatório: sem ele a animação terminada
+sai de `document.getAnimations()`, o relógio virtual deixa de movê-la e um seek para trás não reacende a palavra.
+Arquivo já gerado guarda o próprio CSS: para receber esta correção, precisa ser gerado de novo com `captions`.
+
 **Legendas: opções gravadas e edição do texto (EDT-97).** A composição gerada leva no `<head>` a
 `<meta name="frankframes:captions" content='{JSON}'>`, com o JSON escapado como atributo. O JSON tem `v: 1` e as
 opções de layout **já resolvidas**: `width`, `height`, `fontSize` (a fonte base), `maxChars`, `maxLines`, `bottom`,
@@ -474,18 +487,17 @@ de novo uma legenda igual ao `captions`: gerador e edição usam a mesma funçã
 
 - `readCaptionFile(html)` devolve `{options, cues: [{id, start, end, text, words}]}`, com tempos em segundos da
   própria sub-composição. `words` é `null` na legenda por frase; no karaokê, cada `.w` vira `{start, end, word}`
-  (`start` = `animation-delay`, `end` = `animation-delay + animation-duration`). Na legenda por frase `text` é o
-  texto das linhas, juntadas por um espaço.
+  (`start` e `end` = o 1º e o 2º `animation-delay`). Na legenda por frase `text` é o texto das linhas, juntadas por
+  um espaço.
 - `editCaptionText(html, id, text)` troca **só o elemento daquela legenda**, pela posição no arquivo: o resto
   continua byte a byte. `data-clip-id`, `data-start` e `data-duration` não mudam; a quebra de linha e o
   `font-size` são recalculados. O elemento é redesenhado por inteiro: atributo que alguém tenha acrescentado à
   mão nele não sobrevive.
-  - **Mesmo número de palavras** (separadas por espaço): cada uma mantém o `animation-delay`, a
-    `animation-duration` e, com motion, o instante de onde sai o `data-unit` (o gravado: refazê-lo dos tempos
-    arredondados erraria por 1 ms). Reaplicar o mesmo texto não muda o arquivo.
+  - **Mesmo número de palavras** (separadas por espaço): cada uma mantém o início, o fim e, com motion, o
+    instante de onde sai o `data-unit` (o gravado: refazê-lo dos tempos arredondados erraria por 1 ms).
+    Reaplicar o mesmo texto não muda o arquivo.
   - **Número diferente** (EDT-98): só o trecho trocado muda de tempo. As palavras iguais no começo e, no que
-    sobra, as iguais no fim (comparadas pelo texto exato) mantêm o `animation-delay`, a `animation-duration` e a
-    âncora do `data-unit`. As palavras novas do trecho repartem o intervalo das antigas que elas substituem, do
+    sobra, as iguais no fim (comparadas pelo texto exato) mantêm o início, o fim e a âncora do `data-unit`. As palavras novas do trecho repartem o intervalo das antigas que elas substituem, do
     início da primeira ao fim da última, pelo número de caracteres de cada uma, em milissegundos inteiros
     encadeados (uma acaba onde a outra começa), cada uma com pelo menos 1 ms. O início da 1ª palavra da legenda,
     o fim da última e o encadeamento não mudam. Com duas mudanças separadas na mesma edição, tudo entre elas é
@@ -500,8 +512,9 @@ de novo uma legenda igual ao `captions`: gerador e edição usam a mesma funçã
     (a âncora gravada vale para o instante que não mudou; a palavra que passa a começar em outro instante parte do
     novo início); o que não couber é `E_ATTRIBUTE_INVALID`.
 - Arquivo sem a meta (gerado por versão anterior), com a meta ilegível ou com legenda fora do formato gerado é
-  `E_CAPTIONS_LEGACY` (`hint`: gere de novo com `frankframes captions`). `id` que não existe é
-  `E_CAPTIONS_CUE_NOT_FOUND`.
+  `E_CAPTIONS_LEGACY` (`hint`: gere de novo com `frankframes captions`). Fora do formato inclui a palavra no
+  formato antigo (um `animation-delay` mais `animation-duration`; os dois formatos não são lidos) e a de fim antes
+  do início. `id` que não existe é `E_CAPTIONS_CUE_NOT_FOUND`.
 
 **Limitações.** Em escritas cursivas (árabe) o modo `letter` perde a ligação entre letras, porque cada
 grafema vira uma caixa; use `word`. Ligaduras entre unidades vizinhas e o kerning entre elas se perdem. O

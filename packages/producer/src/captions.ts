@@ -257,7 +257,7 @@ export interface TimedWord {
   word: string;
   /** Instante da fala a partir do início da legenda (s): âncora do motion. */
   at: number;
-  /** `animation-delay` e `animation-duration`, em milissegundos inteiros. */
+  /** Início e duração do destaque, em ms inteiros; o arquivo guarda o início e o fim, como dois `animation-delay`. */
   fromMs: number;
   forMs: number;
 }
@@ -271,6 +271,8 @@ export interface CueSource {
   /** Vazio = legenda por frase. */
   words: TimedWord[];
 }
+
+const cssSeconds = (ms: number): string => `${(ms / 1000).toFixed(3)}s`;
 
 /** O elemento de uma legenda, sem recuo. Geração e edição passam por aqui. */
 export function renderCue(cue: CueSource, layout: Pick<CaptionLayout, "fontSize" | "maxChars" | "maxLines" | "motion">): string {
@@ -292,7 +294,8 @@ export function renderCue(cue: CueSource, layout: Pick<CaptionLayout, "fontSize"
       ? words
           .map((word, i) => {
             const unit = fitted === undefined ? "" : ` data-unit="${fitted.anchors[i]!.toFixed(3)}"`;
-            const timing = `animation-delay:${(word.fromMs / 1000).toFixed(3)}s;animation-duration:${(word.forMs / 1000).toFixed(3)}s`;
+            // Início e fim (§7b.8): em palavras encadeadas, o fim de uma é o mesmo texto do início da seguinte.
+            const timing = `animation-delay:${cssSeconds(word.fromMs)},${cssSeconds(word.fromMs + word.forMs)}`;
             return `<span class="w"${unit} style="${timing}">${escapeHtml(word.word)}</span>`;
           })
           .join(" ")
@@ -393,18 +396,23 @@ export function buildCaptionComposition(segments: CaptionSegment[], options: Cap
       text-align: center;
       border-radius: ${Math.round(baseFontSize * 0.16)}px;
     }
-    /* Destaque só durante a fala: branca antes (sem fill para trás), destaque no intervalo e branca de novo
-       pelo fill forwards. Não troque por fill none: a animação terminada sai de document.getAnimations(), o
-       relógio deixa de movê-la e um seek para trás não reacende a palavra. */
+    /* Destaque só durante a fala, em dois instantes sem duração: hl-on acende no 1º animation-delay do span e
+       hl-off apaga no 2º (a última da lista vence); antes do 1º não há fill, e a palavra é branca. O fim de uma
+       palavra é o mesmo texto do início da seguinte: o Chrome faz a mesma comparação e as duas trocam juntas.
+       Não volte a animation-duration: a conta do progresso parava em 0,999… no instante da troca e acendia duas.
+       Não troque forwards por none: a animação terminada sai de document.getAnimations(), o relógio deixa de
+       movê-la e um seek para trás não reacende a palavra. */
     .w {
       color: #fff;
-      animation-name: hl;
-      animation-timing-function: step-end;
+      animation-name: hl-on, hl-off;
+      animation-duration: 0s;
       animation-fill-mode: forwards;
       white-space: pre;
     }
-    @keyframes hl {
-      from { color: ${highlight}; }
+    @keyframes hl-on {
+      to { color: ${highlight}; }
+    }
+    @keyframes hl-off {
       to { color: #fff; }
     }
   </style>
@@ -500,10 +508,16 @@ interface StoredCue {
 
 const SECONDS = /^\d+(\.\d+)?$/;
 
-function readTiming(style: string, property: string, id: string): number {
-  const found = new RegExp(`(?:^|;)\\s*${property}:\\s*(\\d+(?:\\.\\d+)?)s\\s*(?:;|$)`).exec(style);
-  if (found === null) throw unreadable(`legenda ${id}: palavra sem ${property} em segundos`);
-  return toMs(Number(found[1]));
+/** `animation-delay:<início>s,<fim>s`. O formato antigo (um delay mais `animation-duration`) não é lido. */
+const WORD_TIMING = /(?:^|;)\s*animation-delay:\s*(\d+(?:\.\d+)?)s\s*,\s*(\d+(?:\.\d+)?)s\s*(?:;|$)/;
+
+function readTiming(style: string, id: string): { fromMs: number; forMs: number } {
+  const found = WORD_TIMING.exec(style);
+  if (found === null) throw unreadable(`legenda ${id}: palavra sem o início e o fim em animation-delay (formato antigo ou mexido)`);
+  const fromMs = toMs(Number(found[1]));
+  const forMs = toMs(Number(found[2])) - fromMs;
+  if (forMs < 0) throw unreadable(`legenda ${id}: o fim de uma palavra vem antes do início dela`);
+  return { fromMs, forMs };
 }
 
 function readCue(node: HtmlNode, id: string): StoredCue {
@@ -531,8 +545,7 @@ function readCue(node: HtmlNode, id: string): StoredCue {
           if (unit !== undefined && !SECONDS.test(unit)) throw unreadable(`legenda ${id}: data-unit precisa ser um número`);
           return {
             word: textOf(span),
-            fromMs: readTiming(style, "animation-delay", id),
-            forMs: readTiming(style, "animation-duration", id),
+            ...readTiming(style, id),
             ...(unit === undefined ? {} : { unit: Number(unit) }),
           };
         });

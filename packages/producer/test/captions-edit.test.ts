@@ -278,6 +278,63 @@ test("texto com < e & é texto: vai escapado e volta igual", () => {
   }
 });
 
+/** Texto do `style` de cada palavra de uma legenda. */
+const styles = (html: string, id: string): string[] => [...elementOf(html, id).matchAll(/<span class="w"[^>]*? style="([^"]*)"/g)].map((m) => m[1]!);
+
+test("gerar, ler e editar grava início e fim de cada palavra, e o fim é o mesmo texto do início seguinte (EDT-99)", () => {
+  const a001 = buildCaptionComposition(
+    [spoken(14.1, 15.38, ["falando", 14.1, 14.44], ["de", 14.44, 14.66], ["chat", 14.66, 14.96], ["EPT", 14.96, 15.38])],
+    VERTICAL,
+  );
+  const pairs = (...list: string[]): string[] => list.map((pair) => `animation-delay:${pair}`);
+  assert.deepEqual(styles(a001, "cap-0"), pairs("14.100s,14.440s", "14.440s,14.660s", "14.660s,14.960s", "14.960s,15.380s"));
+
+  // Os casos do EDT-98: trecho trocado, mesma quantidade, inserção pura e remoção pura.
+  const cases: Array<[string, string, string[]]> = [
+    [a001, "falando de ChatGPT", pairs("14.100s,14.440s", "14.440s,14.660s", "14.660s,15.380s")],
+    [a001, "FALANDO do chat GPT", pairs("14.100s,14.440s", "14.440s,14.660s", "14.660s,14.960s", "14.960s,15.380s")],
+    [five(), "um dois xx três quatro cinco", pairs("0.200s,0.700s", "0.700s,1.033s", "1.033s,1.200s", "1.200s,1.700s", "1.700s,2.200s", "2.200s,3.000s")],
+    [five(), "um dois quatro cinco", pairs("0.200s,0.700s", "0.700s,1.700s", "1.700s,2.200s", "2.200s,3.000s")],
+  ];
+  for (const [html, text, expected] of cases) {
+    const edited = editCaptionText(html, "cap-0", text);
+    assert.deepEqual(styles(edited, "cap-0"), expected, text);
+    // Ler o que foi gravado devolve os mesmos instantes, e reaplicar o texto não muda o arquivo.
+    assert.deepEqual(
+      lit(edited, "cap-0"),
+      expected.map((style) => [...style.matchAll(/([0-9.]+)s/g)].map((m) => Math.round(Number(m[1]) * 1000))),
+      text,
+    );
+    assert.equal(editCaptionText(edited, "cap-0", text), edited, text);
+  }
+
+  // Decimais quebrados e palavras no mesmo instante: o encadeamento é por texto idêntico, sem soma no navegador.
+  const odd = buildCaptionComposition(
+    [spoken(0, 3, ["a", 0.1004, 0.2], ["b", 0.7005, 0.8], ["c", 0.7005, 0.9], ["d", 1.2345, 1.4], ["e", 2.0015, 2.2])],
+    { ...VERTICAL, maxWords: 8 },
+  );
+  for (const html of [odd, editCaptionText(odd, "cap-0", "a x y z w v e")]) {
+    const edges = styles(html, "cap-0").map((style) => style.replace("animation-delay:", "").split(","));
+    for (let i = 1; i < edges.length; i++) assert.equal(edges[i - 1]![1], edges[i]![0], `palavra ${i}: ${JSON.stringify(edges)}`);
+  }
+});
+
+test("arquivo no formato antigo (delay e duration) ou com o fim antes do início dá E_CAPTIONS_LEGACY (EDT-99)", () => {
+  const html = buildCaptionComposition(three(), VERTICAL);
+  const old = html.replace(
+    /style="animation-delay:([0-9.]+)s,([0-9.]+)s"/g,
+    (_, from: string, to: string) => `style="animation-delay:${from}s;animation-duration:${(Number(to) - Number(from)).toFixed(3)}s"`,
+  );
+  assert.ok(old.includes('style="animation-delay:1.700s;animation-duration:0.500s">essa<'), "o HTML antigo precisa ser o formato de antes");
+  const backwards = html.replace("animation-delay:1.700s,2.200s", "animation-delay:2.200s,1.700s");
+  assert.notEqual(backwards, html);
+  for (const bad of [old, backwards]) {
+    for (const task of [() => readCaptionFile(bad), () => editCaptionText(bad, "cap-1", "essa legenda aqui.")]) {
+      assert.match(refused("E_CAPTIONS_LEGACY", task).hint!, /gere de novo com frankframes captions/);
+    }
+  }
+});
+
 test("texto vazio, legenda inexistente e arquivo sem a meta falham com código e hint", () => {
   const html = buildCaptionComposition(three(), VERTICAL);
   for (const empty of ["", "   ", "\n\t "]) refused("E_ATTRIBUTE_INVALID", () => editCaptionText(html, "cap-1", empty));

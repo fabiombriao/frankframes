@@ -74,10 +74,11 @@ test("karaokê: uma palavra por span, acesa no instante absoluto", () => {
   assert.equal(composition.ok, true, JSON.stringify(composition.diagnostics));
   assert.equal((html.match(/class="w"/g) ?? []).length, 2, "uma palavra por span");
   // cada palavra acende do seu início até o da seguinte; a última, até o fim da legenda
-  assert.ok(html.includes('style="animation-delay:1.000s;animation-duration:0.900s">olá<'), "primeira palavra acende no segundo 1");
-  assert.ok(html.includes('style="animation-delay:1.900s;animation-duration:1.100s">mundo<'));
+  assert.ok(html.includes('style="animation-delay:1.000s,1.900s">olá<'), "primeira palavra acende no segundo 1");
+  assert.ok(html.includes('style="animation-delay:1.900s,3.000s">mundo<'));
   assert.match(html, /\.w \{\s*color: #fff;/, "fora da fala a palavra é branca");
-  assert.match(html, /@keyframes hl \{\s*from \{ color: #ff2d55; \}\s*to \{ color: #fff; \}/);
+  assert.match(html, /animation-name: hl-on, hl-off;\s*animation-duration: 0s;\s*animation-fill-mode: forwards;/);
+  assert.match(html, /@keyframes hl-on \{\s*to \{ color: #ff2d55; \}\s*\}\s*@keyframes hl-off \{\s*to \{ color: #fff; \}/);
   assert.ok(!html.includes("<br>"), "com palavras, o texto não é quebrado manualmente");
 });
 
@@ -101,8 +102,8 @@ function cuesOf(html: string): ReadCue[] {
     start: Math.round(clip.start! * 1000) / 1000,
     end: Math.round(clip.end! * 1000) / 1000,
     text: bodies[i]!.replace(/<br>/g, " ").replace(/<[^>]+>/g, ""),
-    lit: [...bodies[i]!.matchAll(/animation-delay:([0-9.]+)s;animation-duration:([0-9.]+)s/g)].map(
-      (m): [number, number] => [Math.round(Number(m[1]) * 1000), Math.round((Number(m[1]) + Number(m[2])) * 1000)],
+    lit: [...bodies[i]!.matchAll(/animation-delay:([0-9.]+)s,([0-9.]+)s"/g)].map(
+      (m): [number, number] => [Math.round(Number(m[1]) * 1000), Math.round(Number(m[2]) * 1000)],
     ),
   }));
 }

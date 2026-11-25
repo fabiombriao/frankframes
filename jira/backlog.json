@@ -281,6 +281,21 @@
             "Spec em docs/transcribe.md e CHANGELOG; testes que falhariam sem a mudança (divisão em legendas curtas, quebra por pontuação e pausa, e destaque só no intervalo da palavra num seek em Chrome); gate verde."
           ],
           "jiraKey": "EDT-95"
+        },
+        {
+          "summary": "Legendas: no instante exato da troca de palavra, só uma palavra fica acesa",
+          "points": 2,
+          "labels": [
+            "legendas",
+            "determinismo"
+          ],
+          "acceptance": [
+            "Visto na revisão do EDT-98 em 2026-11-25: quando a troca de palavra cai no instante exato de um frame (a 30 fps, nos múltiplos de 100 ms), o Chrome acende a palavra que termina e a que começa; com seek no milissegundo exato, 107 de 400 trocas aleatórias falharam.",
+            "Causa confirmada antes do conserto: o fim de cada palavra (animation-delay + animation-duration, convertidos separadamente) não coincide no Chrome com o início da seguinte.",
+            "Em qualquer instante, inclusive na troca exata, no máximo uma palavra da legenda fica com a cor de destaque; no Chrome, em 24, 25, 30 e 60 fps.",
+            "Edição no Studio (EDT-97/98) continua lendo e regravando os tempos; spec em docs/contract.md; testes que falhariam sem a mudança; gate verde."
+          ],
+          "jiraKey": "EDT-99"
         }
       ],
       "jiraKey": "EDT-18"
