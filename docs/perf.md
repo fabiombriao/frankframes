@@ -16,7 +16,7 @@ Nada em `packages/` mudou para medir: os scripts usam só API pública.
 | Node | v24.14.1 |
 | Chrome | headless shell 158.0.8127.36 (pinado) |
 | FFmpeg | vendor `n8.1.3-39-g660b5aa7db-20261120` (LGPL) |
-| Workers (`default`) | 6 = `max(2, min(8, floor(12/2), floor(15,9 GiB / 768 MB)))` |
+| Workers (`default`) | 6 = `max(2, min(8, floor(12/2), floor(15,9 GiB / 768 MB)))`, a fórmula da época. Desde o EDT-91 o padrão conta a memória livre ([contrato](contract.md)) |
 
 Medido em 2026-11-23, sem outra carga de CPU/GPU na máquina durante as execuções (o `ci --fast` só rodou depois das medições).
 

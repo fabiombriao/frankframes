@@ -10,7 +10,7 @@ import { loadComposition } from "@frankframes/contract";
 import type { Composition, Diagnostic, RawClip, ResolvedClip } from "@frankframes/contract";
 import { buildFramePipeArgs, buildMuxArgs, containerFor } from "@frankframes/encode";
 import type { Preset, VideoCodec } from "@frankframes/encode";
-import { BrowserError, MediaRotationError, assetPath, captureFramesInParallel, cleanupWarning, defaultWorkerCount, extractFramesCached, probeDuration, probeVideo, removeTree, reorderWindow, retryOnceIfTransient, startServer, warnCleanup } from "@frankframes/engine";
+import { BrowserError, MediaRotationError, assetPath, captureFramesInParallel, cleanupWarning, extractFramesCached, planWorkers, probeDuration, probeVideo, removeTree, reorderWindow, retryOnceIfTransient, startServer, warnCleanup } from "@frankframes/engine";
 import type { MediaManifest, VideoProbe } from "@frankframes/engine";
 import { annotateCompiled, materializeClipIds, mergeSubCompositions } from "./compile.ts";
 import { resolveFfmpeg } from "./ffmpeg.ts";
@@ -313,6 +313,10 @@ export interface RenderOptions {
   ffprobe?: string;
   codec?: VideoCodec;
   preset?: Preset;
+  /**
+   * Sessões de captura. Sem isso, `planWorkers` decide pela CPU e pela memória livre no começo do render; a escolha sai
+   * na mensagem de progresso da captura e, com a memória baixa demais, um aviso vai para `warnings`.
+   */
   workers?: number;
   /**
    * Mantém a pasta de trabalho depois do render. Sem isso os frames vão direto ao FFmpeg e nunca tocam o disco;
@@ -373,6 +377,11 @@ async function renderPipeline(
   const signal = options.signal;
   const signalOption = signal !== undefined ? { signal } : {};
 
+  // A memória livre é medida uma vez, aqui no começo. Com `workers` pedido, nada é medido.
+  const workerPlan: { workers: number; warning?: string; summary?: string } =
+    options.workers === undefined ? planWorkers() : { workers: options.workers };
+  const { workers } = workerPlan;
+
   const prepared = await prepare({
     entry: options.entry,
     ...(options.ffmpeg !== undefined ? { ffmpeg: options.ffmpeg } : {}),
@@ -384,6 +393,7 @@ async function renderPipeline(
   const pair = await resolveFfmpeg();
   const ffmpeg = options.ffmpeg ?? pair.ffmpeg;
   const { totalFrames, fps, viewport, seconds, entryDir, composition, warnings } = prepared;
+  if (workerPlan.warning !== undefined) warnings.push(workerPlan.warning);
   // Só o render precisa de disco de trabalho; é criado aqui, depois do prepare, e removido no `finally` (ou no exit).
   const workDir = await mkdtemp(join(tmpdir(), "ff-render-"));
 
@@ -431,7 +441,7 @@ async function renderPipeline(
     const keepFrames = options.keepWorkDir === true;
     if (keepFrames) await mkdir(framesDir, { recursive: true });
     throwIfCanceled(signal, "capture");
-    progress("capture", 25);
+    progress("capture", 25, workerPlan.summary);
     const server = await startServer(entryDir, {
       ...(prepared.mediaDir !== undefined ? { mediaRoot: prepared.mediaDir } : {}),
       ...(prepared.manifest !== undefined ? { manifest: prepared.manifest } : {}),
@@ -439,7 +449,6 @@ async function renderPipeline(
     });
 
     const frames = [...Array(totalFrames).keys()];
-    const workers = options.workers ?? defaultWorkerCount();
     try {
       encoding = await retryOnceIfTransient(
         () => {

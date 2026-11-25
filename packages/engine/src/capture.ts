@@ -5,9 +5,10 @@ import type { Browser, CDPSession, Page } from "puppeteer-core";
 import { timeOfFrame } from "@frankframes/contract";
 import { chromeArgs } from "./args.ts";
 import type { GpuMode, ResolvedGpuMode, Viewport } from "./args.ts";
-import { BrowserError } from "./failures.ts";
+import { BrowserError, withCleanupFailures } from "./failures.ts";
 import { resolveChrome } from "./launch.ts";
 import { probeRenderer, resolveGpuMode } from "./probe.ts";
+import { createStageTrail, probePendingState, STAGE_BINDING } from "./seek-trace.ts";
 import { browserSignalOptions } from "./signals.ts";
 import type { RendererInfo } from "./probe.ts";
 import type { ServerFailure, StaticServer } from "./server.ts";
@@ -98,7 +99,7 @@ export interface Session {
 }
 
 interface VirtualClockWindow {
-  __ff?: { ready: Promise<boolean>; seek: (ms: number) => number | Promise<number> };
+  __ff?: { ready: Promise<boolean>; seek: (ms: number) => number | Promise<number>; stage?: (name: string) => void };
   __ffMediaReady?: Promise<boolean>;
 }
 
@@ -106,6 +107,8 @@ interface Limit {
   label: string;
   ms: number;
   hint: string;
+  /** Roda depois do estouro e completa a mensagem (onde parou, o que estava pendente). Não pode rejeitar. */
+  diagnose?: () => Promise<string>;
 }
 
 /** Execução de uma operação da sessão, vigiada contra queda do browser e contra espera infinita. */
@@ -174,20 +177,21 @@ function watchBrowser(browser: Browser, options: SessionOptions): Watch {
       const work = operation();
       // Se a operação perder a corrida, a falha tardia dela não pode virar rejeição solta.
       work.catch(() => {}); // ignora-erro: se a operação vence a corrida o erro sobe pelo race; se perde, o race já rejeitou por outro motivo
-      const pieces: Array<Promise<T>> = [work, closed.promise];
+      const pieces: Array<Promise<{ value: T } | "overdue">> = [work.then((value) => ({ value })), closed.promise];
       if (limit !== undefined) {
         pieces.push(
-          new Promise<T>((_, reject) => {
-            timer = setTimeout(
-              () =>
-                reject(new BrowserError("E_BROWSER_TIMEOUT", `${limit.label} passou de ${limit.ms / 1000} s sem responder`, limit.hint)),
-              limit.ms,
-            );
+          new Promise<"overdue">((resolveOverdue) => {
+            timer = setTimeout(() => resolveOverdue("overdue"), limit.ms);
           }),
         );
       }
       try {
-        return await Promise.race(pieces);
+        const outcome = await Promise.race(pieces);
+        if (outcome !== "overdue") return outcome.value;
+        // Estourou: a falha está decidida, mesmo que a operação termine enquanto o diagnóstico é montado.
+        const { label, ms, hint, diagnose: describe } = limit!;
+        const detail = (await describe?.()) ?? "";
+        throw new BrowserError("E_BROWSER_TIMEOUT", `${label} passou de ${ms / 1000} s sem responder${detail}`, hint);
       } catch (error) {
         annotateWithServer(error, options.serverFailures?.());
         // O Chrome morreu e o protocolo rejeitou antes do evento: é a mesma queda.
@@ -224,6 +228,10 @@ async function closeBrowser(browser: Browser, watch: Watch): Promise<void> {
   try {
     const outcome = await Promise.race([browser.close().then(() => "closed" as const), overdue]);
     if (outcome === "overdue") killBrowserProcess(browser);
+  } catch (error) {
+    // Já fora de `liveBrowsers`: sem matar aqui, o processo ficaria aberto e seguraria a saída do Node.
+    killBrowserProcess(browser);
+    throw error;
   } finally {
     if (timer !== undefined) clearTimeout(timer);
   }
@@ -261,8 +269,8 @@ export async function openSession(options: SessionOptions): Promise<Session> {
   try {
     return await startSession(browser, watch, options, limits, gpu, probe);
   } catch (error) {
-    await closeBrowser(browser, watch);
-    throw error;
+    const [closed] = await Promise.allSettled([closeBrowser(browser, watch)]);
+    throw withCleanupFailures(error, closed.status === "rejected" ? [closed.reason as unknown] : []);
   }
 }
 
@@ -300,6 +308,9 @@ async function startSession(
   page.on("console", (message) => {
     if (message.type() === "error") pageErrors.push(message.text());
   });
+
+  const trail = createStageTrail(options.url);
+  const diagnose = (): Promise<string> => trail.describe(() => page.evaluate(probePendingState));
 
   const readyLimit: Limit = {
     label: "a prontidão da página (fontes, imagens e vídeo fora de banda)",
@@ -362,6 +373,12 @@ async function startSession(
     }
 
     const session = await page.createCDPSession();
+    // Etapas do seek anunciadas pela página. `Runtime.enable` faz o binding valer também depois de um reload.
+    session.on("Runtime.bindingCalled", (event) => {
+      if (event.name === STAGE_BINDING) trail.enter(event.payload);
+    });
+    await session.send("Runtime.enable");
+    await session.send("Runtime.addBinding", { name: STAGE_BINDING });
     // Estado inicial totalmente pintado (fontes, layout) antes de qualquer medição.
     await page.evaluate(async () => {
       const clock = (globalThis as unknown as VirtualClockWindow).__ff;
@@ -380,24 +397,30 @@ async function startSession(
   return {
     seekFrame: (frame, fps) => {
       const ms = timeOfFrame(frame, fps) * 1000;
+      trail.startSeek(frame, ms / 1000);
       return watch.guard(
         () =>
           page.evaluate(async (value) => {
             const clock = (globalThis as unknown as VirtualClockWindow).__ff!;
+            clock.stage?.("seek");
             await clock.seek(value);
+            clock.stage?.("settle");
             await (clock as unknown as { settle?: () => Promise<boolean> }).settle?.();
           }, ms),
-        { label: `o seek do frame ${frame}`, ms: limits.seekMs, hint: seekHint },
+        { label: `o seek do frame ${frame}`, ms: limits.seekMs, hint: seekHint, diagnose },
       );
     },
-    capture: () =>
-      watch.guard(
+    capture: () => {
+      const frame = trail.frame();
+      return watch.guard(
         async () => {
           const shot = async (): Promise<Buffer> => {
+            trail.enter("screenshot");
             const { data } = await cdp.send("Page.captureScreenshot", SCREENSHOT_PARAMS);
             return Buffer.from(data, "base64");
           };
           const settlePaint = async (): Promise<void> => {
+            trail.enter("settle");
             await page.evaluate(async () => {
               const clock = (globalThis as unknown as VirtualClockWindow).__ff!;
               await (clock as unknown as { settle?: () => Promise<boolean> }).settle?.();
@@ -438,8 +461,14 @@ async function startSession(
           }
           return { png: previous, sha256: createHash("sha256").update(previous).digest("hex") };
         },
-        { label: "a captura do frame", ms: limits.captureMs, hint: captureHint },
-      ),
+        {
+          label: frame === undefined ? "a captura do frame" : `a captura do frame ${frame}`,
+          ms: limits.captureMs,
+          hint: captureHint,
+          diagnose,
+        },
+      );
+    },
     pageErrors: () => [...pageErrors],
     evaluate: <T,>(expression: string) => watch.guard(() => page.evaluate(expression) as Promise<T>),
     reload: () => watch.guard(() => page.reload({ waitUntil: "domcontentloaded" }).then(() => undefined)),

@@ -1,7 +1,8 @@
 // FrankFrames — proprietário. Ver LICENSE na raiz.
-import { availableParallelism, totalmem } from "node:os";
+import { availableParallelism, freemem } from "node:os";
 import { openSession } from "./capture.ts";
-import type { Session, SessionTimeouts } from "./capture.ts";
+import type { Session, SessionOptions, SessionTimeouts } from "./capture.ts";
+import { withCleanupFailures } from "./failures.ts";
 import type { ServerFailure } from "./server.ts";
 import type { GpuMode, Viewport } from "./args.ts";
 
@@ -22,6 +23,8 @@ export interface ParallelCaptureOptions {
   timeouts?: SessionTimeouts;
   /** Falhas do servidor da página (`StaticServer.failures`): entram na mensagem quando uma sessão falha. */
   serverFailures?: () => ServerFailure[];
+  /** Abertura de cada sessão. Só existe para o teste atrasar ou derrubar uma abertura sem depender do relógio. */
+  open?: (options: SessionOptions) => Promise<Session>;
 }
 
 /** Frames por lote da fila. Pequeno o bastante para o encode acompanhar a captura; grande o bastante para amortizar o seek. */
@@ -39,15 +42,44 @@ export function splitIntoBatches(frames: number[], size: number = DEFAULT_BATCH_
   return batches;
 }
 
+/** Memória livre que o padrão conta por browser. */
+const BYTES_PER_WORKER = 768 * 1024 * 1024;
+/** Memória livre que o padrão deixa de fora, para o FFmpeg e o encode. */
+const ENCODE_RESERVE_BYTES = 1024 * 1024 * 1024;
+
+export interface WorkerPlan {
+  workers: number;
+  /** Quem decidiu o número: `cpu` (metade dos núcleos, teto 8) ou `memory` (a livre). */
+  limitedBy: "cpu" | "memory";
+  /** Presente quando a memória livre não comporta nem 1 worker mais a reserva. */
+  warning?: string;
+  /** Linha de log: quantos workers, por qual limite e com que medida. */
+  summary: string;
+}
+
 /**
- * Workers padrão: metade dos núcleos, no máximo 8, e nunca mais do que a memória
- * comporta (768 MB por browser). Medido: 6 workers cortam quase metade do tempo
- * de um render de 3 s em relação a 2.
+ * Workers padrão: metade dos núcleos, no máximo 8, e nunca mais do que a memória LIVRE comporta (768 MB por browser,
+ * fora 1 GiB para o FFmpeg e o encode); nunca menos que 1. A memória total não serve: com os programas do usuário
+ * abertos, 8 browsers numa máquina de 16 GB a esgotavam e o seek estourava o prazo (EDT-91). Medido: 6 workers cortam
+ * quase metade do tempo de um render de 3 s em relação a 2.
  */
-export function defaultWorkerCount(cpus = availableParallelism(), memoryBytes = totalmem()): number {
-  const byCpu = Math.max(1, Math.floor(cpus / 2));
-  const byMemory = Math.max(1, Math.floor(memoryBytes / (768 * 1024 * 1024)));
-  return Math.max(2, Math.min(8, byCpu, byMemory));
+export function planWorkers(cpus = availableParallelism(), freeBytes = freemem()): WorkerPlan {
+  const byCpu = Math.min(8, Math.max(1, Math.floor(cpus / 2)));
+  const byMemory = Math.floor((freeBytes - ENCODE_RESERVE_BYTES) / BYTES_PER_WORKER);
+  const workers = Math.max(1, Math.min(byCpu, byMemory));
+  const limitedBy = byMemory < byCpu ? "memory" : "cpu";
+  const freeMb = Math.floor(freeBytes / (1024 * 1024));
+  return {
+    workers,
+    limitedBy,
+    ...(byMemory < 1 ? { warning: `memória livre baixa (${freeMb} MB): render com 1 worker; feche programas se o seek estourar o prazo` } : {}),
+    summary: `${workers} worker(s) de captura, limite de ${limitedBy === "cpu" ? "cpu" : "memória"} (${cpus} CPUs, ${freeMb} MB livres)`,
+  };
+}
+
+/** Só o número de `planWorkers`. */
+export function defaultWorkerCount(cpus = availableParallelism(), freeBytes = freemem()): number {
+  return planWorkers(cpus, freeBytes).workers;
 }
 
 /** Quantos frames fora de ordem o `orderedFeeder` segura para esse número de workers e tamanho de lote. */
@@ -142,9 +174,24 @@ export function orderedFeeder<T>(
 }
 
 /**
+ * Fecha cada sessão assim que a abertura dela termina, inclusive a que ainda está em andamento, e devolve as falhas
+ * de fechamento. Abertura que rejeitou não deixa sessão (`openSession` já fechou o Chrome) e o erro dela foi para o worker.
+ */
+async function closeOpenings(openings: Array<Promise<Session>>): Promise<unknown[]> {
+  const closes = await Promise.allSettled(
+    openings.map(async (opening) => {
+      const [opened] = await Promise.allSettled([opening]);
+      if (opened.status === "fulfilled") await opened.value.close();
+    }),
+  );
+  return closes.flatMap((close) => (close.status === "rejected" ? [close.reason as unknown] : []));
+}
+
+/**
  * Fila dinâmica: cada worker abre uma sessão própria e pega o próximo lote livre, em ordem, até a fila acabar.
- * Na primeira falha ninguém pega lote novo e a função rejeita sem esperar os demais (um worker pode estar parado
- * em `onFrame`, esperando backpressure que só o consumidor desfaz). O `finally` fecha todas as sessões.
+ * Na primeira falha ninguém pega lote novo, e a função fecha cada sessão (a que ainda está abrindo, assim que abrir)
+ * antes de rejeitar. Ela espera aberturas e fechamentos, que têm prazo, mas não os workers: um deles pode estar parado
+ * em `onFrame`, esperando backpressure que só o consumidor desfaz.
  */
 export async function captureFramesInParallel(options: ParallelCaptureOptions): Promise<Map<number, string>> {
   const hashes = new Map<number, string>();
@@ -152,7 +199,8 @@ export async function captureFramesInParallel(options: ParallelCaptureOptions): 
   const batches = splitIntoBatches(options.frames, options.batchSize ?? DEFAULT_BATCH_SIZE);
   if (batches.length === 0) return hashes;
 
-  const sessions: Session[] = [];
+  /** Uma por worker, registrada antes do primeiro `await` dele: o fechamento alcança também a que não terminou. */
+  const openings: Array<Promise<Session>> = [];
   let nextBatch = 0;
   let failed = false;
   let firstFailure: unknown;
@@ -162,14 +210,15 @@ export async function captureFramesInParallel(options: ParallelCaptureOptions): 
   });
 
   const worker = async (): Promise<void> => {
-    const session = await openSession({
+    const opening = (options.open ?? openSession)({
       url: options.url,
       viewport: options.viewport,
       gpu: options.gpu,
       ...(options.timeouts !== undefined ? { timeouts: options.timeouts } : {}),
       ...(options.serverFailures !== undefined ? { serverFailures: options.serverFailures } : {}),
     });
-    sessions.push(session);
+    openings.push(opening);
+    const session = await opening;
 
     while (!failed && nextBatch < batches.length) {
       const batch = batches[nextBatch] as number[];
@@ -187,21 +236,23 @@ export async function captureFramesInParallel(options: ParallelCaptureOptions): 
     if (errors.length > 0) throw new Error(errors[0]);
   };
 
-  try {
-    const count = Math.min(Math.max(1, Math.floor(workers)), batches.length);
-    const running = Array.from({ length: count }, () =>
-      worker().catch((error: unknown) => {
-        if (failed) return;
-        failed = true;
-        firstFailure = error;
-        reportFailure();
-      }),
-    );
-    // Ou todos terminam, ou a primeira falha encerra a espera (os demais podem estar presos no backpressure).
-    await Promise.race([Promise.all(running), failedFirst]);
-    if (failed) throw firstFailure instanceof Error ? firstFailure : new Error(String(firstFailure));
-    return hashes;
-  } finally {
-    await Promise.allSettled(sessions.map((session) => session.close()));
+  const count = Math.min(Math.max(1, Math.floor(workers)), batches.length);
+  const running = Array.from({ length: count }, () =>
+    // Nenhum worker rejeita para fora: a primeira falha fica em `firstFailure` e o fechamento abaixo sempre roda.
+    worker().catch((error: unknown) => {
+      if (failed) return;
+      failed = true;
+      firstFailure = error;
+      reportFailure();
+    }),
+  );
+  // Ou todos terminam, ou a primeira falha encerra a espera (os demais podem estar presos no backpressure).
+  await Promise.race([Promise.all(running), failedFirst]);
+  const closeFailures = await closeOpenings(openings);
+  if (failed) throw withCleanupFailures(firstFailure, closeFailures);
+  if (closeFailures.length > 0) {
+    const reasons = closeFailures.map((reason) => (reason instanceof Error ? reason.message : String(reason))).join("; ");
+    throw new AggregateError(closeFailures, `captura completa, mas fechar o Chrome falhou: ${reasons}`);
   }
+  return hashes;
 }

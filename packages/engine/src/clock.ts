@@ -171,6 +171,12 @@ export const CLOCK_SOURCE = `(() => {
     }
   };
 
+  // Anuncia a etapa do seek que vai começar. Só a sessão de captura instala o binding (seek-trace.ts); a mensagem
+  // chega ao host mesmo que a thread fique presa logo depois, e é o que o estouro do prazo mostra (EDT-91).
+  const stage = (name) => {
+    if (typeof window.__ffStage === "function") window.__ffStage(name);
+  };
+
   const liveHooks = [];
   const liveErrors = [];
   // Eventos de transporte: { type: "start" | "stop" | "seek" | "end" | "loop", ms }.
@@ -308,10 +314,12 @@ export const CLOCK_SOURCE = `(() => {
     liveHooks,
     liveErrors,
     now: () => nowMs,
+    stage,
     seek(requestedMs) {
       const ms = clampLive(requestedMs);
       nowMs = ms;
       seed = (0x9e3779b1 ^ (Math.trunc(ms) + 1)) >>> 0;
+      stage("composition-scripts");
       for (const timer of [...timers]) {
         if (timer.every === undefined) {
           if (timer.due <= nowMs) timer.fn(...timer.args);
@@ -328,7 +336,9 @@ export const CLOCK_SOURCE = `(() => {
       }
       const generation = frameQueue.splice(0, frameQueue.length);
       for (const cb of generation) cb(nowMs);
+      stage("syncAnimations");
       syncAnimations();
+      stage("seek-hooks");
       syncVisibility();
       emit("seek", nowMs);
       return nowMs;

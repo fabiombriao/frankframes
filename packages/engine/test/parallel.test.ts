@@ -177,11 +177,37 @@ test("captureFramesInParallel: 1 worker e 3 workers produzem os mesmos hashes", 
   }
 });
 
-test("workers padrão respeitam CPU, memória e o teto de 8", async () => {
-  const { defaultWorkerCount } = await import("../src/parallel.ts");
-  assert.equal(defaultWorkerCount(64, 64 * 1024 ** 3), 8, "muitos núcleos: teto 8");
-  assert.equal(defaultWorkerCount(8, 64 * 1024 ** 3), 4);
-  assert.equal(defaultWorkerCount(4, 64 * 1024 ** 3), 2, "mínimo 2");
-  assert.equal(defaultWorkerCount(32, 2 * 1024 ** 3), 2, "memória limita a 2");
-  assert.equal(defaultWorkerCount(2, 1 * 1024 ** 3), 2);
+test("workers padrão respeitam CPU, memória livre e o teto de 8, e caem a 1", async () => {
+  const { defaultWorkerCount, planWorkers } = await import("../src/parallel.ts");
+  const GIB = 1024 ** 3;
+  assert.equal(defaultWorkerCount(64, 64 * GIB), 8, "muitos núcleos: teto 8");
+  assert.equal(defaultWorkerCount(8, 64 * GIB), 4);
+  assert.equal(defaultWorkerCount(16, 3 * GIB), 2, "3 GiB livres: 1 de reserva e 2 browsers de 768 MiB");
+  assert.equal(defaultWorkerCount(16, 0.5 * GIB), 1, "memória livre abaixo da reserva");
+  assert.equal(defaultWorkerCount(16, 16 * GIB), 8, "memória sobra: decide a CPU, com teto 8");
+  assert.equal(defaultWorkerCount(2, 16 * GIB), 1, "2 CPUs: metade é 1, sem mínimo de 2");
+  assert.equal(defaultWorkerCount(1, 16 * GIB), 1);
+
+  const MIB = 1024 ** 2;
+  // A fronteira: reserva mais um browser (1792 MiB) ainda é 1 worker sem aviso; um MiB a menos avisa.
+  assert.equal(planWorkers(16, 1792 * MIB).warning, undefined);
+  assert.equal(
+    planWorkers(16, 1791 * MIB).warning,
+    "memória livre baixa (1791 MB): render com 1 worker; feche programas se o seek estourar o prazo",
+  );
+  assert.equal(planWorkers(16, 0.5 * GIB).warning, "memória livre baixa (512 MB): render com 1 worker; feche programas se o seek estourar o prazo");
+  assert.equal(planWorkers(2, 16 * GIB).warning, undefined, "1 worker por CPU não é memória baixa");
+
+  assert.deepEqual(planWorkers(16, 3 * GIB), {
+    workers: 2,
+    limitedBy: "memory",
+    summary: "2 worker(s) de captura, limite de memória (16 CPUs, 3072 MB livres)",
+  });
+  assert.deepEqual(planWorkers(8, 64 * GIB), {
+    workers: 4,
+    limitedBy: "cpu",
+    summary: "4 worker(s) de captura, limite de cpu (8 CPUs, 65536 MB livres)",
+  });
+  // CPU e memória empatadas: quem se diz é a CPU, porque mais memória livre não mudaria o número.
+  assert.equal(planWorkers(4, 2560 * MIB).limitedBy, "cpu");
 });

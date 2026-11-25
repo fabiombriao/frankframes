@@ -667,6 +667,20 @@ argumentos de saída; coberto por teste com `framemd5`). O disco só guarda o v�
 - **Repetição (EDT-72).** A repetição única de falha transiente do browser reinicia o pipe do zero: FFmpeg novo,
   nenhum frame duplicado. Falha do encode nunca é repetida nem classificada por texto como falha de browser.
 
+**Workers de captura pela memória livre (EDT-91).** Sem `--workers` (`workers`), o render usa
+`max(1, min(8, porCpu, porMemória))`, com `porCpu = max(1, floor(CPUs / 2))` e
+`porMemória = floor((memória livre − 1 GiB) / 768 MiB)`: 768 MiB por browser e 1 GiB de fora para o FFmpeg e o encode.
+Conta a memória **livre**, não a total, porque os outros programas da máquina já ocupam parte dela; a medida é tirada
+uma vez, no começo do render, e não muda com ele andando (nem na repetição da captura).
+- A escolha vai na `message` do `onProgress` com que o estágio `capture` começa (no CLI sem `--json`, a linha
+  `[capture]` do stderr): `N worker(s) de captura, limite de cpu|memória (C CPUs, M MB livres)`. `limite de memória`
+  quer dizer que mais memória livre daria mais workers; no empate o limite dito é o da CPU.
+- Se a memória livre não comporta nem 1 worker mais a reserva (menos de 1792 MiB), o render **segue com 1 worker**, sem
+  falhar, com o aviso em `warnings` (e no `render --json`):
+  `memória livre baixa (N MB): render com 1 worker; feche programas se o seek estourar o prazo`.
+- `--workers` explícito vale como está: nada é medido, sem aviso e sem a linha da escolha. Isso inclui o lote com
+  concorrência maior que 1, que passa a cada job um número já calculado ([batch.md](batch.md#concorrência)).
+
 **Áudio de entrega: o true peak vale para o arquivo codificado (EDT-90).** O mix de entrega é normalizado em
 −14 LUFS com teto de −1 dBTP (`loudnorm`), mas o AAC (MP4) e o Opus (WebM) sobem os picos entre amostras, então o
 teto do PCM não garante o do arquivo. Por isso o `mixAudio` mede o **próprio arquivo codificado** (`loudnorm` em modo
@@ -766,8 +780,28 @@ O contrato promete isto ao autor, e o engine tem que cumprir:
    - **Prazos explícitos.** Abrir o Chrome (60 s), a prontidão da página (120 s), cada seek (60 s) e cada captura
      (120 s) têm prazo. Estourar um deles rejeita com `E_BROWSER_TIMEOUT`, cuja mensagem diz qual operação
      passou do prazo e cujo `hint` diz o que conferir. Estouro de prazo não é repetido.
+   - **Onde o seek e a captura pararam.** No estouro do seek ou da captura, a mensagem continua depois de
+     `… passou de 60 s sem responder` com: o frame e o instante do último seek pedido, a etapa em que parou, há
+     quanto tempo está nela e o que estava pendente (`…; frame 41 (t=1,367 s), parou na etapa "img.decode() de
+     frame de vídeo" há 59,9 s; <img> pendentes: __ff_media/clip/000041.jpg (carregando)`); a captura leva o
+     número do frame também no nome da operação (`a captura do frame 41`). Etapas: `envio do pedido (a página não
+     começou a executá-lo)`, `entrada do __ff.seek`, `timers e requestAnimationFrame da composição`,
+     `syncAnimations`, `visibilidade e ganchos de seek`, `img.decode() de frame de vídeo`,
+     `settle (requestAnimationFrame)` e `screenshot`. A página anuncia cada etapa antes de entrar nela, por um
+     binding do CDP, então o nome sai mesmo com a thread presa. Vencido o prazo, uma sonda de no máximo 2 s lista
+     as `<img>` sem resposta (carregamento ou `decode()`) e as famílias com carregamento em andamento (`fontes
+     carregando: …`; o seek não espera fonte, quem espera é a prontidão). Se a sonda não volta, a mensagem diz
+     `a página não respondeu à sonda em 2 s` e, quando a etapa pediu imagens, `<img> pedidas nessa etapa: …`; se
+     ela falha, diz por quê. Cada lista mostra até 5 itens e conta o resto. O nome do recurso sai sem esquema,
+     usuário, query nem fragmento (do próprio servidor, o caminho sem a barra inicial; de fora, host e caminho),
+     e `data:` e `blob:` saem como `data:…` e `blob:…`.
    - **Quem abre fecha.** Se a abertura da sessão rejeita, o Chrome e o servidor local são fechados antes de
-     a rejeição chegar ao chamador (`openSessionFor`); fechar o servidor duas vezes é permitido.
+     a rejeição chegar ao chamador (`openSessionFor`); fechar o servidor duas vezes é permitido. Num render
+     paralelo, a falha de um worker fecha os outros antes de a rejeição sair: a sessão aberta é fechada, e a que
+     ainda está abrindo, assim que abrir, sem capturar frame. A rejeição espera essas aberturas e fechamentos,
+     que têm prazo, mas não um worker parado na entrega de um frame. Se um fechamento também falha, o erro
+     continua sendo o da falha (mesma classe, código e mensagem) e o do fechamento vai como causa dele; Chrome
+     cujo fechamento rejeita é morto. Captura completa em que um fechamento falha também rejeita, dizendo por quê.
    Os dois códigos são códigos de render (`stage: "capture"`), como `E_FONT_LOAD`.
 
 **GPU:** o padrão é `auto` — hardware quando existe, SwiftShader como fallback. Em `software` a promessa é

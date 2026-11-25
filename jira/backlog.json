@@ -562,9 +562,24 @@
             "Visto no aceite do EDT-64 em 2026-11-24: 1ª exportação do A001 (1080x1920, legendas-v2.html + bloco + vídeo) falhou com E_BROWSER_TIMEOUT, seek do frame 41 sem resposta em 60 s, CPU em 56%. A repetição sem mudança passou; as mesmas legendas renderizam sozinhas os 900 frames.",
             "Reproduzir com carga (scripts/bench/with-load.ts) e N exports seguidos do mesmo projeto; registrar taxa de falha e onde o seek trava (log de captura com FRANKFRAMES_CAPTURE_PROFILE=1).",
             "Corrigir a causa (sem aumentar timeout às cegas e sem retry); teste que falharia sem a correção; gate verde.",
-            "Até a correção, listado em Pendências conhecidas do CHANGELOG."
+            "Até a correção, listado em Pendências conhecidas do CHANGELOG.",
+            "Resultado (2026-11-25): 51 rodadas sem falha com memória folgada (p99 do seek 192–523 ms, máx 2714 ms). O timeout reproduz quando a memória livre acaba, inclusive no código anterior, e a causa é nossa: o número padrão de workers vinha de totalmem(), então numa máquina de 16 GB com uns 12 GB ocupados por apps o render abria 8 Chromes (3 GB) e esgotava a RAM. Correção: workers padrão pela memória livre no início do render (reserva de 1 GiB, 768 MiB por worker, mínimo 1), aviso quando nem 1 worker cabe; e o estouro do seek e da captura passa a dizer o frame, a etapa em que parou, há quanto tempo e as <img>/fontes pendentes."
           ],
           "jiraKey": "EDT-91"
+        },
+        {
+          "summary": "Render paralelo nunca terminava quando um worker falhava enquanto outro abria o Chrome",
+          "points": 2,
+          "labels": [
+            "bug",
+            "engine"
+          ],
+          "acceptance": [
+            "Achado na investigação do EDT-91 em 2026-11-25 e reproduzido no HEAD: com 2 workers, se um falha enquanto o outro ainda abre a sessão, esse Chrome não é fechado e o processo não sai.",
+            "A falha de um worker fecha a sessão aberta de cada outro e a que ainda está abrindo assim que abrir, sem capturar frame, antes de a rejeição sair; o erro continua sendo o do worker e a falha do fechamento vai como causa.",
+            "Spec em docs/contract.md (Quem abre fecha); teste que falharia sem a mudança (parallel-close.test.ts, com fake e com Chrome real); gate verde."
+          ],
+          "jiraKey": "EDT-92"
         }
       ],
       "jiraKey": "EDT-26"

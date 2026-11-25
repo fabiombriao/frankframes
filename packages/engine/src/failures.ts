@@ -41,6 +41,18 @@ export class BrowserError extends Error {
 }
 
 /**
+ * Erro principal de uma operação cuja limpeza também falhou: é o mesmo objeto (classe, código e mensagem não mudam,
+ * então a classificação e a repetição também não), e as falhas da limpeza entram como causa, sem perder a que já havia.
+ */
+export function withCleanupFailures(failure: unknown, cleanupFailures: unknown[]): Error {
+  const error = failure instanceof Error ? failure : new Error(String(failure));
+  if (cleanupFailures.length === 0) return error;
+  const causes = error.cause === undefined ? cleanupFailures : [error.cause, ...cleanupFailures];
+  error.cause = causes.length === 1 ? causes[0] : new AggregateError(causes, "a limpeza depois do erro também falhou");
+  return error;
+}
+
+/**
  * Códigos que `classifyFailure` devolve além de E_FONT_LOAD e E_BROWSER_* (já em RENDER_ERROR_CODES).
  * Entram no `docs/reference/diagnostics.md`.
  */

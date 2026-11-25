@@ -5,7 +5,8 @@ import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { readdirSync } from "node:fs";
 import { readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { syncBuiltinESMExports } from "node:module";
+import os, { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { DELIVERY_LOUDNESS, measureLoudness } from "../src/audio.ts";
@@ -259,6 +260,47 @@ test("cancelar no meio da captura (workers abertos): E_CANCELED e nada sobra", {
   await assert.rejects(stat(outPath), { code: "ENOENT" });
   const leftovers = (await readdir(workspace)).filter((name) => name.includes(".partial"));
   assert.deepEqual(leftovers, []);
+});
+
+test("workers padrão com pouca memória livre: 1 worker, aviso no resultado e escolha no log; workers pedido não mede nada (EDT-91)", { timeout: 600_000 }, async (t) => {
+  if (!(await ffmpegAvailable())) return t.skip("ffmpeg/ffprobe não encontrados");
+
+  const { workspace, entry } = await cancelWorkspace(t, "ff-e2e-mem-");
+  const freemem = t.mock.method(os, "freemem", () => 500 * 1024 * 1024);
+  // `import { freemem } from "node:os"` só enxerga a troca depois de sincronizar os exports ESM.
+  syncBuiltinESMExports();
+  t.after(() => {
+    freemem.mock.restore();
+    syncBuiltinESMExports();
+  });
+  const render = async (name: string, workers?: number) => {
+    const captureLog: string[] = [];
+    const result = await renderComposition({
+      entry,
+      outPath: join(workspace, name),
+      ffmpeg: FFMPEG,
+      ffprobe: FFPROBE,
+      codec: "av1",
+      preset: "draft",
+      ...(workers !== undefined ? { workers } : {}),
+      onProgress: (stage, _percent, message) => {
+        if (stage === "capture" && message !== undefined) captureLog.push(message);
+      },
+    });
+    return { result, captureLog };
+  };
+  const warning = "memória livre baixa (500 MB): render com 1 worker; feche programas se o seek estourar o prazo";
+
+  const automatic = await render("padrao.mp4");
+  assert.equal(automatic.result.frames, 45, "com memória baixa o render segue, não falha");
+  assert.deepEqual(automatic.result.warnings.filter((item) => item.startsWith("memória livre baixa")), [warning]);
+  assert.match(automatic.captureLog[0] ?? "", /^1 worker\(s\) de captura, limite de memória \(\d+ CPUs, 500 MB livres\)$/);
+  assert.equal(freemem.mock.callCount(), 1, "a memória livre é medida uma vez por render");
+
+  const requested = await render("pedido.mp4", 2);
+  assert.ok(!requested.result.warnings.includes(warning), "workers pedido: sem aviso");
+  assert.ok(!requested.captureLog.some((line) => line.includes("worker(s) de captura")), "workers pedido: sem escolha no log");
+  assert.equal(freemem.mock.callCount(), 1, "workers pedido: nada é medido");
 });
 
 test("sem --keep nenhum PNG vai para o disco; com keepWorkDir os frames também são gravados (EDT-62)", { timeout: 600_000 }, async (t) => {

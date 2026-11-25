@@ -16,11 +16,11 @@
  */
 import { readdirSync } from "node:fs";
 import { rm, mkdir, stat, writeFile, access, readdir } from "node:fs/promises";
-import { availableParallelism, tmpdir, totalmem } from "node:os";
+import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import type { Preset } from "@frankframes/encode";
-import { assetPath, fileDigest, frameCacheKey, resolveGpuMode, resolveChrome } from "@frankframes/engine";
+import { assetPath, defaultWorkerCount, fileDigest, frameCacheKey, resolveGpuMode, resolveChrome } from "@frankframes/engine";
 import { renderComposition, resolveFfmpeg } from "@frankframes/producer";
 import type { RenderStage } from "@frankframes/producer";
 import { FPS, REPO_ROOT, SCENARIOS, SOURCE_NAME, dirSize, ensureVideoSource, machineInfo, median, stageScenario, stamp } from "./bench/common.ts";
@@ -111,16 +111,6 @@ function watchWorkDir(): { stop: () => Promise<number> } {
   };
 }
 
-/**
- * Réplica da fórmula de `defaultWorkerCount` (packages/engine/src/parallel.ts, não exportada): só para
- * registrar quantos workers o `default` significa nesta máquina. Se a fórmula do motor mudar, atualize aqui.
- */
-function defaultWorkers(): number {
-  const byCpu = Math.max(1, Math.floor(availableParallelism() / 2));
-  const byMemory = Math.max(1, Math.floor(totalmem() / (768 * 1024 * 1024)));
-  return Math.max(2, Math.min(8, byCpu, byMemory));
-}
-
 interface RunRecord {
   scenario: Scenario;
   gpuRequested: string;
@@ -177,8 +167,11 @@ const records: RunRecord[] = [];
 const seen = new Set<string>();
 const jsonPath = join(outDir, `${label}-${stamp()}.json`);
 
+/** O padrão depende da memória livre: no cabeçalho fica o do começo do benchmark; cada registro tem o da sua execução. */
+const defaultWorkers = defaultWorkerCount();
+
 async function save(complete: boolean): Promise<void> {
-  const document = { label, complete, startedAt: new Date().toISOString(), seconds, runs, machine, defaultWorkers: defaultWorkers(), autoResolvesTo: autoResolved, outDir, records };
+  const document = { label, complete, startedAt: new Date().toISOString(), seconds, runs, machine, defaultWorkers, autoResolvesTo: autoResolved, outDir, records };
   await writeFile(jsonPath, `${JSON.stringify(document, null, 2)}\n`, "utf8");
 }
 
@@ -209,6 +202,8 @@ for (const scenario of scenarios) {
 
           const outPath = join(tmpDir, `${scenario}-${effective}-${preset}-${run + 1}.mp4`);
           const marks: Array<{ stage: RenderStage; t: number }> = [];
+          // Medido aqui e passado ao render: recalculado depois, com outra memória livre, o registro poderia mentir.
+          const workersEffective = workers === "default" ? defaultWorkerCount() : workers;
           const watcher = watchWorkDir();
           const started = performance.now();
           const result = await renderComposition({
@@ -219,7 +214,7 @@ for (const scenario of scenarios) {
             codec: "av1",
             ffmpeg: pair.ffmpeg,
             ffprobe: pair.ffprobe,
-            ...(workers === "default" ? {} : { workers }),
+            workers: workersEffective,
             onProgress: (stage) => marks.push({ stage, t: performance.now() - started }),
           });
           const end = performance.now() - started;
@@ -243,7 +238,7 @@ for (const scenario of scenarios) {
             gpuEffective: effective,
             preset,
             workers,
-            workersEffective: workers === "default" ? defaultWorkers() : workers,
+            workersEffective,
             run: run + 1,
             coldCache,
             frames: result.frames,

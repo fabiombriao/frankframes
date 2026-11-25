@@ -62,6 +62,11 @@ pinado; no modo padrão (`auto`, GPU quando existe) o resultado é visualmente e
 - Captura nunca espera para sempre, fonte ausente e imagem ausente falham em vez de sumir, e remover temporários
   que falha deixa de ser silencioso.
 - Cancelar (`E_CANCELED`) para o FFmpeg e o browser e não deixa temporários nem arquivo parcial.
+- O número padrão de workers vem da memória livre, não da total: com a máquina cheia de programas abertos o render
+  não abre mais Chromes do que cabem, e avisa quando nem um cabe. Era a causa do timeout de seek visto no aceite.
+- Estouro de prazo do seek ou da captura diz o frame, a etapa em que parou e as imagens e fontes pendentes.
+- Falha de um worker no render paralelo fecha o Chrome dos outros, inclusive o que ainda estava abrindo; antes o
+  processo podia não terminar.
 
 ### Onboarding
 
@@ -113,5 +118,3 @@ pinado; no modo padrão (`auto`, GPU quando existe) o resultado é visualmente e
   entrega; nada impede um push sem o gate além do hook de pré-push.
 - **EDT-63 — não há catálogo remoto.** Os 48 blocos vêm dentro do pacote e só mudam com uma nova versão; blocos
   novos ou correções não chegam por atualização do catálogo.
-- **EDT-91 — timeout de seek visto uma vez no export.** Um export pelo Studio falhou com `E_BROWSER_TIMEOUT` (seek
-  do frame 41 sem resposta em 60 s) com a máquina sob carga; não reproduziu, e repetir a exportação passou.

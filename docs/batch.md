@@ -53,8 +53,12 @@ codec usado.
 
 `--concurrency N` (padrão 1; ou `concurrency` no arquivo) é o número de jobs ao mesmo tempo. Com N > 1, cada render
 usa `max(1, floor(workers_padrão / N))` workers de captura, para a máquina não ser disputada por N × workers
-navegadores. `--workers` explícito vale **por job**: `--concurrency 2 --workers 4` abre até 8 navegadores, e a conta é de
-quem escolheu. Os frames extraídos de um mesmo vídeo são compartilhados entre jobs que rodam juntos (uma extração só).
+navegadores. `workers_padrão` depende dos núcleos e da memória livre
+([contrato](contract.md), "Workers de captura pela memória livre"): com N > 1 ele é medido uma vez, no começo do lote, e
+os jobs recebem o número pronto, sem aviso de memória baixa por job; como cada job tem pelo menos 1 worker, N navegadores
+abrem mesmo que a memória livre não comporte todos. Com N = 1 cada render mede a sua.
+`--workers` explícito vale **por job**: `--concurrency 2 --workers 4` abre até 8 navegadores, e a conta é de quem
+escolheu. Os frames extraídos de um mesmo vídeo são compartilhados entre jobs que rodam juntos (uma extração só).
 
 Uma falha de job **não** para a fila. **Ctrl+C** para de pegar jobs novos e cancela os que rodam (mesmo caminho do
 cancelamento do render: FFmpeg e navegadores encerram, `.partial` e temporários são apagados); os jobs que não

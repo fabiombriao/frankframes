@@ -22,6 +22,9 @@ export const MEDIA_SHIM_SOURCE = `(() => {
   window.__ffMediaShim = new Set(manifest.clips.map((clip) => clip.clipId));
   const entries = [];
   let swapped = false;
+  // <img> com decode() em andamento: se o seek estourar o prazo, a sonda da sessão lista estas.
+  const decoding = new Set();
+  window.__ff.decoding = decoding;
 
   const swap = () => {
     for (const clip of manifest.clips) {
@@ -59,23 +62,36 @@ export const MEDIA_SHIM_SOURCE = `(() => {
       swapped = true;
       swap();
       // A <img> acabou de nascer: precisa da mesma visibilidade e do mesmo instante de animação deste frame.
+      window.__ff.stage("syncAnimations");
       window.__ff.syncAnimations();
       window.__ff.syncVisibility();
     }
     const seconds = ms / 1000;
     const pending = [];
+    const requested = [];
     for (const entry of entries) {
       const raw = Math.floor((seconds - entry.clip.start) * entry.clip.playbackRate * fps);
       const frame = Math.max(0, Math.min(entry.clip.frameCount - 1, raw));
       if (frame === entry.lastFrame) continue;
       entry.lastFrame = frame;
       entry.img.src = "/__ff_media/" + entry.clip.dir + "/" + String(frame).padStart(6, "0") + ".jpg";
+      const img = entry.img;
+      decoding.add(img);
+      requested.push(img.src);
       pending.push(
-        entry.img.decode().catch(() => {
-          throw new Error("frame de mídia não carregou: " + entry.img.src);
-        }),
+        img.decode().then(
+          () => {
+            decoding.delete(img);
+          },
+          () => {
+            decoding.delete(img);
+            throw new Error("frame de mídia não carregou: " + img.src);
+          },
+        ),
       );
     }
+    // As URLs vão junto: se a página parar de responder à sonda, o erro ainda diz o que este seek pediu.
+    if (pending.length > 0) window.__ff.stage(["video-frame-decode", ...requested].join(" "));
     await Promise.all(pending);
   };
 
