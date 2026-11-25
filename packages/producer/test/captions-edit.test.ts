@@ -137,7 +137,88 @@ test("editar dá o mesmo arquivo que gerar já com o texto novo (karaokê e fras
   }
 });
 
-test("outra quantidade de palavras reparte [1ª palavra, fim da legenda] pelos caracteres, em ms encadeados", () => {
+/** Edita a única legenda e confere o que não muda: palavras encadeadas, uma acesa por vez, do mesmo início ao mesmo fim. */
+const retimed = (html: string, text: string): Array<[number, number]> => {
+  const edited = editCaptionText(html, "cap-0", text);
+  assert.equal(readCaptionFile(edited).cues[0]!.text, text);
+  const spans = lit(edited, "cap-0");
+  const before = lit(html, "cap-0");
+  assert.deepEqual([spans[0]![0], spans.at(-1)![1]], [before[0]![0], before.at(-1)![1]], text);
+  assert.ok(spans.every(([from, to], i) => to > from && (i === 0 || spans[i - 1]![1] === from)), `${text}: ${JSON.stringify(spans)}`);
+  return spans;
+};
+
+/** Cinco palavras numa legenda só: [200,700] [700,1200] [1200,1700] [1700,2200] [2200,3000]. */
+const five = (): string =>
+  buildCaptionComposition([spoken(0, 3, ["um", 0.2, 0.6], ["dois", 0.7, 1.1], ["três", 1.2, 1.6], ["quatro", 1.7, 2.1], ["cinco", 2.2, 2.6])], {
+    ...VERTICAL,
+    maxWords: 8,
+  });
+
+test("outra quantidade de palavras não mexe nas que ficaram iguais: o caso do A001 (EDT-98)", () => {
+  const html = buildCaptionComposition(
+    [spoken(14.1, 15.38, ["falando", 14.1, 14.44], ["de", 14.44, 14.66], ["chat", 14.66, 14.96], ["EPT", 14.96, 15.38])],
+    VERTICAL,
+  );
+  assert.deepEqual(retimed(html, "falando de ChatGPT"), [[14100, 14440], [14440, 14660], [14660, 15380]]);
+});
+
+test("o trecho trocado no meio reparte só o intervalo das palavras que substitui (EDT-98)", () => {
+  // "três quatro" vai de 1200 a 2200: 1, 2 e 7 caracteres.
+  assert.deepEqual(retimed(five(), "um dois a bb ccccccc cinco"), [[200, 700], [700, 1200], [1200, 1300], [1300, 1500], [1500, 2200], [2200, 3000]]);
+  assert.deepEqual(retimed(five(), "um dois sete cinco"), [[200, 700], [700, 1200], [1200, 2200], [2200, 3000]]);
+  // A comparação é exata: mudar só a caixa ou a pontuação já é palavra trocada.
+  assert.deepEqual(retimed(five(), "um Dois xxxx cinco"), [[200, 700], [700, 1450], [1450, 2200], [2200, 3000]]);
+  // Mesma quantidade continua mantendo todos os tempos, mesmo com tudo diferente.
+  assert.deepEqual(retimed(five(), "a bbbbbbbbbbbb c dddd e"), lit(five(), "cap-0"));
+});
+
+test("inserção pura divide o intervalo da palavra anterior; no começo, o da seguinte (EDT-98)", () => {
+  // "dois" (700 a 1200) com "xx": 4 e 2 caracteres.
+  assert.deepEqual(retimed(five(), "um dois xx três quatro cinco"), [[200, 700], [700, 1033], [1033, 1200], [1200, 1700], [1700, 2200], [2200, 3000]]);
+  // Duas inseridas juntas dividem a mesma vizinha: 4, 1 e 1.
+  assert.deepEqual(
+    retimed(five(), "um dois a b três quatro cinco"),
+    [[200, 700], [700, 1033], [1033, 1117], [1117, 1200], [1200, 1700], [1700, 2200], [2200, 3000]],
+  );
+  assert.deepEqual(retimed(five(), "um dois três quatro cinco fim"), [[200, 700], [700, 1200], [1200, 1700], [1700, 2200], [2200, 2700], [2700, 3000]]);
+  // Sem anterior: "zero" e "um" (200 a 700), 4 e 2.
+  assert.deepEqual(retimed(five(), "zero um dois três quatro cinco"), [[200, 533], [533, 700], [700, 1200], [1200, 1700], [1700, 2200], [2200, 3000]]);
+});
+
+test("remoção pura dá o intervalo à palavra anterior; no começo, à seguinte (EDT-98)", () => {
+  assert.deepEqual(retimed(five(), "um dois quatro cinco"), [[200, 700], [700, 1700], [1700, 2200], [2200, 3000]]);
+  assert.deepEqual(retimed(five(), "um cinco"), [[200, 2200], [2200, 3000]]);
+  assert.deepEqual(retimed(five(), "um dois três quatro"), [[200, 700], [700, 1200], [1200, 1700], [1700, 3000]]);
+  assert.deepEqual(retimed(five(), "dois três quatro cinco"), [[200, 1200], [1200, 1700], [1700, 2200], [2200, 3000]]);
+  assert.deepEqual(retimed(five(), "quatro cinco"), [[200, 2200], [2200, 3000]]);
+  // Palavra repetida: o começo é casado primeiro, então quem sai é a segunda.
+  const twice = buildCaptionComposition([spoken(0, 2, ["não", 0.2, 0.5], ["não", 0.6, 0.9], ["sei", 1, 1.4])], VERTICAL);
+  assert.deepEqual(retimed(twice, "não sei"), [[200, 1000], [1000, 2000]]);
+});
+
+test("com motion, o instante que não muda mantém o data-unit gravado (EDT-98)", () => {
+  // Decimais quebrados: em "um" e "quatro", refazer a âncora dos ms erraria o data-unit por 1 ms.
+  const html = buildCaptionComposition(
+    [spoken(0.1004, 2.9006, ["um", 0.2137, 0.6], ["dois", 0.7274, 1.1], ["três", 1.2411, 1.6], ["quatro", 1.7499, 2.1], ["cinco", 2.2503, 2.6])],
+    { ...VERTICAL, maxWords: 8, motion: { enter: "subir dur=0.3" } },
+  );
+  const saved = units(html, "cap-0");
+  assert.deepEqual([saved[0], saved[3]], ["0.113", "1.649"], "os dados precisam exercitar o arredondamento");
+  const after = (text: string): string[] => units(editCaptionText(html, "cap-0", text), "cap-0");
+
+  // Prefixo e sufixo guardam a âncora; das duas novas no lugar de "três", só a 2ª tem instante novo.
+  const middle = after("um dois nova outra quatro cinco");
+  assert.deepEqual(middle.toSpliced(3, 1), saved);
+  assert.ok(Number(middle[3]) > Number(saved[2]) && Number(middle[3]) < Number(saved[3]), middle.join(" "));
+  assert.deepEqual(after("um dois quatro cinco"), [saved[0], saved[1], saved[3], saved[4]]);
+  // O trecho que começa no mesmo instante também: "um" que passa a durar mais, e quem herda o começo.
+  assert.deepEqual(after("um três quatro cinco"), [saved[0], saved[2], saved[3], saved[4]]);
+  assert.deepEqual(after("dois três quatro cinco"), [saved[0], saved[2], saved[3], saved[4]]);
+  assert.equal(after("um dois três xyz cinco fim")[3], saved[3], "a 1ª palavra do trecho começa onde a antiga começava");
+});
+
+test("outra quantidade de palavras reparte o trecho pelos caracteres, em ms encadeados", () => {
   const html = buildCaptionComposition([spoken(0, 2, ["um", 0.2, 0.6], ["dois", 0.7, 1.1], ["três", 1.2, 1.6])], VERTICAL);
 
   // 1800 ms, 1 + 2 caracteres.

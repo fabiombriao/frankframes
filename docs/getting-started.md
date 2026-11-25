@@ -59,9 +59,10 @@ Na barra do topo:
   cada legenda, com início–fim e o texto. Corrija o texto e tecle Enter (ou toque em **Aplicar**) para gravar no
   arquivo das legendas; o preview recarrega e o desfazer vale para a edição. A linha sob o playhead fica marcada, e
   tocar no tempo leva o playhead ao início dela. Com o mesmo número de palavras, cada uma mantém o tempo; mudando o
-  número, o tempo da legenda é repartido pelo tamanho das palavras. Enquanto houver texto não aplicado, o Exportar
-  espera, e selecionar outro clip descarta esse texto. Arquivo gerado por versão anterior não mostra a seção: gere de
-  novo com `captions` (regras em [`contract.md`](contract.md), §7b.8 e §9d).
+  número, as palavras iguais no começo e no fim continuam no tempo delas e só o trecho trocado é repartido pelo
+  tamanho das palavras (na inserção ou remoção pura, junto com a palavra vizinha). Enquanto houver texto não
+  aplicado, o Exportar espera, e selecionar outro clip descarta esse texto. Arquivo gerado por versão anterior não
+  mostra a seção: gere de novo com `captions` (regras em [`contract.md`](contract.md), §7b.8 e §9d).
 - **Dividir** (tecla `S`): corta o clip selecionado no playhead em dois, sem mover o resto da timeline.
 - **Desfazer / Refazer** (`Ctrl+Z`, `Ctrl+Shift+Z` ou `Ctrl+Y`): vale para toda edição feita no Studio
   nesta sessão. Se você editar o arquivo em outro programa, o histórico é descartado em vez de sobrescrever.

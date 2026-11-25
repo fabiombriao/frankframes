@@ -483,13 +483,16 @@ function readLayout(raw: string): CaptionLayout {
   return layout as CaptionLayout;
 }
 
+/** Palavra como está no arquivo; `unit` é o `data-unit` gravado (com motion). */
+type StoredWord = Omit<TimedWord, "at"> & { unit?: number };
+
 interface StoredCue {
   id: string;
   start: string;
   duration: string;
   text: string;
-  /** `null` = legenda por frase. `unit` é o `data-unit` gravado (com motion). */
-  words: Array<Omit<TimedWord, "at"> & { unit?: number }> | null;
+  /** `null` = legenda por frase. */
+  words: StoredWord[] | null;
   /** Posição do elemento inteiro no arquivo. */
   startOffset: number;
   endOffset: number;
@@ -589,10 +592,10 @@ export function readCaptionFile(html: string): { options: CaptionLayout; cues: C
  * Reparte `[fromMs, endMs]` entre as palavras pelo número de caracteres: milissegundos inteiros, encadeados,
  * cada palavra com pelo menos 1 ms.
  */
-function spreadWords(tokens: string[], fromMs: number, endMs: number): Array<Omit<TimedWord, "at">> {
+function spreadWords(tokens: string[], fromMs: number, endMs: number): StoredWord[] {
   const total = endMs - fromMs;
   if (total < tokens.length) {
-    throw new EditError("E_ATTRIBUTE_INVALID", `a legenda não tem tempo para ${tokens.length} palavras (${Math.max(0, total)} ms)`, "use menos palavras nesta legenda");
+    throw new EditError("E_ATTRIBUTE_INVALID", `o trecho trocado não tem tempo para ${tokens.length} palavras (${Math.max(0, total)} ms)`, "use menos palavras no trecho trocado");
   }
   const sizes = tokens.map((token) => [...token].length);
   const characters = sizes.reduce((sum, size) => sum + size, 0);
@@ -608,8 +611,34 @@ function spreadWords(tokens: string[], fromMs: number, endMs: number): Array<Omi
 }
 
 /**
+ * Tempos do texto novo. Mesma quantidade de palavras: cada uma fica com os seus. Outra quantidade: as iguais no
+ * começo e no fim mantêm os tempos e o miolo novo reparte o intervalo do miolo antigo. Com um dos miolos vazio
+ * (só inserção ou só remoção), a vizinha anterior entra nos dois; sem anterior, a seguinte.
+ */
+function retimeWords(old: StoredWord[], tokens: string[]): StoredWord[] {
+  if (tokens.length === old.length) return old.map((word, i) => ({ ...word, word: tokens[i]! }));
+  const shorter = Math.min(old.length, tokens.length);
+  let head = 0;
+  while (head < shorter && old[head]!.word === tokens[head]) head++;
+  let tail = 0;
+  while (tail < shorter - head && old[old.length - 1 - tail]!.word === tokens[tokens.length - 1 - tail]) tail++;
+  if (head + tail === shorter) {
+    if (head > 0) head--;
+    else tail--;
+  }
+  const replaced = old.slice(head, old.length - tail);
+  const first = replaced[0]!;
+  const last = replaced.at(-1)!;
+  const spread = spreadWords(tokens.slice(head, tokens.length - tail), first.fromMs, last.fromMs + last.forMs).map(
+    // A âncora gravada continua valendo para o instante que não mudou: o início do trecho.
+    (word, i): StoredWord => (i === 0 && first.unit !== undefined ? { ...word, unit: first.unit } : word),
+  );
+  return [...old.slice(0, head), ...spread, ...old.slice(old.length - tail)];
+}
+
+/**
  * Troca o texto de uma legenda e devolve o arquivo com só aquele elemento redesenhado (por posição; o resto fica
- * byte a byte). Mesma quantidade de palavras mantém os tempos; outra quantidade os reparte.
+ * byte a byte). Os tempos das palavras são os de `retimeWords`.
  */
 export function editCaptionText(html: string, cueId: string, text: string): string {
   const { options, cues } = parseCaptions(html);
@@ -619,15 +648,11 @@ export function editCaptionText(html: string, cueId: string, text: string): stri
   }
   const tokens = text.trim().split(/\s+/).filter((token) => token !== "");
   if (tokens.length === 0) throw new EditError("E_ATTRIBUTE_INVALID", `a legenda ${cueId} não pode ficar vazia`, "escreva o texto da legenda");
-  const anchorOf = (fromMs: number): number => fromMs / 1000 - Number(cue.start);
-  let words: TimedWord[] = [];
-  if (cue.words !== null) {
-    words =
-      tokens.length === cue.words.length
-        ? // A âncora gravada vale: a geração a calculou com a fala sem arredondar, e refazê-la erraria por 1 ms.
-          cue.words.map((word, i) => ({ word: tokens[i]!, fromMs: word.fromMs, forMs: word.forMs, at: word.unit ?? anchorOf(word.fromMs) }))
-        : spreadWords(tokens, cue.words[0]!.fromMs, toMs(Number(cue.start)) + toMs(Number(cue.duration))).map((word) => ({ ...word, at: anchorOf(word.fromMs) }));
-  }
+  // A âncora gravada vale: a geração a calculou com a fala sem arredondar, e refazê-la dos ms erraria por 1 ms.
+  const words: TimedWord[] =
+    cue.words === null
+      ? []
+      : retimeWords(cue.words, tokens).map(({ word, fromMs, forMs, unit }) => ({ word, fromMs, forMs, at: unit ?? fromMs / 1000 - Number(cue.start) }));
   const source: CueSource = { id: cue.id, start: cue.start, duration: cue.duration, text: tokens.join(" "), words };
   let element: string;
   try {

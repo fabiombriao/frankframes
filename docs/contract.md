@@ -483,15 +483,22 @@ de novo uma legenda igual ao `captions`: gerador e edição usam a mesma funçã
   - **Mesmo número de palavras** (separadas por espaço): cada uma mantém o `animation-delay`, a
     `animation-duration` e, com motion, o instante de onde sai o `data-unit` (o gravado: refazê-lo dos tempos
     arredondados erraria por 1 ms). Reaplicar o mesmo texto não muda o arquivo.
-  - **Número diferente:** o intervalo do início da 1ª palavra ao fim da legenda (`data-start + data-duration`) é
-    repartido pelo número de caracteres de cada palavra nova, em milissegundos inteiros encadeados (uma acaba onde
-    a outra começa), cada uma com pelo menos 1 ms. Intervalo com menos milissegundos que palavras é
-    `E_ATTRIBUTE_INVALID`.
+  - **Número diferente** (EDT-98): só o trecho trocado muda de tempo. As palavras iguais no começo e, no que
+    sobra, as iguais no fim (comparadas pelo texto exato) mantêm o `animation-delay`, a `animation-duration` e a
+    âncora do `data-unit`. As palavras novas do trecho repartem o intervalo das antigas que elas substituem, do
+    início da primeira ao fim da última, pelo número de caracteres de cada uma, em milissegundos inteiros
+    encadeados (uma acaba onde a outra começa), cada uma com pelo menos 1 ms. O início da 1ª palavra da legenda,
+    o fim da última e o encadeamento não mudam. Com duas mudanças separadas na mesma edição, tudo entre elas é
+    repartido.
+    - **Só inserção** (nenhuma palavra antiga trocada) ou **só remoção** (nenhuma nova no lugar): a palavra
+      anterior ao ponto entra no trecho; sem anterior, a seguinte. A inserida divide o intervalo dela pelo tamanho
+      das duas, e o intervalo das removidas passa para ela.
+    - Trecho com menos milissegundos que palavras novas é `E_ATTRIBUTE_INVALID`.
   - **Por frase:** só o texto muda.
   - Texto vazio ou só com espaços é `E_ATTRIBUTE_INVALID`. O texto é sempre texto: `<`, `&` e aspas são escapados.
   - Com motion, `data-split`, `data-enter`, `data-exit` e os `data-unit` passam pelo mesmo ajuste da geração
-    (com número diferente de palavras, partindo do novo início de cada uma); o que não couber é
-    `E_ATTRIBUTE_INVALID`.
+    (a âncora gravada vale para o instante que não mudou; a palavra que passa a começar em outro instante parte do
+    novo início); o que não couber é `E_ATTRIBUTE_INVALID`.
 - Arquivo sem a meta (gerado por versão anterior), com a meta ilegível ou com legenda fora do formato gerado é
   `E_CAPTIONS_LEGACY` (`hint`: gere de novo com `frankframes captions`). `id` que não existe é
   `E_CAPTIONS_CUE_NOT_FOUND`.

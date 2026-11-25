@@ -9,8 +9,9 @@ FrankFrames — proprietário (ver `LICENSE`). Versões seguem `MAJOR.MINOR.PATC
 - O texto das legendas do `captions` se corrige no Studio, letra por letra: selecionar o clip das legendas mostra no
   inspetor uma linha por legenda (início–fim e texto), com a legenda sob o playhead marcada e o tempo levando o
   playhead até ela; funciona no toque e em tela pequena. A edição troca só aquela legenda no arquivo, entra no
-  desfazer/refazer e é validada antes de gravar. Mesmo número de palavras mantém os tempos; outro número reparte o
-  tempo da legenda pelo tamanho das palavras.
+  desfazer/refazer e é validada antes de gravar. Mesmo número de palavras mantém os tempos; com outro número, as
+  palavras iguais no começo e no fim continuam no tempo delas e só o trecho trocado é repartido pelo tamanho das
+  palavras (na inserção ou remoção pura, junto com a palavra vizinha).
 - Legenda gerada por versão anterior não tem as opções de layout gravadas e precisa ser gerada de novo com
   `captions` para ser editada (`E_CAPTIONS_LEGACY`).
 - Desfazer e refazer valem por arquivo: o `E_HISTORY_STALE` confere o arquivo que aquele passo mudou.

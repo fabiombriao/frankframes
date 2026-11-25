@@ -884,6 +884,21 @@
             "Testes que falhariam sem a mudança (API e no Chrome: corrigir uma letra, mudar a quantidade de palavras, desfazer); gate verde."
           ],
           "jiraKey": "EDT-97"
+        },
+        {
+          "summary": "Studio: editar legenda com outra quantidade de palavras mantém o tempo das palavras que não mudaram",
+          "points": 2,
+          "labels": [
+            "studio",
+            "legendas"
+          ],
+          "acceptance": [
+            "Visto no aceite do EDT-97 em 2026-11-25 com o A001: trocar 'falando de chat EPT' por 'falando de ChatGPT' redistribuiu a legenda inteira, e 'falando' passou a acender até 14,66 s em vez de 14,44 s, fora da fala.",
+            "As palavras iguais no começo e no fim da legenda (comparando o texto antigo com o novo) mantêm o tempo; só o trecho trocado é redistribuído pelo tamanho das palavras, dentro do intervalo das palavras que ele substitui, em ms inteiros encadeados.",
+            "Trecho novo sem palavra antiga correspondente (inserção pura) divide o intervalo da palavra vizinha; mesma quantidade de palavras continua mantendo todos os tempos.",
+            "Testes que falhariam sem a mudança; gate verde."
+          ],
+          "jiraKey": "EDT-98"
         }
       ],
       "jiraKey": "EDT-35"
