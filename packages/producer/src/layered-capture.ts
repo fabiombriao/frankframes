@@ -44,7 +44,7 @@ interface PageFrame {
 }
 
 /** Serializada para o navegador, onde layout e motion já foram resolvidos pelo seek normal. */
-async function inspectFrame(sparse: boolean): Promise<PageFrame | { error: string }> {
+export async function inspectFrame(sparse: boolean): Promise<PageFrame | { error: string }> {
   const glass: GlassRegion[] = [];
   const fail = (error: string): { error: string } => ({ error });
   let video: VideoFrame | undefined;

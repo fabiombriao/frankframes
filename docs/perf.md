@@ -439,3 +439,17 @@ O MP4 Vulkan ficou 5,4% maior que o render integral de 10.428.578 B. O menor PSN
 O FFmpeg anterior produziu AV1 inválido em VBR na RTX 4060. O novo pin passou pela sonda com
 decodificação do bitstream e pela comparação dos 1357 frames. A rotação no libplacebo respeitou a
 largura visível da superfície H.264 alinhada a macroblocos.
+
+## A001 — sonda de captura CEF (EDT-103, etapa 3)
+
+A [sonda Windows](../scripts/cef-probe/README.md) abriu o A001 compilado a 1080×1920 e 30 fps com CEF
+158.0.6, BeginFrame externo e textura D3D11 compartilhada na RTX 4060. A rodada começou com 2,71 GiB
+de RAM livre e durou **55,7 s** do primeiro BeginFrame até a drenagem do libplacebo. Houve **550 texturas
+distintas aceitas**, **1.357 frames Vulkan** entregues ao filtro com PTS sequencial e zero callbacks em
+software. A sonda descartou sete callbacks com o marcador de um seek anterior.
+
+O FFmpeg importou a textura D3D11 em um dispositivo Vulkan com o mesmo LUID. O retângulo da composição
+ficou na GPU durante a cópia e a filtragem. A sonda leu oito bytes por candidato, fora do quadro,
+para validar o seek e o alfa pré-multiplicado. Esse tempo cobre captura e filtragem da camada HTML.
+O MP4 de aceite com CEF depende da ligação dessa camada ao grafo completo de render. O caminho
+acelerado Linux também está pendente.
