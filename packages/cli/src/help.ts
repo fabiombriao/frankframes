@@ -39,7 +39,7 @@ uso:
   frankframes --version | -v
   frankframes lint <arquivo.html> [--json]
   frankframes render <arquivo.html> [-o saida.mp4] [--codec av1|vp9|h264] [--preset draft|standard|high]
-                                    [--workers N] [--gpu auto|software|hardware] [--no-loudness] [--layered]
+                                    [--workers N] [--gpu auto|software|hardware] [--no-loudness] [--layered] [--vram]
                                     [--keep] [--json]
                                     (--keep guarda a pasta de trabalho e grava frames/*.png ou layers/ no modo por camadas;
                                      sem ele os frames vão direto ao FFmpeg, sem PNG em disco)

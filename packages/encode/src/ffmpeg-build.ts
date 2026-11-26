@@ -20,11 +20,11 @@ export interface FfmpegBuild {
   format: "zip" | "tar.xz";
 }
 
-const VERSION = "n8.1.3-39-g660b5aa7db";
-const TAG = "autobuild-2026-11-23-12-43";
+const VERSION = "N-129308-g17de9f8597";
+const TAG = "autobuild-2026-11-26-12-56";
 
 function build(platform: FfmpegPlatform, format: FfmpegBuild["format"], sha256: string): FfmpegBuild {
-  const root = `ffmpeg-${VERSION}-${platform}-lgpl-8.1`;
+  const root = `ffmpeg-${VERSION}-${platform}-lgpl`;
   const archive = `${root}.${format}`;
   return {
     platform,
@@ -40,8 +40,8 @@ function build(platform: FfmpegPlatform, format: FfmpegBuild["format"], sha256: 
 
 /** Builds LGPL (sem `--enable-gpl`, sem libx264/libx265) que o produto embarca, uma por plataforma. */
 export const FFMPEG_BUILDS: Record<FfmpegPlatform, FfmpegBuild> = {
-  win64: build("win64", "zip", "f0ca6f38361a853baaa010df76e62444e862437c29fbf09b13b008040641d10c"),
-  linux64: build("linux64", "tar.xz", "f5ff93b3ed1d933f6877a5a5e60f63779375f74e85b135fb1c7e12ec3a782369"),
+  win64: build("win64", "zip", "a5d0ac2c93907d281063a4c39fd2f14e2fd1189575b699216cff5f008f25540c"),
+  linux64: build("linux64", "tar.xz", "671e661c5b0a9efd08e7dcb1922c1cc62c373adda4db4256b8fb7e5a87b39bac"),
 };
 
 /** Chave de plataforma do pin para o par `process.platform`/`process.arch`; `undefined` quando não há build pinado. */

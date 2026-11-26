@@ -1,13 +1,13 @@
 FFmpeg — build LGPL, sem --enable-gpl (sem libx264/libx265).
 
-versão:      n8.1.3-39-g660b5aa7db
+versão:      N-129308-g17de9f8597
 plataforma:  win64
-tag:         autobuild-2026-11-23-12-43
-arquivo:     ffmpeg-n8.1.3-39-g660b5aa7db-win64-lgpl-8.1.zip
-origem:      https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-11-23-12-43/ffmpeg-n8.1.3-39-g660b5aa7db-win64-lgpl-8.1.zip
-sha256(zip): f0ca6f38361a853baaa010df76e62444e862437c29fbf09b13b008040641d10c
-sha256 ffmpeg:  51f05f24611d447de5b562ed2f0daf72327f7f1413ca0e83086324b9d00f74dd
-sha256 ffprobe: c064bd7a6f834761644fe30f7de6f2dce2fdc2ebd6351eeb11f84dd11f8d9a1e
+tag:         autobuild-2026-11-26-12-56
+arquivo:     ffmpeg-N-129308-g17de9f8597-win64-lgpl.zip
+origem:      https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-11-26-12-56/ffmpeg-N-129308-g17de9f8597-win64-lgpl.zip
+sha256(zip): a5d0ac2c93907d281063a4c39fd2f14e2fd1189575b699216cff5f008f25540c
+sha256 ffmpeg:  b70e75de18ce17c53d228bce738c661e1b351145c49847401f5d8d3dd2d26087
+sha256 ffprobe: 715b117f180e643c3f196e8d6fdc1fd1c8a092a6a4da9dbc94dff2ac05f32dee
 
 Reconstruir: baixe o arquivo acima, confira o SHA-256 e descompacte;
 a receita de build está em https://github.com/BtbN/FFmpeg-Builds.

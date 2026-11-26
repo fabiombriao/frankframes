@@ -21,7 +21,7 @@ import { audioClipsFor } from "./preview-audio.ts";
 import { VariableError, applyVariables } from "./variables.ts";
 import { captureLayers, LayeredError } from "./layered-capture.ts";
 import type { LayeredCapture } from "./layered-capture.ts";
-import { encodeLayers } from "./layered-encode.ts";
+import { encodeLayers, probeLayeredVram } from "./layered-encode.ts";
 import type { LayeredSource } from "./layered-encode.ts";
 
 const run = promisify(execFile);
@@ -322,6 +322,8 @@ export interface RenderOptions {
   gpu?: "auto" | "software" | "hardware";
   /** Captura o HTML sobre fundo transparente e compõe o vídeo original no FFmpeg. */
   layered?: boolean;
+  /** Ativa camadas e tenta usar Vulkan da decodificação ao encode. */
+  vram?: boolean;
   /** `false` entrega o mix sem normalizar para −14 LUFS. */
   loudness?: false;
   ffmpeg?: string;
@@ -404,7 +406,7 @@ async function renderPipeline(
     onProgress: progress,
     ...signalOption,
     ...(options.vars !== undefined ? { vars: options.vars } : {}),
-    ...(options.layered === true ? { layered: true } : {}),
+    ...(options.layered === true || options.vram === true ? { layered: true } : {}),
   });
   const pair = await resolveFfmpeg();
   const ffmpeg = options.ffmpeg ?? pair.ffmpeg;
@@ -562,8 +564,22 @@ async function renderPipeline(
     try {
       if (layered === undefined || layerCapture === undefined) await encoding!.encoded;
       else {
+        let vram = false;
+        if (options.vram === true) {
+          const reason = codec !== "av1" || gpu === "software"
+            ? "a opção requer AV1 e GPU auto ou hardware"
+            : await probeLayeredVram(ffmpeg, layered, viewport, fps, preset, layersDir, signal);
+          if (reason === undefined) {
+            vram = true;
+            progress("encode", 80, "Vulkan em VRAM da decodificação ao encode");
+          } else {
+            const warning = `VRAM indisponível: ${reason}. Usando o render por camadas.`;
+            warnings.push(warning);
+            progress("encode", 80, warning);
+          }
+        }
         let av1Nvenc = false;
-        if (codec === "av1" && gpu !== "software") {
+        if (!vram && codec === "av1" && gpu !== "software") {
           try {
             await run(ffmpeg, [
               "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", `color=s=${viewport.width}x${viewport.height}`,
@@ -577,7 +593,7 @@ async function renderPipeline(
         }
         await encodeLayers(ffmpeg, {
           capture: layerCapture, sources: layered, viewport, fps, directory: layersDir,
-          outPath: videoPath, codec, preset, av1Nvenc, warnings, ...signalOption,
+          outPath: videoPath, codec, preset, av1Nvenc, vram, warnings, ...signalOption,
           onNvdec: (count) => progress("encode", 80, `NVDEC em ${count} fonte(s)`),
         });
       }

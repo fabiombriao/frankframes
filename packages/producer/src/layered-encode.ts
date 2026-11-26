@@ -1,6 +1,6 @@
 // FrankFrames — proprietário. Ver LICENSE na raiz.
 import { execFile } from "node:child_process";
-import { open, writeFile } from "node:fs/promises";
+import { open, rm, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { promisify } from "node:util";
 import { buildMuxArgs, buildVideoArgs } from "@frankframes/encode";
@@ -10,6 +10,8 @@ import type { Fps } from "@frankframes/contract";
 import { timeOfFrame } from "@frankframes/contract";
 import { LayeredError, layerName } from "./layered-capture.ts";
 import type { GlassRegion, LayeredCapture, ProgressFrame, VideoFrame } from "./layered-capture.ts";
+import { colorShader, encodeVulkan, glassShader, rgbVulkan, uploadRgba, vulkanDecodeArgs, vulkanDeviceArgs, vulkanEncoderArgs, vulkanOverlay, vulkanRotation } from "./layered-vram.ts";
+import type { CssVideoFilter } from "./layered-vram.ts";
 
 const run = promisify(execFile);
 const CUDA_DEVICE = "ffdecode";
@@ -48,23 +50,28 @@ function frameExpression<T>(values: T[], variable: "n" | "N", indexOf: (value: T
   return expression(0, values.length);
 }
 
-export function videoColorFilters(css: string): string[] {
+function parseVideoFilters(css: string): CssVideoFilter[] {
   if (css === "none") return [];
-  const filters: string[] = [];
-  for (const token of css.split(" ")) {
+  return css.split(" ").map((token) => {
     const match = /^(contrast|brightness|saturate)\(([\d.]+)\)$/.exec(token);
     if (match === null) throw new LayeredError(`filtro do vídeo incompatível: ${css}`);
-    const amount = Number(match[2]);
-    if (match[1] === "saturate") {
+    return { kind: match[1] as CssVideoFilter["kind"], amount: Number(match[2]) };
+  });
+}
+
+export function videoColorFilters(css: string): string[] {
+  const filters: string[] = [];
+  for (const { kind, amount } of parseVideoFilters(css)) {
+    if (kind === "saturate") {
       const weights = [0.213, 0.715, 0.072];
       const mixer = [..."rgb"].flatMap((out, row) => [..."rgb"].map((channel, column) => {
         const coefficient = weights[column]! * (1 - amount) + (row === column ? amount : 0);
-        if (Math.abs(coefficient) > 2) throw new LayeredError(`saturação incompatível: ${token}`);
+        if (Math.abs(coefficient) > 2) throw new LayeredError(`saturação incompatível: ${amount}`);
         return `${out}${channel}=${coefficient.toFixed(8)}`;
       }));
       filters.push(`colorchannelmixer=${mixer.join(":")}`);
     } else {
-      const value = match[1] === "contrast" ? `(val-127.5)*${amount}+127.5` : `val*${amount}`;
+      const value = kind === "contrast" ? `(val-127.5)*${amount}+127.5` : `val*${amount}`;
       const channels = [..."rgb"].map((channel) => `${channel}='clip(floor((${value})+0.5),0,255)'`);
       filters.push(`lutrgb=${channels.join(":")}`);
     }
@@ -161,14 +168,49 @@ interface LayeredEncodeOptions {
   codec: VideoCodec;
   preset: Preset;
   av1Nvenc?: boolean;
+  vram?: boolean;
   signal?: AbortSignal;
   warnings: string[];
   onNvdec?: (sources: number) => void;
 }
 
+export async function probeLayeredVram(ffmpeg: string, sources: LayeredSource[], viewport: Viewport, fps: Fps, preset: Preset, directory: string, signal?: AbortSignal): Promise<string | undefined> {
+  if (sources.some(({ timing }) => timing.orientation.mirrored)) return "a orientação espelhada requer o render por camadas";
+  const probe = { timeout: 20_000, maxBuffer: 2 << 20, windowsHide: true, ...(signal === undefined ? {} : { signal }) };
+  const common = ["-hide_banner", "-loglevel", "error", "-xerror", ...vulkanDeviceArgs];
+  const file = join(directory, "probe-vram.mp4");
+  try {
+    await run(ffmpeg, [
+      ...common, "-f", "lavfi", "-i", `testsrc2=s=${viewport.width}x${viewport.height}:r=${fps.num}/${fps.den}`,
+      "-vf", "format=nv12,hwupload,format=vulkan", "-frames:v", "12",
+      ...vulkanEncoderArgs(viewport, fps, preset), "-y", file,
+    ], probe);
+    await run(ffmpeg, ["-hide_banner", "-loglevel", "error", "-xerror", "-threads", "2", "-i", file, "-f", "null", "-"], probe);
+  } catch {
+    signal?.throwIfAborted();
+    return "o encoder Vulkan na GPU NVIDIA não passou na sonda de codificação e decodificação AV1";
+  } finally {
+    await rm(file, { force: true });
+  }
+  const unique = new Map(sources.map((source) => [source.input, source.timing.orientation]));
+  for (const [input, orientation] of unique) {
+    try {
+      await run(ffmpeg, [
+        ...common, ...vulkanDecodeArgs, "-noautorotate", "-i", input, "-map", "0:v:0",
+        "-vf", [...vulkanRotation(orientation.rotation, orientation.displayWidth, orientation.displayHeight), "scale_vulkan=w=256:h=256:format=nv12", "format=vulkan"].join(","),
+        "-c:v", "av1_vulkan", "-an", "-frames:v", "1", "-f", "null", "-",
+      ], probe);
+    } catch {
+      signal?.throwIfAborted();
+      return `a fonte ${basename(input)} não passou pela decodificação Vulkan`;
+    }
+  }
+  return undefined;
+}
+
 export async function encodeLayers(ffmpeg: string, options: LayeredEncodeOptions): Promise<void> {
   const nvdec = new Set<string>();
-  if (options.av1Nvenc === true) {
+  if (options.av1Nvenc === true && options.vram !== true) {
     for (const input of new Set(options.sources.map((source) => source.input))) {
       options.signal?.throwIfAborted();
       try {
@@ -197,8 +239,8 @@ export async function encodeLayers(ffmpeg: string, options: LayeredEncodeOptions
       ...(options.signal === undefined ? {} : { signal: options.signal }),
     }, (error, output, stderr) => {
       const settle = (): void => {
-        if (error === null) resolve(output);
-        else reject(new Error(stderr.trim() || error.message, { cause: error }));
+        if (error === null && (options.vram !== true || stderr.trim() === "")) resolve(output);
+        else reject(new Error(stderr.trim() || error?.message || "erro no grafo Vulkan", { cause: error }));
       };
       if (child.pid === undefined || child.exitCode !== null || child.signalCode !== null) settle();
       else child.once("close", settle);
@@ -217,6 +259,7 @@ export async function encodeLayers(ffmpeg: string, options: LayeredEncodeOptions
 async function buildLayeredArgs(options: LayeredEncodeOptions, nvdec: ReadonlySet<string>): Promise<string[]> {
   const { frames, hashes } = options.capture;
   const { sources, viewport, fps, directory } = options;
+  const vram = options.vram === true;
   const rate = `${fps.num}/${fps.den}`;
   const frameSeconds = fps.den / fps.num;
   const graph: string[] = [];
@@ -254,8 +297,9 @@ async function buildLayeredArgs(options: LayeredEncodeOptions, nvdec: ReadonlySe
     const begin = requested[0]!.raw;
     const sourceEnd = seekFrame + requested.at(-1)!.raw + 1;
     // A extração de referência aplica fps antes de -ss. O trim preserva a fase dessa grade.
-    if (nvdec.has(source.input)) inputs.push(...NVDEC_ARGS);
-    inputs.push("-autorotate", "-threads", "2", "-i", source.input);
+    if (vram) inputs.push(...vulkanDecodeArgs);
+    else if (nvdec.has(source.input)) inputs.push(...NVDEC_ARGS);
+    inputs.push(...(vram ? ["-noautorotate", "-display_rotation", "0"] : ["-autorotate"]), "-threads", "2", "-i", source.input);
     const label = `v${index}`;
     const count = end - first;
     const timing: string[] = [];
@@ -271,10 +315,22 @@ async function buildLayeredArgs(options: LayeredEncodeOptions, nvdec: ReadonlySe
       `fps=${rate}`,
       `trim=start_frame=${seekFrame + begin}:end_frame=${sourceEnd}`,
       ...timing,
-      `tpad=stop=${count}:stop_mode=clone`, `trim=end_frame=${count}`, "setsar=1", "format=gbrp",
-      `libplacebo=w=${viewport.width}:h=${viewport.height}:fit_mode=fill:format=gbrp:upscaler=bilinear:downscaler=bilinear:disable_linear=1:dithering=none:${crop}`,
-      ...videoColorFilters(initial.filter),
+      `tpad=stop=${count}:stop_mode=clone`, `trim=end_frame=${count}`, "setsar=1",
     ];
+    const cropFilter = `libplacebo=w=${viewport.width}:h=${viewport.height}:fit_mode=fill:upscaler=bilinear:downscaler=bilinear:${crop}`;
+    if (vram) {
+      // Igual à interpretação BT.601/sRGB dos quadros JPEG do caminho integral.
+      filters.push(...vulkanRotation(source.timing.orientation.rotation, displayWidth, displayHeight),
+        "setparams=colorspace=smpte170m:color_trc=iec61966-2-1", `${cropFilter}:${rgbVulkan}`, "format=vulkan");
+      const changes = parseVideoFilters(initial.filter);
+      if (changes.length > 0) {
+        const file = `color-${index}.hook`;
+        await writeFile(join(directory, file), colorShader(changes));
+        filters.push(`libplacebo=${rgbVulkan}:custom_shader_path=${file}`, "format=vulkan");
+      }
+    } else {
+      filters.push("format=gbrp", `${cropFilter}:format=gbrp:disable_linear=1:dithering=none`, ...videoColorFilters(initial.filter));
+    }
     graph.push(`[${index}:v]${filters.join(",")}[${label}]`);
     videoLabels.push(`[${label}]`);
     first = end;
@@ -286,8 +342,11 @@ async function buildLayeredArgs(options: LayeredEncodeOptions, nvdec: ReadonlySe
   }
   let stream = videoLabels.length;
   if (options.capture.background) {
+    if (vram) inputs.push("-loop", "1");
     inputs.push("-framerate", rate, "-i", "background.png");
-    graph.push(`${base}[${stream}:v]overlay=format=gbrp:eof_action=repeat[background]`);
+    if (vram) {
+      graph.push(`[${stream}:v]trim=end_frame=${frames.length},${uploadRgba}[gradient]`, vulkanOverlay(base, "[gradient]", "[background]", viewport));
+    } else graph.push(`${base}[${stream}:v]overlay=format=gbrp:eof_action=repeat[background]`);
     base = "[background]";
     stream += 1;
   }
@@ -295,6 +354,13 @@ async function buildLayeredArgs(options: LayeredEncodeOptions, nvdec: ReadonlySe
   const width = Math.ceil(viewport.width / 2);
   const height = Math.ceil(viewport.height / 2);
   for (const [index, sigma] of [...radii].entries()) {
+    if (vram) {
+      const file = `glass-${index}.hook`;
+      await writeFile(join(directory, file), glassShader(sigma, frames.map(({ glass }) => glass.filter((region) => region.sigma === sigma))));
+      graph.push(`${base}libplacebo=${rgbVulkan}:custom_shader_path=${file},format=vulkan[glass${index}]`);
+      base = `[glass${index}]`;
+      continue;
+    }
     const masks = new Map<number, string>();
     const paths = new Map<string, string>();
     let previous: string | undefined;
@@ -326,7 +392,8 @@ async function buildLayeredArgs(options: LayeredEncodeOptions, nvdec: ReadonlySe
   }
   await writeFile(join(directory, "layers.ffconcat"), frameList(new Map([...hashes.keys()].map((frame) => [frame, layerName(frame)])), fps, frames.length));
   inputs.push("-f", "concat", "-safe", "0", "-i", "layers.ffconcat");
-  graph.push(
+  if (vram) graph.push(`[${stream}:v]fps=${rate},trim=end_frame=${frames.length},${uploadRgba}[overlay]`, vulkanOverlay(base, "[overlay]", "[html]", viewport));
+  else graph.push(
     `[${stream}:v]fps=${rate},format=rgba[overlay]`,
     `${base}[overlay]overlay=format=gbrp:eof_action=repeat[html]`,
   );
@@ -337,18 +404,19 @@ async function buildLayeredArgs(options: LayeredEncodeOptions, nvdec: ReadonlySe
     const path = "progress.rgba";
     await writeProgress(join(directory, path), progress, bar, options.signal);
     inputs.push("-f", "rawvideo", "-pixel_format", "rgba", "-video_size", `${bar.width}x${bar.height}`, "-framerate", rate, "-i", path);
-    graph.push(`${base}[${stream + 1}:v]overlay=x=${bar.x}:y=${bar.y}:format=gbrp[withbar]`);
+    if (vram) graph.push(`[${stream + 1}:v]${uploadRgba}[bar]`, vulkanOverlay(base, "[bar]", "[withbar]", viewport, bar));
+    else graph.push(`${base}[${stream + 1}:v]overlay=x=${bar.x}:y=${bar.y}:format=gbrp[withbar]`);
     base = "[withbar]";
   }
-  graph.push(`${base}format=yuv420p[out]`);
+  graph.push(`${base}${vram ? encodeVulkan : "format=yuv420p"}[out]`);
   await writeFile(join(directory, "layers.filter"), `${graph.join(";\n")}\n`);
-  const videoArgs = options.av1Nvenc === true
+  const videoArgs = vram ? vulkanEncoderArgs(viewport, fps, options.preset) : options.av1Nvenc === true
     ? ["-c:v", "av1_nvenc", "-preset", "p5", "-tune", "hq", "-rc", "vbr", "-cq",
       { draft: "44", standard: "38", high: "31" }[options.preset], "-b:v", "0", "-pix_fmt", "yuv420p"]
     : buildVideoArgs(options.codec, options.preset);
   return [
     "-hide_banner", "-loglevel", "error", "-xerror", "-filter_complex_threads", "4", "-nostats", "-progress", "pipe:1",
-    ...(nvdec.size > 0 ? CUDA_DEVICE_ARGS : []),
+    ...(vram ? vulkanDeviceArgs : nvdec.size > 0 ? CUDA_DEVICE_ARGS : []),
     ...inputs, "-/filter_complex", "layers.filter", "-map", "[out]",
     "-frames:v", String(frames.length), ...videoArgs,
     "-r", rate, "-video_track_timescale", "90000", ...buildMuxArgs(options.codec), "-y", options.outPath,

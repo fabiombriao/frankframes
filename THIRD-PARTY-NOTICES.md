@@ -87,14 +87,14 @@ Mesmos termos de cada licença abaixo; o texto integral e o aviso de copyright d
 ## FFmpeg embarcado (build LGPL)
 
 O produto distribui o build **LGPL** descrito em `vendor/ffmpeg/SOURCE.txt`, um por plataforma, os dois da mesma
-versão e da mesma release datada e imutável do `BtbN/FFmpeg-Builds` (tag `autobuild-2026-11-23-12-43`; a tag
+versão e da mesma release datada e imutável do `BtbN/FFmpeg-Builds` (tag `autobuild-2026-11-26-12-56`; a tag
 `latest` é móvel e não é usada):
 
 | Campo | win64 | linux64 |
 |---|---|---|
-| versão | `n8.1.3-39-g660b5aa7db` | `n8.1.3-39-g660b5aa7db` |
-| arquivo | `ffmpeg-n8.1.3-39-g660b5aa7db-win64-lgpl-8.1.zip` | `ffmpeg-n8.1.3-39-g660b5aa7db-linux64-lgpl-8.1.tar.xz` |
-| SHA-256 do arquivo | `f0ca6f38361a853baaa010df76e62444e862437c29fbf09b13b008040641d10c` | `f5ff93b3ed1d933f6877a5a5e60f63779375f74e85b135fb1c7e12ec3a782369` |
+| versão | `N-129308-g17de9f8597` | `N-129308-g17de9f8597` |
+| arquivo | `ffmpeg-N-129308-g17de9f8597-win64-lgpl.zip` | `ffmpeg-N-129308-g17de9f8597-linux64-lgpl.tar.xz` |
+| SHA-256 do arquivo | `a5d0ac2c93907d281063a4c39fd2f14e2fd1189575b699216cff5f008f25540c` | `671e661c5b0a9efd08e7dcb1922c1cc62c373adda4db4256b8fb7e5a87b39bac` |
 | licença | LGPL-2.1-or-later (`vendor/ffmpeg/LICENSE.txt`) | LGPL-2.1-or-later (`vendor/ffmpeg/LICENSE.txt`) |
 
 URL: `https://github.com/BtbN/FFmpeg-Builds/releases/download/<tag>/<arquivo>`. O BtbN poda releases diárias

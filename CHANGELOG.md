@@ -10,6 +10,9 @@ FrankFrames — proprietário (ver `LICENSE`). Versões seguem `MAJOR.MINOR.PATC
   sobreposições do Chrome capturadas em uma camada transparente (EDT-102).
 - Com AV1 NVENC ativo, `render --layered` usa NVDEC nas fontes de vídeo que passam pela sonda de CUDA
   (primeira etapa do EDT-103).
+- `render --vram` mantém os frames do vídeo em superfícies Vulkan da decodificação até o AV1.
+  Câmera, cor, vidro, camadas HTML e barra são compostos na GPU. Requer um driver NVIDIA com Vulkan Video
+  e o FFmpeg LGPL atualizado (segunda etapa do EDT-103).
 - A `<img>` que substitui `<video>` no render agora herda os valores computados das propriedades visuais do vídeo
   (`filter`, `opacity`, `mix-blend-mode`, `clip-path`, `mask-*`, `border-radius`, `border`, `padding`,
   `box-shadow`, `outline`, `background-*`, `overflow`, `image-rendering`, `z-index` e `transform`),

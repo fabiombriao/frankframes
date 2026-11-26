@@ -421,3 +421,21 @@ As sondas para a etapa de composição em GPU passaram com 12 frames em CUDA →
 e D3D11 → NVENC. O FFmpeg pinado devolveu `Function not implemented` no mapeamento direto
 CUDA → Vulkan e `80070057` na criação da textura de saída do `scale_d3d11` em NV12.
 As sondas usaram o vídeo sem autorrotação e mediram a passagem de superfícies entre estágios.
+
+## A001 — composição em VRAM (EDT-103, etapa 2)
+
+O A001 de 1080×1920 e 30 fps foi renderizado com `--vram --gpu hardware --workers 1 --preset standard`,
+no FFmpeg LGPL `N-129308-g17de9f8597` e no driver NVIDIA 610.88. A rodada começou com 3,72 GiB de RAM livre.
+O FFmpeg negociou superfícies Vulkan da decodificação até o encoder. O Chrome produziu 550 PNGs de
+sobreposição e a GPU recebeu essas camadas por upload. A comparação decodificou os 1357 frames do MP4
+com o FFmpeg anterior e usou o mesmo render integral do EDT-100 como referência.
+
+| A001 | Total | Composição e encode | Tamanho do MP4 | PSNR contra o integral |
+|---|---:|---:|---:|---:|
+| Camadas com decodificação em CPU (EDT-102) | 164,5 s | 75,1 s | 9.815.720 B | 40,75 dB |
+| Compositor Vulkan (EDT-103) | 106,7 s | 20,5 s | 10.994.811 B | 42,22 dB |
+
+O MP4 Vulkan ficou 5,4% maior que o render integral de 10.428.578 B. O menor PSNR por frame foi 38,96 dB.
+O FFmpeg anterior produziu AV1 inválido em VBR na RTX 4060. O novo pin passou pela sonda com
+decodificação do bitstream e pela comparação dos 1357 frames. A rotação no libplacebo respeitou a
+largura visível da superfície H.264 alinhada a macroblocos.

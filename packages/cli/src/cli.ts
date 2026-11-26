@@ -118,7 +118,7 @@ function parseCli(argv: string[]): Cli {
       cli.given.push("--gpu");
     }
     else if (arg.startsWith("-")) {
-      const known = ["--open", "--check", "--fonts-only", "--cursor", "--apply", "--size", "--no-loudness", "--layered"];
+      const known = ["--open", "--check", "--fonts-only", "--cursor", "--apply", "--size", "--no-loudness", "--layered", "--vram"];
       if (!known.includes(arg)) throw new Error(`opção desconhecida: ${arg}`);
       cli.flags.push(arg);
     }
@@ -303,8 +303,9 @@ async function main(): Promise<void> {
     return;
   }
 
-  if (cli.flags.includes("--layered") && (cli.command !== "render" || cli.batch !== undefined || cli.files.length > 1)) {
-    process.stderr.write("--layered vale no render de um único arquivo HTML\n");
+  const layeredFlag = cli.flags.find((flag) => flag === "--layered" || flag === "--vram");
+  if (layeredFlag !== undefined && (cli.command !== "render" || cli.batch !== undefined || cli.files.length > 1)) {
+    process.stderr.write(`${layeredFlag} vale no render de um único arquivo HTML\n`);
     process.exit(2);
   }
   if (cli.command === "render" && (cli.batch !== undefined || cli.files.length > 1)) {
@@ -680,6 +681,7 @@ async function main(): Promise<void> {
       ...(cli.workers !== undefined ? { workers: cli.workers } : {}),
       keepWorkDir: cli.keep,
       ...(cli.flags.includes("--layered") ? { layered: true } : {}),
+      ...(cli.flags.includes("--vram") ? { vram: true } : {}),
       ...(cli.gpu !== undefined ? { gpu: cli.gpu } : {}),
       ...(cli.flags.includes("--no-loudness") ? { loudness: false } : {}),
       onProgress: (stage: RenderStage, percent: number, message?: string) => {

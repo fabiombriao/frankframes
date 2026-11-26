@@ -751,6 +751,11 @@ sem passar pelo cache de JPEGs.
 - `--gpu auto` pode usar o Chrome em hardware, pois a captura HTML não depende das texturas do vídeo.
   Para AV1 em `auto` ou `hardware`, o FFmpeg usa NVENC se a máquina aceitar a sonda de codificação.
   Se a sonda falhar, usa `libsvtav1` e emite um aviso.
+  A opção `--vram` (`vram: true` na API) ativa camadas e tenta decodificar, compor e codificar AV1
+  com superfícies Vulkan na mesma GPU NVIDIA. O Chrome ainda fornece as camadas como PNG nesta etapa.
+  Os pixels do vídeo principal seguem da decodificação até o encoder em superfícies de hardware.
+  A sonda verifica o encoder e cada fonte. Quando a combinação de dispositivo, fonte, codec ou modo
+  de GPU não for compatível, o render usa o caminho por camadas e informa o motivo.
   Com NVENC ativo, o FFmpeg também sonda cada fonte de vídeo para decodificação NVDEC em NV12 (EDT-103).
   As fontes aprovadas usam o mesmo dispositivo CUDA. Se uma fonte não passar, a decodificação dela usa
   a CPU e o render emite um aviso. O compositor desta etapa ainda recebe os frames em memória do host.

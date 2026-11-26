@@ -165,3 +165,57 @@ test("o render por camadas usa NVDEC na fonte aprovada quando NVENC está ativo"
   assert.ok(progress.includes("NVDEC em 1 fonte(s)"));
   assert.equal(result.warnings.some((warning) => warning.includes("NVDEC")), false);
 });
+
+test("VRAM aplica a máscara de vidro no frame certo e compõe a barra em AV1 Vulkan", { timeout: 120_000 }, async (t) => {
+  const pair = await resolveFfmpeg();
+  const dir = await tempDir(t, "ff-layered-vram-");
+  const input = join(dir, "source.mp4");
+  try {
+    await resolveChrome();
+    await run(pair.ffmpeg, [
+      "-v", "error", "-f", "lavfi", "-i", "color=s=256x256:r=12:d=1.2,geq=lum='36+176*mod(floor(X/4)+floor(Y/4),2)':cb=128:cr=128",
+      "-c:v", "libopenh264", "-y", input,
+    ]);
+    await run(pair.ffmpeg, [
+      "-v", "error", "-init_hw_device", "vulkan=vk:NVIDIA", "-filter_hw_device", "vk",
+      "-hwaccel", "vulkan", "-hwaccel_device", "vk", "-hwaccel_output_format", "vulkan", "-i", input,
+      "-vf", "scale_vulkan=format=nv12", "-frames:v", "1", "-c:v", "av1_vulkan", "-f", "null", "-",
+    ]);
+  } catch {
+    t.skip("Chrome ou Vulkan Video NVIDIA indisponível");
+    return;
+  }
+  const entry = join(dir, "index.html");
+  const outPath = join(dir, "output.mp4");
+  await writeFile(entry, `<!doctype html><style>
+html,body{margin:0}
+video{position:absolute;inset:0;width:100vw;height:100vh;object-fit:cover;filter:contrast(1.1)}
+.bg{position:absolute;inset:0;background:linear-gradient(transparent,#00204050)}
+.glass{position:absolute;left:48px;top:80px;width:160px;height:104px;border-radius:16px;backdrop-filter:blur(10px)}
+.bar{position:absolute;left:8px;top:8px;width:240px;height:4px;overflow:hidden;border-radius:2px}
+.bar i{display:block;height:100%;width:0;background:#ff6a3d;animation:fill 1s linear forwards}
+@keyframes fill{to{width:100%}}
+</style><main data-composition-id="vram" data-width="256" data-height="256" data-fps="12" data-duration="1">
+<video src="source.mp4" data-duration="1" data-has-audio="false"></video>
+<div class="bg"></div><div class="glass" data-start="0.5" data-duration="0.5"></div><div class="bar"><i></i></div>
+</main>`);
+  const progress: string[] = [];
+  const result = await renderComposition({
+    entry, outPath, ...pair, vram: true, gpu: "hardware", workers: 1, preset: "high",
+    onProgress: (_stage, _percent, message) => { if (message !== undefined) progress.push(message); },
+  });
+  assert.equal(result.frames, 12);
+  assert.ok(progress.includes("Vulkan em VRAM da decodificação ao encode"));
+  const { stdout } = await run(pair.ffmpeg, [
+    "-v", "error", "-i", outPath, "-f", "rawvideo", "-pix_fmt", "rgb24", "-",
+  ], { encoding: "buffer", maxBuffer: 3 << 20 });
+  const at = (f: number, x: number, y: number): number => 3 * (f * 256 * 256 + y * 256 + x);
+  const range = (frame: number): number => {
+    const values = Array.from({ length: 12 }, (_, i) => stdout[at(frame, 113 + i, 125)]!);
+    return Math.max(...values) - Math.min(...values);
+  };
+  assert.ok(range(4) > 80, "o vidro ainda está invisível no frame 4");
+  assert.ok(range(7) < 30, "o vidro borra o fundo depois de entrar");
+  const fill = at(10, 130, 9);
+  assert.ok(stdout[fill]! > stdout[fill + 1]! + 65, "a barra laranja chegou ao meio");
+});
