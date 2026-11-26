@@ -114,3 +114,54 @@ test("a opção por camadas sem vídeo mantém os frames integrais do produtor",
   const layered = await renderComposition({ ...options, outPath: join(dir, "layered.mp4"), layered: true });
   assert.deepEqual(layered.hashes, standard.hashes);
 });
+
+test("o render por camadas usa NVDEC na fonte aprovada quando NVENC está ativo", { timeout: 120_000 }, async (t) => {
+  const pair = await resolveFfmpeg();
+  try {
+    await resolveChrome();
+    await run(pair.ffmpeg, [
+      "-v", "error", "-f", "lavfi", "-i", "color=s=256x256:d=0.25",
+      "-vf", "libplacebo", "-frames:v", "1", "-c:v", "av1_nvenc", "-f", "null", "-",
+    ]);
+  } catch {
+    t.skip("Chrome, Vulkan ou AV1 NVENC indisponível");
+    return;
+  }
+  const dir = await tempDir(t, "ff-layered-nvdec-");
+  const input = join(dir, "input.mp4");
+  try {
+    await run(pair.ffmpeg, [
+      "-v", "error", "-f", "lavfi", "-i", "testsrc2=s=256x256:r=12:d=0.25",
+      "-c:v", "libopenh264", "-y", input,
+    ]);
+  } catch {
+    t.skip("fixture H.264 indisponível no FFmpeg local");
+    return;
+  }
+  try {
+    const { stderr } = await run(pair.ffmpeg, [
+      "-v", "debug", "-hwaccel", "cuda", "-hwaccel_output_format", "nv12",
+      "-i", input, "-frames:v", "1", "-f", "null", "-",
+    ]);
+    if (!stderr.includes("Format cuda chosen by get_format()")) {
+      t.skip("NVDEC H.264 indisponível");
+      return;
+    }
+  } catch {
+    t.skip("NVDEC H.264 indisponível");
+    return;
+  }
+  const entry = join(dir, "index.html");
+  await writeFile(entry, `<!doctype html><style>html,body{margin:0}
+    video{position:absolute;inset:0;width:100vw;height:100vh;object-fit:fill;object-position:50% 50%}</style>
+    <main data-composition-id="nvdec" data-width="256" data-height="256" data-fps="12" data-duration="0.25">
+    <video src="input.mp4" data-duration="0.25" data-has-audio="false"></video></main>`);
+  const progress: string[] = [];
+  const result = await renderComposition({
+    entry, outPath: join(dir, "output.mp4"), ...pair, layered: true, gpu: "hardware", workers: 1, preset: "draft",
+    onProgress: (stage, _percent, message) => { if (stage === "encode" && message !== undefined) progress.push(message); },
+  });
+  assert.equal(result.frames, 3);
+  assert.ok(progress.includes("NVDEC em 1 fonte(s)"));
+  assert.equal(result.warnings.some((warning) => warning.includes("NVDEC")), false);
+});

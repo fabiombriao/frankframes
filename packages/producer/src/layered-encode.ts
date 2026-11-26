@@ -1,7 +1,8 @@
 // FrankFrames — proprietário. Ver LICENSE na raiz.
 import { execFile } from "node:child_process";
 import { open, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { basename, join } from "node:path";
+import { promisify } from "node:util";
 import { buildMuxArgs, buildVideoArgs } from "@frankframes/encode";
 import type { Preset, VideoCodec } from "@frankframes/encode";
 import type { LayeredMediaManifest, Viewport } from "@frankframes/engine";
@@ -9,6 +10,11 @@ import type { Fps } from "@frankframes/contract";
 import { timeOfFrame } from "@frankframes/contract";
 import { LayeredError, layerName } from "./layered-capture.ts";
 import type { GlassRegion, LayeredCapture, ProgressFrame, VideoFrame } from "./layered-capture.ts";
+
+const run = promisify(execFile);
+const CUDA_DEVICE = "ffdecode";
+const CUDA_DEVICE_ARGS = ["-init_hw_device", `cuda=${CUDA_DEVICE}:0`];
+const NVDEC_ARGS = ["-hwaccel", "cuda", "-hwaccel_device", CUDA_DEVICE, "-hwaccel_output_format", "nv12"];
 
 export function cropForVideo(video: VideoFrame, source: Viewport, viewport: Viewport): [number, number, number, number] {
   // O trace PaintImage do Chrome pinado mostrou layout em passos de 1/64 px.
@@ -156,10 +162,33 @@ interface LayeredEncodeOptions {
   preset: Preset;
   av1Nvenc?: boolean;
   signal?: AbortSignal;
+  warnings: string[];
+  onNvdec?: (sources: number) => void;
 }
 
 export async function encodeLayers(ffmpeg: string, options: LayeredEncodeOptions): Promise<void> {
-  const args = await buildLayeredArgs(options);
+  const nvdec = new Set<string>();
+  if (options.av1Nvenc === true) {
+    for (const input of new Set(options.sources.map((source) => source.input))) {
+      options.signal?.throwIfAborted();
+      try {
+        const { stderr } = await run(ffmpeg, [
+          "-hide_banner", "-loglevel", "debug", ...CUDA_DEVICE_ARGS, ...NVDEC_ARGS,
+          "-i", input, "-map", "0:v:0", "-an", "-frames:v", "1", "-f", "null", "-",
+        ], {
+          timeout: 15_000, maxBuffer: 2 << 20, windowsHide: true,
+          ...(options.signal === undefined ? {} : { signal: options.signal }),
+        });
+        if (stderr.includes("Format cuda chosen by get_format()")) nvdec.add(input);
+        else options.warnings.push(`NVDEC não confirmado para ${basename(input)}: usando decodificação por CPU`);
+      } catch {
+        options.signal?.throwIfAborted();
+        options.warnings.push(`NVDEC indisponível para ${basename(input)}: usando decodificação por CPU`);
+      }
+    }
+  }
+  if (nvdec.size > 0) options.onNvdec?.(nvdec.size);
+  const args = await buildLayeredArgs(options, nvdec);
   // Em caso de abort, o callback do execFile pode chegar antes da saída do processo.
   // Espere o close antes de liberar o diretório que o FFmpeg está lendo.
   const stdout = await new Promise<string>((resolve, reject) => {
@@ -185,7 +214,7 @@ export async function encodeLayers(ffmpeg: string, options: LayeredEncodeOptions
 }
 
 /** O tempo de cada trecho é o dos frames visíveis, medido no mesmo seek usado para o HTML. */
-async function buildLayeredArgs(options: LayeredEncodeOptions): Promise<string[]> {
+async function buildLayeredArgs(options: LayeredEncodeOptions, nvdec: ReadonlySet<string>): Promise<string[]> {
   const { frames, hashes } = options.capture;
   const { sources, viewport, fps, directory } = options;
   const rate = `${fps.num}/${fps.den}`;
@@ -225,6 +254,7 @@ async function buildLayeredArgs(options: LayeredEncodeOptions): Promise<string[]
     const begin = requested[0]!.raw;
     const sourceEnd = seekFrame + requested.at(-1)!.raw + 1;
     // A extração de referência aplica fps antes de -ss. O trim preserva a fase dessa grade.
+    if (nvdec.has(source.input)) inputs.push(...NVDEC_ARGS);
     inputs.push("-autorotate", "-threads", "2", "-i", source.input);
     const label = `v${index}`;
     const count = end - first;
@@ -318,6 +348,7 @@ async function buildLayeredArgs(options: LayeredEncodeOptions): Promise<string[]
     : buildVideoArgs(options.codec, options.preset);
   return [
     "-hide_banner", "-loglevel", "error", "-xerror", "-filter_complex_threads", "4", "-nostats", "-progress", "pipe:1",
+    ...(nvdec.size > 0 ? CUDA_DEVICE_ARGS : []),
     ...inputs, "-/filter_complex", "layers.filter", "-map", "[out]",
     "-frames:v", String(frames.length), ...videoArgs,
     "-r", rate, "-video_track_timescale", "90000", ...buildMuxArgs(options.codec), "-y", options.outPath,

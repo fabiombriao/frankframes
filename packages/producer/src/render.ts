@@ -577,7 +577,8 @@ async function renderPipeline(
         }
         await encodeLayers(ffmpeg, {
           capture: layerCapture, sources: layered, viewport, fps, directory: layersDir,
-          outPath: videoPath, codec, preset, av1Nvenc, ...signalOption,
+          outPath: videoPath, codec, preset, av1Nvenc, warnings, ...signalOption,
+          onNvdec: (count) => progress("encode", 80, `NVDEC em ${count} fonte(s)`),
         });
       }
     } catch (error) {

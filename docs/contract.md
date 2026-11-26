@@ -751,6 +751,9 @@ sem passar pelo cache de JPEGs.
 - `--gpu auto` pode usar o Chrome em hardware, pois a captura HTML não depende das texturas do vídeo.
   Para AV1 em `auto` ou `hardware`, o FFmpeg usa NVENC se a máquina aceitar a sonda de codificação.
   Se a sonda falhar, usa `libsvtav1` e emite um aviso.
+  Com NVENC ativo, o FFmpeg também sonda cada fonte de vídeo para decodificação NVDEC em NV12 (EDT-103).
+  As fontes aprovadas usam o mesmo dispositivo CUDA. Se uma fonte não passar, a decodificação dela usa
+  a CPU e o render emite um aviso. O compositor desta etapa ainda recebe os frames em memória do host.
   A saída composta tem garantia visual. `hashes` corresponde aos PNGs esparsos do HTML.
   Com `--keep`, esses PNGs e os dados do compositor ficam em `layers/` no diretório de trabalho.
 - Sobreposição ou falha de cobertura dos vídeos, estilos de vídeo incompatíveis ou uma forma de vidro que o

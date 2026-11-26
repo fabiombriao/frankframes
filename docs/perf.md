@@ -402,3 +402,22 @@ com e sem `--layered`. A rodada por camadas manteve a pasta de trabalho (`--keep
 No render por camadas, a captura e o gradiente levaram 81,7 s, o áudio 7,6 s e a composição com encode 75,1 s.
 O tamanho caiu 5,9%. A comparação usou `psnr` do FFmpeg sobre os 1357 frames decodificados em
 `yuv420p` e teve mínimo de 37,95 dB por frame.
+
+## A001 — decodificação NVDEC (EDT-103, etapa 1)
+
+As duas rodadas reutilizaram as mesmas camadas, máscaras e grafo do EDT-102 e codificaram com AV1 NVENC
+(`p5`, `cq 38`). A diferença entre elas foi a decodificação das três janelas da mesma fonte H.264 Main.
+O tempo abaixo cobre a composição e o encode do vídeo, usando os arquivos intermediários já gravados.
+
+| Decodificação | Tempo | Tamanho do vídeo sem áudio | RAM livre no início |
+|---|---:|---:|---:|
+| CPU | 77,6 s | 8.696.811 B | 2,34 GiB |
+| NVDEC | 62,3 s | 8.655.135 B | 2,96 GiB |
+
+O codec de origem selecionou CUDA. A saída NVDEC teve 45,89 dB contra a saída decodificada em CPU
+e 40,62 dB contra o render integral corrigido. Cada valor de tempo vem de uma execução.
+
+As sondas para a etapa de composição em GPU passaram com 12 frames em CUDA → `scale_cuda` → NVENC
+e D3D11 → NVENC. O FFmpeg pinado devolveu `Function not implemented` no mapeamento direto
+CUDA → Vulkan e `80070057` na criação da textura de saída do `scale_d3d11` em NV12.
+As sondas usaram o vídeo sem autorrotação e mediram a passagem de superfícies entre estágios.

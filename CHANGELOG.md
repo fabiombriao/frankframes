@@ -8,6 +8,8 @@ FrankFrames — proprietário (ver `LICENSE`). Versões seguem `MAJOR.MINOR.PATC
 
 - `render --layered` usa o FFmpeg para cortes, câmera subpixel e vidro sobre o vídeo de fundo, com as
   sobreposições do Chrome capturadas em uma camada transparente (EDT-102).
+- Com AV1 NVENC ativo, `render --layered` usa NVDEC nas fontes de vídeo que passam pela sonda de CUDA
+  (primeira etapa do EDT-103).
 - A `<img>` que substitui `<video>` no render agora herda os valores computados das propriedades visuais do vídeo
   (`filter`, `opacity`, `mix-blend-mode`, `clip-path`, `mask-*`, `border-radius`, `border`, `padding`,
   `box-shadow`, `outline`, `background-*`, `overflow`, `image-rendering`, `z-index` e `transform`),
