@@ -7,9 +7,11 @@
  * assentaram. Cada troca de frame espera `img.decode()`, então o screenshot
  * nunca pega um frame meio decodificado.
  *
- * A <img> herda `object-fit`/`object-position` computados do vídeo e leva o motion dele
- * (`data-ff-motion`, `data-ff-comp-start`): enter/exit/emphasis e a câmera animam a <img>.
- * Limite: a <img> é `position:fixed`, então motion num ANCESTRAL do vídeo não a move.
+ * A <img> herda os valores computados das propriedades visuais do vídeo (enquadramento,
+ * filter, opacity, borda, clip-path, máscara, mix-blend-mode, z-index, transform…)
+ * e leva o motion dele (`data-ff-motion`, `data-ff-comp-start`): enter/exit/emphasis e
+ * a câmera animam a <img>. Limite: a cópia dos estilos computados acontece uma vez, no
+ * primeiro seek, e a <img> é `position:fixed`, então motion num ANCESTRAL do vídeo não a move.
  */
 export const MEDIA_SHIM_SOURCE = `(() => {
   const manifest = window.__ffMedia;
@@ -26,14 +28,107 @@ export const MEDIA_SHIM_SOURCE = `(() => {
   const decoding = new Set();
   window.__ff.decoding = decoding;
 
+  const VISUAL_PROPS = [
+    "object-fit",
+    "object-position",
+    "filter",
+    "backdrop-filter",
+    "opacity",
+    "mix-blend-mode",
+    "isolation",
+    "clip-path",
+    "mask-image",
+    "mask-size",
+    "mask-position",
+    "mask-repeat",
+    "mask-origin",
+    "mask-clip",
+    "mask-mode",
+    "mask-composite",
+    "border-top-left-radius",
+    "border-top-right-radius",
+    "border-bottom-right-radius",
+    "border-bottom-left-radius",
+    "border-top-width",
+    "border-top-style",
+    "border-top-color",
+    "border-right-width",
+    "border-right-style",
+    "border-right-color",
+    "border-bottom-width",
+    "border-bottom-style",
+    "border-bottom-color",
+    "border-left-width",
+    "border-left-style",
+    "border-left-color",
+    "padding-top",
+    "padding-right",
+    "padding-bottom",
+    "padding-left",
+    "box-shadow",
+    "outline-width",
+    "outline-style",
+    "outline-color",
+    "outline-offset",
+    "background-color",
+    "background-image",
+    "background-size",
+    "background-position",
+    "background-repeat",
+    "background-origin",
+    "background-clip",
+    "overflow-x",
+    "overflow-y",
+    "image-rendering",
+    "transform",
+    "transform-origin",
+    "translate",
+    "rotate",
+    "scale",
+  ];
+  const TRANSFORM_PROPS = ["transform", "translate", "rotate", "scale"];
+
   const swap = () => {
     for (const clip of manifest.clips) {
       const video = [...document.querySelectorAll("video")].find(
         (element) => element.getAttribute("data-clip-id") === clip.clipId,
       );
       if (!video) continue;
-      const box = video.getBoundingClientRect();
       const style = getComputedStyle(video);
+      const computed = [];
+      let hasTransform = false;
+      for (const prop of VISUAL_PROPS) {
+        const value = style.getPropertyValue(prop);
+        if (value !== "") {
+          computed.push([prop, value]);
+          if (TRANSFORM_PROPS.includes(prop) && value !== "none") hasTransform = true;
+        }
+      }
+      const displayValue = style.display === "none" ? "none" : "block";
+      const positionValue = style.position;
+      const zIndexValue = style.zIndex;
+      const visibilityValue = style.visibility;
+      const parentDisplay = video.parentElement ? getComputedStyle(video.parentElement).display : "";
+      const positioned = positionValue !== "static" || /flex|grid/.test(parentDisplay);
+
+      // Com transform no próprio <video>, getBoundingClientRect() devolveria o retângulo já girado/escalado;
+      // medir sem transform garante a caixa base antes de copiar transform/translate/rotate/scale para a <img>.
+      let box;
+      if (hasTransform) {
+        const saved = [];
+        for (const prop of TRANSFORM_PROPS) {
+          saved.push([prop, video.style.getPropertyValue(prop), video.style.getPropertyPriority(prop)]);
+          video.style.setProperty(prop, "none", "important");
+        }
+        box = video.getBoundingClientRect();
+        for (const item of saved) {
+          if (item[1] === "") video.style.removeProperty(item[0]);
+          else video.style.setProperty(item[0], item[1], item[2]);
+        }
+      } else {
+        box = video.getBoundingClientRect();
+      }
+
       const img = document.createElement("img");
       img.src = "/__ff_media/" + clip.dir + "/000000.jpg";
       img.setAttribute("data-ff-media", clip.clipId);
@@ -44,7 +139,12 @@ export const MEDIA_SHIM_SOURCE = `(() => {
       }
       img.style.cssText =
         "position:fixed;left:" + box.left + "px;top:" + box.top + "px;width:" + box.width + "px;height:" +
-        box.height + "px;object-fit:" + style.objectFit + ";object-position:" + style.objectPosition + ";display:block;";
+        box.height + "px;box-sizing:border-box;margin:0;display:" + displayValue + ";animation:none;transition:none;";
+      for (const item of computed) img.style.setProperty(item[0], item[1]);
+      if (positioned && zIndexValue !== "" && zIndexValue !== "auto") img.style.setProperty("z-index", zIndexValue);
+      if (!video.hasAttribute("data-ff-start") && visibilityValue !== "" && visibilityValue !== "visible") {
+        img.style.setProperty("visibility", visibilityValue);
+      }
       video.parentNode.insertBefore(img, video.nextSibling);
       video.style.display = "none";
       if (img.hasAttribute("data-ff-motion")) {

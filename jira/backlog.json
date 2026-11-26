@@ -651,6 +651,22 @@
             "Teste que falharia sem a mudança (nested-start.test.ts confere a dica); gate verde."
           ],
           "jiraKey": "EDT-96"
+        },
+        {
+          "summary": "Filtro CSS e propriedades visuais do <video> somem na <img> substituta no render",
+          "points": 2,
+          "labels": [
+            "bug",
+            "engine",
+            "media"
+          ],
+          "acceptance": [
+            "Achado no A001 em 2026-11-26: .fill { filter: contrast(1.08) saturate(0.88) brightness(0.92) } no <video> sumia no render (<img data-ff-media> ficava com filter: none e class vazia).",
+            "Spec em docs/contract.md (§6, \"A <img> substituta\") define a cópia dos valores computados das propriedades visuais do <video> para a <img> substituta e registra explicitamente os limites.",
+            "media-shim.ts copia os valores computados das propriedades visuais do <video> (filter, opacity, mix-blend-mode, clip-path, border-radius, z-index, transform etc.), cobrindo regras por classe, por tipo (video { ... }) e inline, mantendo compatibilidade com data-ff-motion.",
+            "Testes em Chrome que falhariam sem a correção (regra por classe e regra por tipo video { ... }, conferindo o estilo computado da <img> e o pixel de um frame renderizado); A001 medido antes e depois; gate verde."
+          ],
+          "jiraKey": "EDT-100"
         }
       ],
       "jiraKey": "EDT-26"
@@ -1084,6 +1100,45 @@
         }
       ],
       "jiraKey": "EDT-60"
+    },
+    {
+      "name": "Render por camadas e GPU",
+      "summary": "Composições com vídeo: render por camadas (Chrome + FFmpeg) e caminho na placa de vídeo",
+      "priority": "High",
+      "stories": [
+        {
+          "summary": "Render por camadas para composições com vídeo (camada transparente + compositor FFmpeg)",
+          "points": 8,
+          "labels": [
+            "render",
+            "perf",
+            "gpu"
+          ],
+          "acceptance": [
+            "Protótipo medido no A001 (45,23 s, 1080x1920) caiu de 131,6-159,5 s para ~60 s (550 fotos únicas de 1357 frames).",
+            "Modo disponível atrás de opção explícita, ativo só para composições com vídeo; composições sem vídeo seguem no caminho atual.",
+            "Lê cortes (start, duration, offset), câmera (data-camera com zoom sub-pixel) e barra de progresso/overlays do manifesto e da página; inclui desfoque de vidro (backdrop-filter) por máscara de região.",
+            "No A001: PSNR >= 40 dB contra o render atual (com o filtro CSS corrigido) e tempo medido em docs/perf.md antes e depois; spec em docs/contract.md; testes que falhariam sem a mudança; gate verde."
+          ],
+          "jiraKey": "EDT-102"
+        },
+        {
+          "summary": "Caminho todo na placa de vídeo: decodificação NVDEC, compositor GPU e Chromium sem cópia (CEF)",
+          "points": 13,
+          "labels": [
+            "render",
+            "perf",
+            "gpu"
+          ],
+          "acceptance": [
+            "Depende do render por camadas: evita cópia de frames pela RAM entre decodificação, composição e encode NVENC.",
+            "Etapas medidas antes da próxima: (1) decodificação NVDEC (-hwaccel cuda) alimentando o compositor sem JPEG; (2) compositor na placa (câmera sub-pixel, cor, vidro, barra e camadas em filtros GPU/shaders); (3) Chromium embutido via CEF (BSD) com textura D3D11 compartilhada e BeginFrame externo, pinado por SHA-256 (win64/linux64) e documentado em THIRD-PARTY-NOTICES.md e PROVENANCE.md.",
+            "Sem GPU NVIDIA ou sem suporte, o pipeline atual segue como reserva; modo software continua determinístico por hash; nada GPL."
+          ],
+          "jiraKey": "EDT-103"
+        }
+      ],
+      "jiraKey": "EDT-101"
     }
   ]
 }

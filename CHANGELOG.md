@@ -4,6 +4,13 @@ FrankFrames — proprietário (ver `LICENSE`). Versões seguem `MAJOR.MINOR.PATC
 
 ## Próxima versão
 
+### Render e mídia
+
+- A `<img>` que substitui `<video>` no render agora herda os valores computados das propriedades visuais do vídeo
+  (`filter`, `opacity`, `mix-blend-mode`, `clip-path`, `mask-*`, `border-radius`, `border`, `padding`,
+  `box-shadow`, `outline`, `background-*`, `overflow`, `image-rendering`, `z-index` e `transform`),
+  preservando regras por classe, inline e por tipo (`video { … }`) — inclusive com `data-camera` ativo.
+
 ### Studio
 
 - O texto das legendas do `captions` se corrige no Studio, letra por letra: selecionar o clip das legendas mostra no

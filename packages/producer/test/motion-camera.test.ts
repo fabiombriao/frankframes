@@ -234,3 +234,50 @@ test("motion de entrada num <video> também chega à <img> (EDT-53)", { timeout:
     await server.close();
   }
 });
+
+test("EDT-100: filtro CSS por classe e por tipo convive com data-camera no <video>", { timeout: 600_000 }, async (t) => {
+  const pair = await environmentOrSkip(t);
+  if (pair === undefined) return;
+
+  const dir = await tempDir(t, "ff-camera-filter-");
+  await run(pair.ffmpeg, [
+    "-hide_banner", "-loglevel", "error",
+    "-f", "lavfi", "-i", "testsrc2=size=320x180:rate=30:duration=2",
+    "-c:v", "mpeg4", "-q:v", "3", "-pix_fmt", "yuv420p", "-y", join(dir, "clip.mp4"),
+  ]);
+  const entry = join(dir, "index.html");
+  await writeFile(
+    entry,
+    `<!doctype html><html><head><meta charset="utf-8"><style>
+      html,body{margin:0;background:#000}
+      video{opacity:0.9}
+      .fill{position:fixed;left:0;top:0;width:640px;height:360px;object-fit:cover;filter:contrast(1.08) saturate(0.88) brightness(0.92)}
+    </style></head><body>
+    <div data-composition-id="main" data-root="true" data-width="640" data-height="360" data-fps="30" data-duration="2">
+      <video id="v" class="fill" data-clip-id="v" data-start="0" data-duration="2" src="clip.mp4" data-camera="aproximar"></video>
+    </div></body></html>`,
+  );
+  const prepared = await prepare({ entry, ffmpeg: pair.ffmpeg, ffprobe: pair.ffprobe });
+  const server = await startServer(prepared.entryDir, {
+    mediaRoot: prepared.mediaDir!,
+    manifest: prepared.manifest!,
+    page: { path: "index.html", html: prepared.compiledHtml },
+  });
+  const session = await openSessionFor(server, { url: `${server.url}index.html`, viewport: { width: 640, height: 360 }, gpu: "software" });
+  try {
+    await session.seekFrame(0, FPS);
+    const first = await session.evaluate<{ filter: string; opacity: string; fit: string; viewBox: string }>(`(() => {
+      const s = getComputedStyle(document.querySelector("img[data-ff-media]"));
+      return { filter: s.filter, opacity: s.opacity, fit: s.objectFit, viewBox: s.objectViewBox };
+    })()`);
+    assert.equal(first.filter, "contrast(1.08) saturate(0.88) brightness(0.92)");
+    assert.equal(first.opacity, "0.9");
+    assert.equal(first.fit, "cover");
+    await session.seekFrame(59, FPS);
+    const lastViewBox = await session.evaluate<string>(`getComputedStyle(document.querySelector("img[data-ff-media]")).objectViewBox`);
+    assert.notEqual(lastViewBox, first.viewBox, "a câmera continua animando a <img> com filtro herdado");
+  } finally {
+    await session.close();
+    await server.close();
+  }
+});

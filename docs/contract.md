@@ -103,14 +103,23 @@ O render nunca começa com duração pendente.
 O Chrome nunca decodifica `<video>`: o render troca cada um por uma `<img>` com os frames extraídos pelo
 FFmpeg (§9). A `<img>` substituta:
 
-- **herda `object-fit` e `object-position` computados do vídeo** (`fill`, `cover`, `contain`...): o vídeo
-  com `object-fit:cover` aparece com `cover` também no render. Antes da EDT-53 a substituta sempre usava
-  `object-fit:fill`; agora o enquadramento do vídeo é o que o autor escreveu;
+- **herda os valores computados das propriedades visuais do vídeo** no primeiro seek: `object-fit`,
+  `object-position`, `filter`, `backdrop-filter`, `opacity`, `mix-blend-mode`, `isolation`, `clip-path`,
+  `mask-*` (`mask-image`, `mask-size`, `mask-position`, `mask-repeat`, `mask-origin`, `mask-clip`,
+  `mask-mode`, `mask-composite`), `border-radius`, `border`, `padding` (com `box-sizing:border-box` na
+  caixa medida), `box-shadow`, `outline`, `background-*`, `overflow`, `image-rendering`, `z-index`
+  (quando posicionado ou item flex/grid) e `transform`/`transform-origin`/`translate`/`rotate`/`scale`
+  (com medição da caixa sem transform antes de aplicá-los à `<img>`). Por copiar os valores computados,
+  regras por classe, inline e por tipo (`video { … }`, `video.fill { … }`) chegam ao render sem expor a
+  `<img>` a regras soltas de `img { … }` (EDT-100);
 - leva o `data-ff-start`/`data-ff-end` (janela de visibilidade), o `data-ff-comp-start` e o
   `data-ff-motion` do vídeo: `data-enter`, `data-exit`, `data-emphasis`, `data-camera` e `data-keyframes`
   em `<video>` animam a `<img>` (§7b.12);
-- é `position:fixed` na caixa medida do vídeo. Limite: motion num **ancestral** do `<video>` não move a
-  `<img>`; ponha o motion no próprio `<video>` ou num elemento que não seja ancestral dele.
+- é `position:fixed` na caixa medida do vídeo. **Limites:** (1) motion num **ancestral** do `<video>` não
+  move a `<img>`; ponha o motion no próprio `<video>` ou num elemento que não seja ancestral dele; (2) a
+  cópia dos estilos computados ocorre uma vez, na substituição (primeiro seek): animações CSS `@keyframes` ou
+  mudanças dinâmicas de classe/estilo no `<video>` depois desse instante não acompanham a `<img>` (use os
+  atributos de motion no próprio `<video>`).
 
 **Rotação do contêiner (EDT-86).** Vídeo de celular em retrato costuma ser gravado em paisagem (ex.: 1920x1080)
 com uma Display Matrix de rotação (`-90`), e aparece em 1080x1920. A regra é uma só para todos os caminhos:
