@@ -733,6 +733,29 @@ argumentos de saída; coberto por teste com `framemd5`). O disco só guarda o v�
 - **Repetição (EDT-72).** A repetição única de falha transiente do browser reinicia o pipe do zero: FFmpeg novo,
   nenhum frame duplicado. Falha do encode nunca é repetida nem classificada por texto como falha de browser.
 
+**Render por camadas (EDT-102).** `frankframes render entrada.html --layered` (`layered: true` na API) usa
+o compositor do FFmpeg quando há vídeo. Para uma composição sem vídeo, a opção mantém o pipeline integral.
+O modo aceita um vídeo de fundo opaco preenchendo o viewport em cada frame, diretamente na raiz da composição,
+com `z-index` automático ou zero. Os cortes, a orientação, o offset e a velocidade vêm da mídia resolvida
+no manifesto. O Chrome mantém a caixa e o motion do vídeo numa imagem transparente, e o FFmpeg lê a fonte
+sem passar pelo cache de JPEGs.
+
+- A câmera amostra zoom e foco após o seek do Chrome. O FFmpeg (`libplacebo` com Vulkan) aplica o recorte com
+  coordenadas fracionárias, respeitando `object-fit: cover | fill`, `object-position` em porcentagens e
+  o encaixe do retângulo de destino à grade de pintura do Chrome.
+  Os filtros de vídeo `contrast()`, `saturate()` e `brightness()` são aplicados na ordem declarada.
+- O Chrome captura os elementos acima do vídeo. Uma camada estável pode reaproveitar o PNG anterior.
+  Uma barra CSS simples com animação de largura, cor sólida e caixa fixa pode ser composta à parte.
+  A camada de vidro usa `backdrop-filter: blur(px)` com raio de borda uniforme e máscara da região visível.
+  Um gradiente estático de tela inteira atrás das sobreposições é aplicado antes do vidro.
+- `--gpu auto` pode usar o Chrome em hardware, pois a captura HTML não depende das texturas do vídeo.
+  Para AV1 em `auto` ou `hardware`, o FFmpeg usa NVENC se a máquina aceitar a sonda de codificação.
+  Se a sonda falhar, usa `libsvtav1` e emite um aviso.
+  A saída composta tem garantia visual. `hashes` corresponde aos PNGs esparsos do HTML.
+  Com `--keep`, esses PNGs e os dados do compositor ficam em `layers/` no diretório de trabalho.
+- Sobreposição ou falha de cobertura dos vídeos, estilos de vídeo incompatíveis ou uma forma de vidro que o
+  compositor não consegue representar geram `E_LAYERED_UNSUPPORTED`. Use o render integral para essas cenas.
+
 **Workers de captura pela memória livre (EDT-91).** Sem `--workers` (`workers`), o render usa
 `max(1, min(8, porCpu, porMemória))`, com `porCpu = max(1, floor(CPUs / 2))` e
 `porMemória = floor((memória livre − 1 GiB) / 768 MiB)`: 768 MiB por browser e 1 GiB de fora para o FFmpeg e o encode.

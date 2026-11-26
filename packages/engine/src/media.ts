@@ -20,7 +20,7 @@ function runUntilExit(file: string, args: string[], options: { maxBuffer: number
   });
 }
 
-export interface MediaManifestEntry {
+export interface VideoTiming {
   /** `data-clip-id` do `<video>` que será substituído. */
   clipId: string;
   /** Início do clip na composição, em segundos. */
@@ -30,16 +30,26 @@ export interface MediaManifestEntry {
   /** `data-offset`: instante dentro da fonte. */
   offset: number;
   playbackRate: number;
+  /** Orientação de exibição da fonte (EDT-86): a que o probe mediu e os frames extraídos já têm. */
+  orientation?: VideoOrientation;
+}
+
+export interface MediaManifestEntry extends VideoTiming {
   /** Subpasta servida em `/__ff_media/<dir>/`. */
   dir: string;
   frameCount: number;
-  /** Orientação de exibição da fonte (EDT-86): a que o probe mediu e os frames extraídos já têm. */
-  orientation?: VideoOrientation;
 }
 
 export interface MediaManifest {
   fps: { num: number; den: number };
   clips: MediaManifestEntry[];
+}
+
+/** Geometria e tempo do vídeo no Chrome, com os pixels compostos fora dele. */
+export interface LayeredMediaManifest {
+  layered: true;
+  fps: MediaManifest["fps"];
+  clips: Array<VideoTiming & { orientation: VideoOrientation }>;
 }
 
 export interface ExtractOptions {

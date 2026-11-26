@@ -6,7 +6,7 @@ import { assetPath } from "./home.ts";
 import type { AddressInfo } from "node:net";
 import { injectEngine } from "./inject.ts";
 import type { PreviewAudioConfig } from "./inject.ts";
-import type { MediaManifest } from "./media.ts";
+import type { Injection } from "./inject.ts";
 
 const DEFAULT_FONTS = assetPath("fonts");
 
@@ -57,7 +57,7 @@ export interface StaticServer {
 export interface ServerOptions {
   /** Diretório servido em `/__ff_media/` com os frames já extraídos. */
   mediaRoot?: string;
-  manifest?: MediaManifest;
+  manifest?: Injection["manifest"];
   disableMediaShim?: boolean;
   /** Diretório das fontes embarcadas servido em `/__ff_fonts/`. `null` desliga. */
   fontsRoot?: string | null;

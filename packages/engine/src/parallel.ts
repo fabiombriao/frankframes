@@ -17,6 +17,9 @@ export interface ParallelCaptureOptions {
   workers?: number;
   /** Frames por lote da fila (padrão `DEFAULT_BATCH_SIZE`). */
   batchSize?: number;
+  transparent?: boolean;
+  /** Consulta a página depois do seek. Em captura esparsa, false repete a última camada. */
+  shouldCapture?: (frame: number, session: Session) => Promise<boolean>;
   /** Chamado no worker logo após cada captura, antes do próximo frame. Pode esperar (backpressure). */
   onFrame?: (frame: number, png: Buffer) => void | Promise<void>;
   /** Limites de espera de cada sessão (veja `SessionTimeouts`). */
@@ -214,6 +217,7 @@ export async function captureFramesInParallel(options: ParallelCaptureOptions): 
       url: options.url,
       viewport: options.viewport,
       gpu: options.gpu,
+      ...(options.transparent !== undefined ? { transparent: options.transparent } : {}),
       ...(options.timeouts !== undefined ? { timeouts: options.timeouts } : {}),
       ...(options.serverFailures !== undefined ? { serverFailures: options.serverFailures } : {}),
     });
@@ -226,6 +230,7 @@ export async function captureFramesInParallel(options: ParallelCaptureOptions): 
       for (const frame of batch) {
         if (failed) return;
         await session.seekFrame(frame, options.fps);
+        if (options.shouldCapture !== undefined && !(await options.shouldCapture(frame, session))) continue;
         const { png, sha256 } = await session.capture();
         hashes.set(frame, sha256);
         await options.onFrame?.(frame, png);

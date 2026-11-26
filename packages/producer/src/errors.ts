@@ -2,7 +2,7 @@
 import type { Diagnostic } from "@frankframes/contract";
 
 /** Códigos que podem sair em `render --json`. Allowlist: nunca derivado da mensagem. */
-export const RENDER_ERROR_CODES = ["E_CONTRACT", "E_MEDIA_PROBE", "E_MEDIA_ROTATION", "E_DURATION", "E_MOTION_RUNTIME", "E_FONT_LOAD", "E_BROWSER_CLOSED", "E_BROWSER_TIMEOUT", "E_CANCELED", "E_VAR_MISSING", "E_VAR_UNKNOWN", "E_VAR_INVALID", "E_BATCH_INVALID", "E_ENCODE", "E_AUDIO_TRUE_PEAK", "E_INTERNAL"] as const;
+export const RENDER_ERROR_CODES = ["E_CONTRACT", "E_MEDIA_PROBE", "E_MEDIA_ROTATION", "E_DURATION", "E_MOTION_RUNTIME", "E_FONT_LOAD", "E_BROWSER_CLOSED", "E_BROWSER_TIMEOUT", "E_CANCELED", "E_VAR_MISSING", "E_VAR_UNKNOWN", "E_VAR_INVALID", "E_BATCH_INVALID", "E_LAYERED_UNSUPPORTED", "E_ENCODE", "E_AUDIO_TRUE_PEAK", "E_INTERNAL"] as const;
 export type RenderCode = (typeof RENDER_ERROR_CODES)[number];
 
 export interface ErrorPayload {

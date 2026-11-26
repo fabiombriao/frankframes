@@ -73,6 +73,7 @@ Gerado por `node scripts/generate-reference.ts` a partir do código. Não edite 
 | `E_KEYFRAME_NOT_FOUND` | erro | edição |
 | `E_KEYFRAME_OUT_OF_RANGE` | erro | edição |
 | `E_KEYFRAME_PROP` | erro | edição |
+| `E_LAYERED_UNSUPPORTED` | erro | render |
 | `E_MEDIA_EMPTY` | erro | studio |
 | `E_MEDIA_PROBE` | erro | render |
 | `E_MEDIA_ROTATION` | erro | render |

@@ -31,7 +31,7 @@ export type { ServerFailure, ServerOptions, StaticServer } from "./server.ts";
 export { MediaRotationError, extractFrames, jpegSize, parseDisplayMatrix, parseVideoProbe, probeDuration, probeVideo } from "./media.ts";
 export { DEFAULT_FRAME_CACHE_BYTES, evictCache, extractFramesCached, fileDigest, frameCacheKey } from "./cache.ts";
 export type { CachedExtraction, FrameCacheOptions } from "./cache.ts";
-export type { ExtractOptions, MediaManifest, MediaManifestEntry, MediaRotationCode, VideoOrientation, VideoProbe } from "./media.ts";
+export type { ExtractOptions, LayeredMediaManifest, MediaManifest, MediaManifestEntry, MediaRotationCode, VideoOrientation, VideoProbe } from "./media.ts";
 export { MEDIA_SHIM_SOURCE } from "./media-shim.ts";
 export { PREVIEW_UI_SOURCE } from "./preview-ui.ts";
 export { PREVIEW_AUDIO_SOURCE } from "./preview-audio.ts";

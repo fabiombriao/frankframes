@@ -6,10 +6,10 @@ import { PREVIEW_AUDIO_SOURCE } from "./preview-audio.ts";
 import { PREVIEW_RELOAD_SOURCE, PREVIEW_UI_SOURCE } from "./preview-ui.ts";
 import type { Fps } from "@frankframes/contract";
 import { fontFaceCss } from "./fonts.ts";
-import type { MediaManifest } from "./media.ts";
+import type { LayeredMediaManifest, MediaManifest } from "./media.ts";
 
 export interface Injection {
-  manifest?: MediaManifest;
+  manifest?: MediaManifest | LayeredMediaManifest;
   /** Desliga a substituição de vídeo (testes do relógio isolado). */
   disableMediaShim?: boolean;
   /** Base pública das fontes embarcadas; `null` desliga a injeção. */

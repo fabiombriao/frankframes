@@ -71,6 +71,8 @@ export interface SessionOptions {
   viewport: Viewport;
   gpu: GpuMode;
   executablePath?: string;
+  /** Fundo transparente nas capturas da camada HTML. */
+  transparent?: boolean;
   /** Leituras consecutivas idênticas exigidas por frame (padrão 1; verificação usa 3). */
   captureShots?: number;
   timeouts?: SessionTimeouts;
@@ -373,6 +375,9 @@ async function startSession(
     }
 
     const session = await page.createCDPSession();
+    if (options.transparent) {
+      await session.send("Emulation.setDefaultBackgroundColorOverride", { color: { r: 0, g: 0, b: 0, a: 0 } });
+    }
     // Etapas do seek anunciadas pela página. `Runtime.enable` faz o binding valer também depois de um reload.
     session.on("Runtime.bindingCalled", (event) => {
       if (event.name === STAGE_BINDING) trail.enter(event.payload);

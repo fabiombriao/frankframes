@@ -374,3 +374,31 @@ mudou código nem padrão). `captureFps` do `h23` inclui o encode andando junto 
 
 Por hipótese: H4 −33% (hardware) / −37% (software) em `s/min` `draft`, H1 só em software (−10%), H2+H3 −20% (hardware) e −8 a −11%
 (software), H5 sem mudança (padrão confirmado). Disco: 382/453 MB de PNG → < 1 MB. Falta H6 (fora da 1.0).
+
+## A001 — filtro CSS do vídeo (EDT-100)
+
+Em 2026-11-26, o A001 foi renderizado antes e depois da correção com `--gpu hardware --workers 1 --preset standard`.
+Os dois renders usaram a mesma fonte, cache de quadros já preenchido e o FFmpeg vendorizado.
+
+| Render integral | Frames | Duração do vídeo | Tempo de parede | Tamanho |
+|---|---:|---:|---:|---:|
+| Antes, `4d3e455` | 1357 | 45,23 s | 306,0 s | 10.601.920 B |
+| Com correção, `3cd0a6b` | 1357 | 45,23 s | 288,0 s | 10.428.578 B |
+
+Cada valor vem de uma execução. A RAM livre no início era 2,53 GiB antes e 5,04 GiB depois e variou durante
+a captura. Os tempos registram as condições dessas duas rodadas.
+
+## A001 — render por camadas (EDT-102)
+
+O mesmo HTML de 1080×1920 a 30 fps foi renderizado com um worker, `--gpu hardware --preset standard`,
+com e sem `--layered`. A rodada por camadas manteve a pasta de trabalho (`--keep`) e começou com
+3,85 GiB de RAM livre. A referência integral usou SVT-AV1 e a saída por camadas usou AV1 NVENC.
+
+| Caminho | Fotos do Chrome | Frames | Tempo de parede | Tamanho | PSNR contra o integral |
+|---|---:|---:|---:|---:|---:|
+| Integral, com EDT-100 | 1357 | 1357 | 288,0 s | 10.428.578 B | referência |
+| Por camadas | 550 | 1357 | 164,5 s | 9.815.720 B | **40,75 dB** |
+
+No render por camadas, a captura e o gradiente levaram 81,7 s, o áudio 7,6 s e a composição com encode 75,1 s.
+O tamanho caiu 5,9%. A comparação usou `psnr` do FFmpeg sobre os 1357 frames decodificados em
+`yuv420p` e teve mínimo de 37,95 dB por frame.

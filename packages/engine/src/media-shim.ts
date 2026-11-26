@@ -130,7 +130,14 @@ export const MEDIA_SHIM_SOURCE = `(() => {
       }
 
       const img = document.createElement("img");
-      img.src = "/__ff_media/" + clip.dir + "/000000.jpg";
+      if (manifest.layered) {
+        const size = clip.orientation;
+        const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="' + size.displayWidth +
+          '" height="' + size.displayHeight + '"/>';
+        img.src = "data:image/svg+xml," + encodeURIComponent(svg);
+      } else {
+        img.src = "/__ff_media/" + clip.dir + "/000000.jpg";
+      }
       img.setAttribute("data-ff-media", clip.clipId);
       // A <img> substituta precisa participar da mesma janela de visibilidade.
       for (const attribute of ["data-ff-start", "data-ff-end", "data-ff-comp-start", "data-ff-motion"]) {
@@ -165,7 +172,9 @@ export const MEDIA_SHIM_SOURCE = `(() => {
       window.__ff.stage("syncAnimations");
       window.__ff.syncAnimations();
       window.__ff.syncVisibility();
+      if (manifest.layered) await Promise.all(entries.map(({ img }) => img.decode()));
     }
+    if (manifest.layered) return;
     const seconds = ms / 1000;
     const pending = [];
     const requested = [];

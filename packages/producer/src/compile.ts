@@ -289,6 +289,21 @@ export function annotateCompiled(html: string, composition: Composition): Compil
   return { html: serialize(document as never), annotations, motion };
 }
 
+/** A mídia mantém a caixa CSS, mas o Chrome não pede a fonte original para capturar as camadas. */
+export function layeredPage(html: string): { html: string; scripted: boolean } {
+  const document = parse(html) as unknown as P5Node;
+  let scripted = false;
+  for (const node of walk(document.childNodes)) {
+    if (node.tagName === "video") {
+      removeAttr(node, "src");
+      removeAttr(node, "poster");
+      for (const source of node.childNodes ?? []) if (source.tagName === "source") removeAttr(source, "src");
+    }
+    if (node.tagName === "script" || node.attrs?.some(({ name }) => name.startsWith("on"))) scripted = true;
+  }
+  return { html: serialize(document as never), scripted };
+}
+
 /** Conveniência do producer: merge + ids + contrato + anotação numa chamada. */
 export async function compileComposition(options: {
   entryHtml: string;

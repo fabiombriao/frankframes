@@ -11,14 +11,18 @@ import type { Composition, Diagnostic, RawClip, ResolvedClip } from "@frankframe
 import { buildFramePipeArgs, buildMuxArgs, containerFor } from "@frankframes/encode";
 import type { Preset, VideoCodec } from "@frankframes/encode";
 import { BrowserError, MediaRotationError, assetPath, captureFramesInParallel, cleanupWarning, extractFramesCached, planWorkers, probeDuration, probeVideo, removeTree, reorderWindow, retryOnceIfTransient, startServer, warnCleanup } from "@frankframes/engine";
-import type { MediaManifest, VideoProbe } from "@frankframes/engine";
-import { annotateCompiled, materializeClipIds, mergeSubCompositions } from "./compile.ts";
+import type { ClassifiedFailure, LayeredMediaManifest, MediaManifest, VideoProbe } from "@frankframes/engine";
+import { annotateCompiled, layeredPage, materializeClipIds, mergeSubCompositions } from "./compile.ts";
 import { resolveFfmpeg } from "./ffmpeg.ts";
 import { AudioTruePeakError, mixAudio } from "./audio.ts";
 import { PipeEncodeError, encodeWhileCapturing } from "./pipe-encode.ts";
 import type { EncodeRun } from "./pipe-encode.ts";
 import { audioClipsFor } from "./preview-audio.ts";
 import { VariableError, applyVariables } from "./variables.ts";
+import { captureLayers, LayeredError } from "./layered-capture.ts";
+import type { LayeredCapture } from "./layered-capture.ts";
+import { encodeLayers } from "./layered-encode.ts";
+import type { LayeredSource } from "./layered-encode.ts";
 
 const run = promisify(execFile);
 
@@ -129,6 +133,8 @@ export interface PrepareOptions {
   signal?: AbortSignal;
   /** Variáveis de dados (§11): trocam `data-var` / `data-var-attr` antes do contrato. Sem isso, vale o valor autoral. */
   vars?: Record<string, string>;
+  /** Prepara fontes e tempos de vídeo para o compositor, sem extrair JPEGs. */
+  layered?: boolean;
 }
 
 export interface PreparedComposition {
@@ -139,6 +145,7 @@ export interface PreparedComposition {
   compiledHtml: string;
   mediaDir?: string;
   manifest?: MediaManifest;
+  layeredSources?: LayeredSource[];
   seconds: number;
   fps: { num: number; den: number };
   viewport: { width: number; height: number };
@@ -246,45 +253,50 @@ export async function prepare(options: PrepareOptions): Promise<PreparedComposit
   let mediaDir: string | undefined;
   let manifest: MediaManifest | undefined;
   const videos = timedClips(composition).filter((item) => item.clip.tag === "video" && item.clip.mediaSrc !== undefined);
-  if (videos.length > 0) {
+  const layeredSources: LayeredSource[] = [];
+  if (videos.length > 0 && options.layered !== true) {
     progress("extract", 20);
     mediaDir = assetPath("cache", "frames");
     manifest = { fps, clips: [] };
-    for (const { clip, start } of videos) {
-      throwIfCanceled(signal, "extract");
-      const dir = `${clip.id.replace(/[^A-Za-z0-9_-]/g, "_")}_${createHash("sha256").update(clip.id).digest("hex").slice(0, 6)}`;
-      const clipDuration = clip.authoredDuration ?? Math.max(0, seconds - start);
-      const info = videoProbes.get(clip.id);
-      if (info === undefined) throw new Error(`vídeo ${clip.id} chegou à extração sem probe`);
-      let extracted: Awaited<ReturnType<typeof extractFramesCached>>;
-      try {
-        extracted = await extractFramesCached({
-          ffmpeg,
-          input: resolve(entryDir, clip.mediaSrc!),
-          outDir: join(mediaDir, dir),
-          fps,
-          offset: clip.offset,
-          duration: clipDuration * clip.playbackRate,
-          expectDisplay: { width: info.displayWidth, height: info.displayHeight },
-          ...(signal !== undefined ? { signal } : {}),
-        });
-      } catch (error) {
-        if (error instanceof MediaRotationError) throw new RenderError(error.code, "extract", error.message);
-        throw error;
-      }
-      const { frameCount, dir: cacheDir } = extracted;
-      const cacheName = cacheDir.slice(mediaDir.length + 1);
-      manifest.clips.push({
-        clipId: clip.id,
-        start,
-        duration: clipDuration,
-        offset: clip.offset,
-        playbackRate: clip.playbackRate,
-        dir: cacheName,
-        frameCount,
-        orientation: { rotation: info.rotation, mirrored: info.mirrored, displayWidth: info.displayWidth, displayHeight: info.displayHeight },
-      });
+  }
+  for (const { clip, start } of videos) {
+    throwIfCanceled(signal, "extract");
+    const clipDuration = clip.authoredDuration ?? Math.max(0, seconds - start);
+    const info = videoProbes.get(clip.id);
+    if (info === undefined) throw new Error(`vídeo ${clip.id} chegou à preparação sem probe`);
+    const timing = {
+      clipId: clip.id,
+      start,
+      duration: clipDuration,
+      offset: clip.offset,
+      playbackRate: clip.playbackRate,
+      orientation: { rotation: info.rotation, mirrored: info.mirrored, displayWidth: info.displayWidth, displayHeight: info.displayHeight },
+    };
+    const input = resolve(entryDir, clip.mediaSrc!);
+    if (manifest === undefined || mediaDir === undefined) {
+      layeredSources.push({ timing, input });
+      continue;
     }
+    const dir = `${clip.id.replace(/[^A-Za-z0-9_-]/g, "_")}_${createHash("sha256").update(clip.id).digest("hex").slice(0, 6)}`;
+    let extracted: Awaited<ReturnType<typeof extractFramesCached>>;
+    try {
+      extracted = await extractFramesCached({
+        ffmpeg,
+        input,
+        outDir: join(mediaDir, dir),
+        fps,
+        offset: clip.offset,
+        duration: clipDuration * clip.playbackRate,
+        expectDisplay: { width: info.displayWidth, height: info.displayHeight },
+        ...(signal !== undefined ? { signal } : {}),
+      });
+    } catch (error) {
+      if (error instanceof MediaRotationError) throw new RenderError(error.code, "extract", error.message);
+      throw error;
+    }
+    const { frameCount, dir: cacheDir } = extracted;
+    const cacheName = cacheDir.slice(mediaDir.length + 1);
+    manifest.clips.push({ ...timing, dir: cacheName, frameCount });
   }
 
   return {
@@ -294,6 +306,7 @@ export async function prepare(options: PrepareOptions): Promise<PreparedComposit
     compiledHtml: compiled.html,
     ...(mediaDir !== undefined ? { mediaDir } : {}),
     ...(manifest !== undefined ? { manifest } : {}),
+    ...(layeredSources.length > 0 ? { layeredSources } : {}),
     seconds,
     fps,
     viewport,
@@ -307,6 +320,8 @@ export interface RenderOptions {
   outPath: string;
   /** `auto` (padrão) usa GPU quando existe; `software` garante pixel entre máquinas. */
   gpu?: "auto" | "software" | "hardware";
+  /** Captura o HTML sobre fundo transparente e compõe o vídeo original no FFmpeg. */
+  layered?: boolean;
   /** `false` entrega o mix sem normalizar para −14 LUFS. */
   loudness?: false;
   ffmpeg?: string;
@@ -389,6 +404,7 @@ async function renderPipeline(
     onProgress: progress,
     ...signalOption,
     ...(options.vars !== undefined ? { vars: options.vars } : {}),
+    ...(options.layered === true ? { layered: true } : {}),
   });
   const pair = await resolveFfmpeg();
   const ffmpeg = options.ffmpeg ?? pair.ffmpeg;
@@ -439,18 +455,39 @@ async function renderPipeline(
     const videoPath = join(workDir, container === "webm" ? "video.webm" : "video.mp4");
     const framesDir = join(workDir, "frames");
     const keepFrames = options.keepWorkDir === true;
-    if (keepFrames) await mkdir(framesDir, { recursive: true });
+    const layered = prepared.layeredSources;
+    const page = layered === undefined ? undefined : layeredPage(prepared.compiledHtml);
+    const layerManifest: LayeredMediaManifest | undefined = layered === undefined
+      ? undefined
+      : { layered: true, fps, clips: layered.map(({ timing }) => timing) };
+    const manifest = layerManifest ?? prepared.manifest;
+    const layersDir = join(workDir, "layers");
+    if (layered !== undefined) await mkdir(layersDir);
+    else if (keepFrames) await mkdir(framesDir, { recursive: true });
     throwIfCanceled(signal, "capture");
     progress("capture", 25, workerPlan.summary);
     const server = await startServer(entryDir, {
       ...(prepared.mediaDir !== undefined ? { mediaRoot: prepared.mediaDir } : {}),
-      ...(prepared.manifest !== undefined ? { manifest: prepared.manifest } : {}),
-      page: { path: basename(prepared.entry), html: prepared.compiledHtml },
+      ...(manifest !== undefined ? { manifest } : {}),
+      page: { path: basename(prepared.entry), html: page?.html ?? prepared.compiledHtml },
     });
 
-    const frames = [...Array(totalFrames).keys()];
+    const url = `${server.url}${basename(prepared.entry)}`;
+    const onRetry = (cause: ClassifiedFailure): void =>
+      progress("capture", 25, `repetindo a captura uma vez (${cause.code}): ${cause.message.split(/\r?\n/)[0]}`);
+    let layerCapture: LayeredCapture | undefined;
     try {
-      encoding = await retryOnceIfTransient(
+      if (page !== undefined) {
+        progress("capture", 25, "captura da camada HTML");
+        layerCapture = await retryOnceIfTransient(() => {
+          throwIfCanceled(signal, "capture");
+          return captureLayers({
+            server, url, viewport, fps, total: totalFrames, workers, gpu,
+            sparse: !page.scripted, directory: layersDir, ...signalOption,
+            onScan: (scanned) => progress("capture", 25 + Math.floor(scanned / totalFrames * 50), `${scanned}/${totalFrames} frames analisados`),
+          });
+        }, onRetry);
+      } else encoding = await retryOnceIfTransient(
         () => {
           // O retry de falha transitória nunca recomeça uma captura já cancelada; cada tentativa sobe um FFmpeg novo.
           throwIfCanceled(signal, "capture");
@@ -462,11 +499,11 @@ async function renderPipeline(
             ...signalOption,
             capture: (deliver) =>
               captureFramesInParallel({
-                url: `${server.url}${basename(prepared.entry)}`,
+                url,
                 viewport,
                 gpu,
                 fps,
-                frames,
+                frames: [...Array(totalFrames).keys()],
                 workers,
                 serverFailures: server.failures,
                 onFrame: async (frame, png) => {
@@ -479,18 +516,19 @@ async function renderPipeline(
           });
         },
         // A repetição é única e dita a causa; se a segunda tentativa falhar, é a falha dela que sobe.
-        (cause) => progress("capture", 25, `repetindo a captura uma vez (${cause.code}): ${cause.message.split(/\r?\n/)[0]}`),
+        onRetry,
         // Erro do FFmpeg (stderr pode citar "timeout") nunca é tratado como falha do browser.
         (error) => error instanceof PipeEncodeError,
       );
     } catch (error) {
+      if (error instanceof LayeredError) throw new RenderError("E_LAYERED_UNSUPPORTED", "capture", error.message);
       throw motionFailure(error) ?? fontFailure(error) ?? browserFailure(error) ?? encodeFailure(error) ?? error;
     } finally {
       await server.close();
     }
-    const hashes = encoding.captured;
+    const hashes = layerCapture?.hashes ?? encoding!.captured;
     throwIfCanceled(signal, "capture");
-    progress("capture", 75, `${totalFrames} frames`);
+    progress("capture", 75, layerCapture === undefined ? `${totalFrames} frames` : `${hashes.size} camadas para ${totalFrames} frames`);
 
     const audioInputs = audioClipsFor({ composition, entryDir, seconds });
 
@@ -522,8 +560,31 @@ async function renderPipeline(
     throwIfCanceled(signal, "encode");
     progress("encode", 80);
     try {
-      await encoding.encoded;
+      if (layered === undefined || layerCapture === undefined) await encoding!.encoded;
+      else {
+        let av1Nvenc = false;
+        if (codec === "av1" && gpu !== "software") {
+          try {
+            await run(ffmpeg, [
+              "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", `color=s=${viewport.width}x${viewport.height}`,
+              "-frames:v", "1", "-c:v", "av1_nvenc", "-f", "null", "-",
+            ], { timeout: 15_000, ...signalOption });
+            av1Nvenc = true;
+          } catch {
+            throwIfCanceled(signal, "encode");
+            warnings.push("AV1 NVENC indisponível no render por camadas: usando libsvtav1");
+          }
+        }
+        await encodeLayers(ffmpeg, {
+          capture: layerCapture, sources: layered, viewport, fps, directory: layersDir,
+          outPath: videoPath, codec, preset, av1Nvenc, ...signalOption,
+        });
+      }
     } catch (error) {
+      if (error instanceof LayeredError) throw new RenderError("E_LAYERED_UNSUPPORTED", "encode", error.message);
+      if (layerCapture !== undefined) {
+        throw new RenderError("E_ENCODE", "encode", `a composição por camadas falhou no FFmpeg: ${(error as Error).message}`);
+      }
       throw encodeFailure(error) ?? error;
     }
     progress("encode", 90);

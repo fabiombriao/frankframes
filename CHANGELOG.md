@@ -6,6 +6,8 @@ FrankFrames — proprietário (ver `LICENSE`). Versões seguem `MAJOR.MINOR.PATC
 
 ### Render e mídia
 
+- `render --layered` usa o FFmpeg para cortes, câmera subpixel e vidro sobre o vídeo de fundo, com as
+  sobreposições do Chrome capturadas em uma camada transparente (EDT-102).
 - A `<img>` que substitui `<video>` no render agora herda os valores computados das propriedades visuais do vídeo
   (`filter`, `opacity`, `mix-blend-mode`, `clip-path`, `mask-*`, `border-radius`, `border`, `padding`,
   `box-shadow`, `outline`, `background-*`, `overflow`, `image-rendering`, `z-index` e `transform`),
