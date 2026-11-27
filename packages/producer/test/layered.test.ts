@@ -2,16 +2,48 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { writeFile } from "node:fs/promises";
+import { readFile, readdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { resolveChrome } from "@frankframes/engine";
 import { tempDir } from "../../../scripts/test-support/temp.ts";
 import { resolveFfmpeg } from "../src/ffmpeg.ts";
-import { cropForVideo } from "../src/layered-encode.ts";
+import { cropForVideo, writeCefRenderPlan } from "../src/layered-encode.ts";
+import { cefStatistics } from "../src/cef-render.ts";
 import { prepare, renderComposition } from "../src/render.ts";
 
 const run = promisify(execFile);
+
+test("CEF usa texturas no grafo Vulkan e passa as dimensões da barra ao shader", async (t) => {
+  const directory = await tempDir(t, "ff-cef-plan-");
+  const video = { clipId: "source", fit: "cover" as const, position: [.5, .5] as [number, number],
+    zoom: 1, fx: .5, fy: .5, filter: "none" };
+  const progress = { x: 8, y: 8, width: 240, height: 4, radius: 2, fill: 40, rgba: [255, 106, 61, 255] as const };
+  const fps = { num: 12, den: 1 };
+  const viewport = { width: 256, height: 256 };
+  await writeCefRenderPlan({
+    capture: { frames: [{ video, glass: [], progress: { ...progress, rgba: [...progress.rgba] } }],
+      hashes: new Map(), rgbFrames: new Set(), background: true },
+    sources: [{ input: join(directory, "source.mp4"), timing: { clipId: "source", start: 0, offset: 0,
+      playbackRate: 1, duration: 1, orientation: { rotation: 0, mirrored: false, displayWidth: 256, displayHeight: 256 } } }],
+    viewport, fps, directory, outPath: join(directory, "video.mp4"), codec: "av1", preset: "high", warnings: [],
+  });
+  const plan = await readFile(join(directory, "cef.plan"), "utf8");
+  assert.match(plan, /\[cefv0\]fps=/);
+  assert.match(plan, /\[cefbackground\]libplacebo/);
+  assert.match(plan, /\[cefhtml\]libplacebo/);
+  assert.match(plan, /custom_shader_path=progress\.hook/);
+  assert.doesNotMatch(plan, /hwupload|hwdownload|ffconcat|\.png|rawvideo/);
+  assert.deepEqual((await readdir(directory)).sort(), ["cef.plan", "layers.filter", "progress.hook"]);
+});
+
+test("CEF exige a contagem integral e nenhum callback em software", () => {
+  const output = "MP4 Vulkan frames=12\nframes=12 texturas=3 software=0 segundos=1.250\n";
+  assert.deepEqual(cefStatistics(output, 12), { frames: 12, textures: 3, software: 0, seconds: 1.25 });
+  assert.throws(() => cefStatistics(output, 13), /MP4 integral/);
+  assert.throws(() => cefStatistics(output.replace("software=0", "software=1"), 12), /MP4 integral/);
+  assert.throws(() => cefStatistics(output.split("\n")[1]!, 12), /MP4 integral/);
+});
 
 test("câmera por camadas reproduz o recorte fracionário medido no pintor do Chrome", () => {
   const [width, height, x, y] = cropForVideo({
@@ -268,4 +300,9 @@ video{position:absolute;inset:0;width:100vw;height:100vh;object-fit:cover;filter
   assert.ok(range(7) < 30, "o vidro borra o fundo depois de entrar");
   const fill = at(10, 130, 9);
   assert.ok(stdout[fill]! > stdout[fill + 1]! + 65, "a barra laranja chegou ao meio");
+  const redAverage = (y: number): number => {
+    const values = Array.from({ length: 16 }, (_, x) => stdout[at(11, 96 + x, y)]!);
+    return values.reduce((sum, value) => sum + value, 0) / values.length;
+  };
+  assert.ok(redAverage(40) - redAverage(240) > 15, "o gradiente escurece a base até o último frame");
 });

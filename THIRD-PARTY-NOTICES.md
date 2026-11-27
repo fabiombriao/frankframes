@@ -122,11 +122,12 @@ O produto recusa em código qualquer binário FFmpeg com `--enable-gpl`, `libx26
 
 `typescript` (Apache-2.0), `@types/node` (MIT), `undici-types` (MIT).
 
-A sonda local de CEF usa os SDKs externos abaixo, que acompanham as próprias licenças.
+O helper CEF instalado localmente para a sonda e para o render `--vram` no Windows usa os SDKs
+externos abaixo, que acompanham as próprias licenças.
 Versões e SHA-256 estão em [scripts/cef-probe/README.md](scripts/cef-probe/README.md).
 
 | Componente | Licença | Papel |
 |---|---|---|
 | Chromium Embedded Framework e seu wrapper C++ | BSD-3-Clause, `LICENSE.txt` no SDK. Copyright 2008–2020 Marshall A. Greenblatt. Partes copyright 2006–2009 Google Inc. | Captura acelerada fora da tela |
-| Vulkan-Headers | Apache-2.0 ou MIT, `LICENSE.md` no SDK. Copyright 2015–2023 The Khronos Group Inc. | Cabeçalhos das APIs Vulkan usadas pela sonda |
-| FFmpeg BtbN compartilhado | LGPL-2.1-or-later, avisos e licenças no SDK | Entrada do libavfilter e compositor libplacebo |
+| Vulkan-Headers | Apache-2.0 ou MIT, `LICENSE.md` no SDK. Copyright 2015–2023 The Khronos Group Inc. | Cabeçalhos das APIs Vulkan usadas pelo helper |
+| FFmpeg BtbN compartilhado | LGPL-2.1-or-later, avisos e licenças no SDK | Decoder, compositor libplacebo, encoder e mux de vídeo do helper |

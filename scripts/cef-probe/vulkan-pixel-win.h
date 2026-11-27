@@ -10,6 +10,8 @@
 #include <stdexcept>
 #include <string>
 
+#include "render-graph-win.h"
+
 extern "C" {
 #include <libavfilter/avfilter.h>
 #include <libavfilter/buffersink.h>
@@ -20,13 +22,13 @@ extern "C" {
 
 #define VK_FUNCTIONS(X) \
   X(vkGetPhysicalDeviceProperties2) X(vkGetPhysicalDeviceImageFormatProperties2) \
-  X(vkGetPhysicalDeviceMemoryProperties) X(vkGetDeviceQueue) X(vkGetDeviceProcAddr) X(vkDeviceWaitIdle) \
+  X(vkGetPhysicalDeviceMemoryProperties) X(vkGetPhysicalDeviceFormatProperties) X(vkGetDeviceQueue) X(vkGetDeviceProcAddr) X(vkDeviceWaitIdle) \
   X(vkCreateImage) X(vkDestroyImage) X(vkGetImageMemoryRequirements) X(vkBindImageMemory) \
   X(vkCreateBuffer) X(vkDestroyBuffer) X(vkGetBufferMemoryRequirements) X(vkBindBufferMemory) \
   X(vkAllocateMemory) X(vkFreeMemory) X(vkMapMemory) X(vkUnmapMemory) \
   X(vkCreateCommandPool) X(vkDestroyCommandPool) X(vkAllocateCommandBuffers) \
   X(vkResetCommandBuffer) X(vkBeginCommandBuffer) X(vkEndCommandBuffer) X(vkCmdPipelineBarrier) \
-  X(vkCmdCopyImageToBuffer) X(vkCmdCopyImage) \
+  X(vkCmdCopyImageToBuffer) X(vkCmdCopyImage) X(vkCmdBlitImage) \
   X(vkCreateFence) X(vkDestroyFence) X(vkResetFences) X(vkWaitForFences) X(vkQueueSubmit)
 
 class VulkanPixelProbe {
@@ -39,6 +41,7 @@ class VulkanPixelProbe {
   ~VulkanPixelProbe() {
     if (device_) {
       vkDeviceWaitIdle(device_);
+      render_.reset();
       av_frame_free(&input_);
       av_frame_free(&output_);
       avfilter_graph_free(&graph_);
@@ -53,6 +56,10 @@ class VulkanPixelProbe {
     }
     av_buffer_unref(&av_device_);
     if (loader_) FreeLibrary(loader_);
+  }
+
+  void SetRenderPlan(ff::RenderPlan plan) {
+    render_ = std::make_unique<ff::RenderGraph>(std::move(plan));
   }
 
   void Import(HANDLE handle, const LUID& adapter, uint32_t width, uint32_t shared_height,
@@ -107,16 +114,36 @@ class VulkanPixelProbe {
     input_->color_range = AVCOL_RANGE_JPEG;
     input_->color_trc = AVCOL_TRC_IEC61966_2_1;
     input_->alpha_mode = AVALPHA_MODE_PREMULTIPLIED;
+    if (render_) {
+      input_->colorspace = AVCOL_SPC_RGB;
+      input_->color_primaries = AVCOL_PRI_BT709;
+      render_->Submit(input_);
+      return;
+    }
     CheckAv(av_buffersrc_write_frame(source_, input_), "av_buffersrc_write_frame");
     Drain(false);
   }
 
   void Finish(int64_t count) {
+    if (render_) {
+      render_->Finish(count);
+      return;
+    }
     CheckAv(av_buffersrc_close(source_, count, 0), "av_buffersrc_close");
     Drain(true);
     if (filtered_ != count) {
       throw std::runtime_error("contagem de AVFrames Vulkan diferente da captura");
     }
+  }
+
+  void BackgroundFrame() {
+    if (!render_) throw std::runtime_error("fundo sem plano CEF");
+    input_->colorspace = AVCOL_SPC_RGB;
+    input_->color_range = AVCOL_RANGE_JPEG;
+    input_->color_trc = AVCOL_TRC_IEC61966_2_1;
+    input_->color_primaries = AVCOL_PRI_BT709;
+    input_->alpha_mode = AVALPHA_MODE_PREMULTIPLIED;
+    render_->SubmitBackground(input_);
   }
 
  private:
@@ -187,15 +214,27 @@ class VulkanPixelProbe {
   void InitFilter(uint32_t width, uint32_t height, AVRational time_base) {
     frames_ = av_hwframe_ctx_alloc(av_device_);
     input_ = av_frame_alloc();
-    output_ = av_frame_alloc();
-    graph_ = avfilter_graph_alloc();
-    if (!frames_ || !input_ || !output_ || !graph_) throw std::runtime_error("alocação do filtro FFmpeg");
+    if (!frames_ || !input_) throw std::runtime_error("alocação de superfície FFmpeg");
     auto* frames = reinterpret_cast<AVHWFramesContext*>(frames_->data);
     frames->format = AV_PIX_FMT_VULKAN;
-    frames->sw_format = AV_PIX_FMT_BGRA;
+    frames->sw_format = render_ ? AV_PIX_FMT_RGBA : AV_PIX_FMT_BGRA;
     frames->width = static_cast<int>(width);
     frames->height = static_cast<int>(height);
     CheckAv(av_hwframe_ctx_init(frames_), "av_hwframe_ctx_init");
+    if (render_) {
+      VkFormatProperties source{}, destination{};
+      vkGetPhysicalDeviceFormatProperties(physical_, VK_FORMAT_B8G8R8A8_UNORM, &source);
+      vkGetPhysicalDeviceFormatProperties(physical_, VK_FORMAT_R8G8B8A8_UNORM, &destination);
+      if (!(source.optimalTilingFeatures & VK_FORMAT_FEATURE_BLIT_SRC_BIT) ||
+          !(destination.optimalTilingFeatures & VK_FORMAT_FEATURE_BLIT_DST_BIT)) {
+        throw std::runtime_error("Vulkan não converte BGRA → RGBA na GPU");
+      }
+      render_->Init(av_device_, frames_, time_base);
+      return;
+    }
+    output_ = av_frame_alloc();
+    graph_ = avfilter_graph_alloc();
+    if (!output_ || !graph_) throw std::runtime_error("alocação do filtro FFmpeg");
     auto* source = avfilter_graph_alloc_filter(graph_, avfilter_get_by_name("buffer"), "cef");
     auto* compositor = avfilter_graph_alloc_filter(graph_, avfilter_get_by_name("libplacebo"), "gpu");
     if (!source || !compositor) throw std::runtime_error("filtros buffer/libplacebo indisponíveis");
@@ -318,10 +357,17 @@ class VulkanPixelProbe {
     vkCmdPipelineBarrier(command_, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
                          0, 0, nullptr, 0, nullptr, 1, &dest);
     const VkImageSubresourceLayers layer = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
-    const VkImageCopy copy = {layer, {0, 0, 0}, layer, {0, 0, 0},
-      {static_cast<uint32_t>(input_->width), static_cast<uint32_t>(input_->height), 1}};
-    vkCmdCopyImage(command_, image_, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, output.img[0],
-                   VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copy);
+    if (render_) {
+      const VkOffset3D corner{input_->width, input_->height, 1};
+      const VkImageBlit blit{layer, {{0, 0, 0}, corner}, layer, {{0, 0, 0}, corner}};
+      vkCmdBlitImage(command_, image_, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, output.img[0],
+                     VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit, VK_FILTER_NEAREST);
+    } else {
+      const VkImageCopy copy = {layer, {0, 0, 0}, layer, {0, 0, 0},
+        {static_cast<uint32_t>(input_->width), static_cast<uint32_t>(input_->height), 1}};
+      vkCmdCopyImage(command_, image_, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, output.img[0],
+                     VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copy);
+    }
     const VkImageMemoryBarrier release = {VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER, nullptr,
       VK_ACCESS_TRANSFER_READ_BIT, 0, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_LAYOUT_GENERAL,
       family_, VK_QUEUE_FAMILY_EXTERNAL, image_, {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1}};
@@ -336,6 +382,7 @@ class VulkanPixelProbe {
 
   HMODULE loader_ = nullptr;
   AVBufferRef* av_device_ = nullptr;
+  std::unique_ptr<ff::RenderGraph> render_;
   AVBufferRef* frames_ = nullptr;
   AVFrame* input_ = nullptr;
   AVFrame* output_ = nullptr;

@@ -451,5 +451,12 @@ software. A sonda descartou sete callbacks com o marcador de um seek anterior.
 O FFmpeg importou a textura D3D11 em um dispositivo Vulkan com o mesmo LUID. O retângulo da composição
 ficou na GPU durante a cópia e a filtragem. A sonda leu oito bytes por candidato, fora do quadro,
 para validar o seek e o alfa pré-multiplicado. Esse tempo cobre captura e filtragem da camada HTML.
-O MP4 de aceite com CEF depende da ligação dessa camada ao grafo completo de render. O caminho
-acelerado Linux também está pendente.
+Na integração com `--vram --gpu hardware --workers 1 --preset standard` no Windows x64, o mesmo
+dispositivo Vulkan recebe o vídeo decodificado, as 555 texturas distintas do CEF e o gradiente.
+A barra é calculada por shader. O grafo entregou 1.357 frames ao encoder AV1 e registrou zero
+callbacks em software. A inspeção de layout levou 21,38 s, a captura com composição e encode
+levou 59,89 s e a execução completa levou **91,46 s**, incluindo o áudio AAC e a montagem do MP4.
+
+A edição atual do A001 (com swoosh) foi a referência visual da comparação. O MP4 de 11.146.097 B
+atingiu **43,82 dB** de PSNR em média e **40,20 dB** no pior frame. O teste do bitstream decodificou
+todos os frames de vídeo e a trilha AAC estéreo. O caminho CEF acelerado no Linux segue pendente.

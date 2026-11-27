@@ -35,7 +35,7 @@ export interface ProgressFrame {
   rgba: [number, number, number, number];
 }
 
-interface PageFrame {
+export interface PageFrame {
   video: VideoFrame;
   glass: GlassRegion[];
   progress?: ProgressFrame;

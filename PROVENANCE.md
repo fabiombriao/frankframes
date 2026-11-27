@@ -60,3 +60,4 @@ abertura do nosso código.
 | 2026-11-24 | avisos de terceiros de produção: `puppeteer-core` (Apache-2.0) e as 22 transitivas registradas em `THIRD-PARTY-NOTICES.md`; `scripts/third-party.ts --check` verifica avisos e licenças (EDT-65) |
 | 2026-11-26 | novo pin FFmpeg LGPL do BtbN em win64 e linux64 com correções de codificação AV1 Vulkan. Os shaders do compositor foram escritos para o contrato FrankFrames e rodam no libplacebo do binário externo (EDT-103) |
 | 2026-11-26 | sonda original em C++ para Windows x64 usa as APIs públicas de CEF, D3D11, Vulkan e FFmpeg. CEF minimal, Vulkan-Headers e FFmpeg LGPL compartilhado são SDKs externos pinados por SHA-256 em `scripts/cef-probe/README.md` (EDT-103) |
+| 2026-11-27 | o render `--vram` usa o helper CEF local no Windows x64. O grafo nativo e o shader da barra foram escritos para o FrankFrames com os mesmos SDKs da sonda (EDT-103) |

@@ -23,6 +23,7 @@ import { captureLayers, LayeredError } from "./layered-capture.ts";
 import type { LayeredCapture } from "./layered-capture.ts";
 import { encodeLayers, probeLayeredVram } from "./layered-encode.ts";
 import type { LayeredSource } from "./layered-encode.ts";
+import { CEF_FRAME_LIMIT, renderCefLayers, resolveCefExecutable } from "./cef-render.ts";
 
 const run = promisify(execFile);
 
@@ -463,73 +464,97 @@ async function renderPipeline(
     const layerManifest: LayeredMediaManifest | undefined = layered === undefined
       ? undefined
       : { layered: true, fps, clips: layered.map(({ timing }) => timing) };
+    const cefExecutable = options.vram === true && codec === "av1" && gpu !== "software" && layerManifest !== undefined
+      ? await resolveCefExecutable()
+      : undefined;
     const manifest = layerManifest ?? prepared.manifest;
     const layersDir = join(workDir, "layers");
     if (layered !== undefined) await mkdir(layersDir);
     else if (keepFrames) await mkdir(framesDir, { recursive: true });
     throwIfCanceled(signal, "capture");
     progress("capture", 25, workerPlan.summary);
-    const server = await startServer(entryDir, {
-      ...(prepared.mediaDir !== undefined ? { mediaRoot: prepared.mediaDir } : {}),
-      ...(manifest !== undefined ? { manifest } : {}),
-      page: { path: basename(prepared.entry), html: page?.html ?? prepared.compiledHtml },
-    });
-
-    const url = `${server.url}${basename(prepared.entry)}`;
-    const onRetry = (cause: ClassifiedFailure): void =>
-      progress("capture", 25, `repetindo a captura uma vez (${cause.code}): ${cause.message.split(/\r?\n/)[0]}`);
-    let layerCapture: LayeredCapture | undefined;
-    try {
-      if (page !== undefined) {
-        progress("capture", 25, "captura da camada HTML");
-        layerCapture = await retryOnceIfTransient(() => {
-          throwIfCanceled(signal, "capture");
-          return captureLayers({
-            server, url, viewport, fps, total: totalFrames, workers, gpu,
-            sparse: !page.scripted, directory: layersDir, ...signalOption,
-            onScan: (scanned) => progress("capture", 25 + Math.floor(scanned / totalFrames * 50), `${scanned}/${totalFrames} frames analisados`),
-          });
-        }, onRetry);
-      } else encoding = await retryOnceIfTransient(
-        () => {
-          // O retry de falha transitória nunca recomeça uma captura já cancelada; cada tentativa sobe um FFmpeg novo.
-          throwIfCanceled(signal, "capture");
-          return encodeWhileCapturing({
-            ffmpeg,
-            args: buildFramePipeArgs({ fps, codec, preset, outPath: videoPath }),
-            total: totalFrames,
-            maxBuffered: reorderWindow(workers),
-            ...signalOption,
-            capture: (deliver) =>
-              captureFramesInParallel({
-                url,
-                viewport,
-                gpu,
-                fps,
-                frames: [...Array(totalFrames).keys()],
-                workers,
-                serverFailures: server.failures,
-                onFrame: async (frame, png) => {
-                  // Lançar aqui derruba o worker; o `finally` do captureFramesInParallel fecha as sessões do Chrome.
-                  throwIfCanceled(signal, "capture");
-                  if (keepFrames) await writeFile(join(framesDir, `frame_${String(frame + 1).padStart(6, "0")}.png`), png);
-                  await deliver(frame, png);
-                },
-              }),
-          });
-        },
-        // A repetição é única e dita a causa; se a segunda tentativa falhar, é a falha dela que sobe.
-        onRetry,
-        // Erro do FFmpeg (stderr pode citar "timeout") nunca é tratado como falha do browser.
-        (error) => error instanceof PipeEncodeError,
-      );
-    } catch (error) {
-      if (error instanceof LayeredError) throw new RenderError("E_LAYERED_UNSUPPORTED", "capture", error.message);
-      throw motionFailure(error) ?? fontFailure(error) ?? browserFailure(error) ?? encodeFailure(error) ?? error;
-    } finally {
-      await server.close();
+    let cefRendered = false;
+    if (cefExecutable !== undefined && page !== undefined && layered !== undefined && layerManifest !== undefined) {
+      if (totalFrames > CEF_FRAME_LIMIT) throw new RenderError("E_LAYERED_UNSUPPORTED", "capture",
+        `a captura CEF suporta até ${CEF_FRAME_LIMIT} frames por composição`);
+      progress("capture", 25, "CEF: inspeção de geometria e tempos");
+      try {
+        await renderCefLayers({
+          executable: cefExecutable, entry: prepared.entry, entryDir, html: page.html, sparse: !page.scripted,
+          manifest: layerManifest, sources: layered, viewport, fps, total: totalFrames, directory: layersDir,
+          outPath: videoPath, preset, warnings, ...signalOption,
+          onEncode: () => progress("capture", 50, "CEF: captura, composição e AV1 em Vulkan"),
+          onSummary: (message) => progress("capture", 74, message),
+        });
+        cefRendered = true;
+      } catch (error) {
+        if (error instanceof LayeredError) throw new RenderError("E_LAYERED_UNSUPPORTED", "capture", error.message);
+        throw new RenderError("E_ENCODE", "capture", (error as Error).message);
+      }
     }
-    const hashes = layerCapture?.hashes ?? encoding!.captured;
+    let layerCapture: LayeredCapture | undefined;
+    if (!cefRendered) {
+      const server = await startServer(entryDir, {
+        ...(prepared.mediaDir !== undefined ? { mediaRoot: prepared.mediaDir } : {}),
+        ...(manifest !== undefined ? { manifest } : {}),
+        page: { path: basename(prepared.entry), html: page?.html ?? prepared.compiledHtml },
+      });
+
+      const url = `${server.url}${basename(prepared.entry)}`;
+      const onRetry = (cause: ClassifiedFailure): void =>
+        progress("capture", 25, `repetindo a captura uma vez (${cause.code}): ${cause.message.split(/\r?\n/)[0]}`);
+      try {
+        if (page !== undefined) {
+          progress("capture", 25, "captura da camada HTML");
+          layerCapture = await retryOnceIfTransient(() => {
+            throwIfCanceled(signal, "capture");
+            return captureLayers({
+              server, url, viewport, fps, total: totalFrames, workers, gpu,
+              sparse: !page.scripted, directory: layersDir, ...signalOption,
+              onScan: (scanned) => progress("capture", 25 + Math.floor(scanned / totalFrames * 50), `${scanned}/${totalFrames} frames analisados`),
+            });
+          }, onRetry);
+        } else encoding = await retryOnceIfTransient(
+          () => {
+            // O retry de falha transitória nunca recomeça uma captura já cancelada; cada tentativa sobe um FFmpeg novo.
+            throwIfCanceled(signal, "capture");
+            return encodeWhileCapturing({
+              ffmpeg,
+              args: buildFramePipeArgs({ fps, codec, preset, outPath: videoPath }),
+              total: totalFrames,
+              maxBuffered: reorderWindow(workers),
+              ...signalOption,
+              capture: (deliver) =>
+                captureFramesInParallel({
+                  url,
+                  viewport,
+                  gpu,
+                  fps,
+                  frames: [...Array(totalFrames).keys()],
+                  workers,
+                  serverFailures: server.failures,
+                  onFrame: async (frame, png) => {
+                    // Lançar aqui derruba o worker; o `finally` do captureFramesInParallel fecha as sessões do Chrome.
+                    throwIfCanceled(signal, "capture");
+                    if (keepFrames) await writeFile(join(framesDir, `frame_${String(frame + 1).padStart(6, "0")}.png`), png);
+                    await deliver(frame, png);
+                  },
+                }),
+            });
+          },
+          // A repetição é única e dita a causa; se a segunda tentativa falhar, é a falha dela que sobe.
+          onRetry,
+          // Erro do FFmpeg (stderr pode citar "timeout") nunca é tratado como falha do browser.
+          (error) => error instanceof PipeEncodeError,
+        );
+      } catch (error) {
+        if (error instanceof LayeredError) throw new RenderError("E_LAYERED_UNSUPPORTED", "capture", error.message);
+        throw motionFailure(error) ?? fontFailure(error) ?? browserFailure(error) ?? encodeFailure(error) ?? error;
+      } finally {
+        await server.close();
+      }
+    }
+    const hashes = cefRendered ? new Map<number, string>() : layerCapture?.hashes ?? encoding!.captured;
     throwIfCanceled(signal, "capture");
     progress("capture", 75, layerCapture === undefined ? `${totalFrames} frames` : `${hashes.size} camadas para ${totalFrames} frames`);
 
@@ -563,7 +588,8 @@ async function renderPipeline(
     throwIfCanceled(signal, "encode");
     progress("encode", 80);
     try {
-      if (layered === undefined || layerCapture === undefined) await encoding!.encoded;
+      if (cefRendered) progress("encode", 80, "Vulkan em VRAM da decodificação ao encode");
+      else if (layered === undefined || layerCapture === undefined) await encoding!.encoded;
       else {
         let vram = false;
         if (options.vram === true) {

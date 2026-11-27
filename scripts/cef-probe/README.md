@@ -1,4 +1,4 @@
-# Sonda local de captura em VRAM com CEF (EDT-103)
+# Captura em VRAM com CEF (EDT-103)
 
 A sonda usa CEF fora da tela com BeginFrame externo e a página compilada pelo produtor.
 No Windows, copia a textura BGRA compartilhada do CEF enquanto o callback está ativo.
@@ -10,9 +10,7 @@ A sonda mantém o viewport da composição dentro de um iframe e desenha dois ma
 de quatro pixels abaixo do quadro. Lê oito bytes dos marcadores por callback candidato, descarta
 pinturas atrasadas, confere o alfa pré-multiplicado e passa só o retângulo da composição ao filtro.
 Reutiliza a última textura quando o inspetor do render por camadas encontra a mesma assinatura visual.
-Use o código apenas com HTML local confiável, pois o executável
-da sonda usa CEF sem sandbox. Ele exercita a entrada do filtro em VRAM. O comando de render
-do produto continua usando seu próprio caminho de captura.
+Use o executável com HTML local confiável, pois o SDK minimal pinado usa CEF sem sandbox.
 
 ## Compilar no Windows x64
 
@@ -37,6 +35,21 @@ node scripts/cef-probe/run.mjs out/cef-probe/repro/Release/ff-cef-probe.exe out/
 Omita o limite `12` para testar toda a composição. A aprovação exige o mesmo número de
 frames capturados e filtrados em Vulkan, PTS sequencial e zero callbacks em software.
 
-O grafo da sonda tem uma entrada de vídeo em memória. O render final ainda precisa alimentar o
-grafo completo de `--vram` com essa entrada, junto com vídeo, fundo, vidro e barra. A integração
-Linux depende da importação e sincronização das superfícies DMA-BUF do CEF em um host com DRM.
+## Render completo
+
+```powershell
+$env:FRANKFRAMES_CEF_EXE = (Resolve-Path out/cef-probe/repro/Release/ff-cef-probe.exe).Path
+node packages/cli/src/cli.ts render out/a001/index.html --vram --gpu hardware --workers 1 -o out/a001/a001-cef-vram.mp4
+```
+
+O `--vram` também encontra o executável em `cef/win64/ff-cef-probe.exe` abaixo de `FRANKFRAMES_HOME`
+(ou do diretório de assets padrão). No monorepo, instale o binário e os recursos com
+`cmake --install out/cef-probe/repro --config Release --prefix vendor/cef`.
+Uma execução CEF iniciada falha se não puder usar GPU.
+
+O primeiro passe em CEF transmite só os metadados de vídeo e layout. O segundo entrega texturas
+para o grafo libavfilter nativo, que decodifica, compõe vídeo, vidro, gradiente e HTML e codifica AV1
+na mesma GPU. A barra usa um shader alimentado por valores numéricos. O processo principal monta o
+áudio e o MP4. Use `--keep` para guardar o plano e os shaders. Com `FRANKFRAMES_CEF_TRACE=1` essa
+pasta também contém os logs nativos. Composições com até 16.384 frames usam o marcador atual.
+A integração Linux depende da importação e sincronização de superfícies DMA-BUF.

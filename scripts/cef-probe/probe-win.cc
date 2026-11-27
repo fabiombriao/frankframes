@@ -40,6 +40,14 @@ class Probe : public CefClient, public CefRenderHandler, public CefLifeSpanHandl
       : width_(width), height_(height), total_(total), time_base_(time_base),
         step_ms_(1000.0 * av_q2d(time_base)) {}
 
+  void SetRenderPlan(ff::RenderPlan plan) {
+    background_pending_ = plan.background;
+    native_render_ = true;
+    vulkan_.SetRenderPlan(std::move(plan));
+  }
+
+  void SetScan() { scan_ = true; }
+
   bool InitGpu() {
     ComPtr<ID3D11Device> device;
     const HRESULT hr = D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr,
@@ -64,13 +72,14 @@ class Probe : public CefClient, public CefRenderHandler, public CefLifeSpanHandl
 
   void OnLoadEnd(CefRefPtr<CefBrowser>, CefRefPtr<CefFrame> frame, int status) override {
     if (!frame->IsMain()) return;
+    if (trace_) std::fprintf(stderr, "CEF carregou HTTP %d, fundo=%d scan=%d\n", status, background_pending_, scan_);
     if (status >= 400) {
       Error("HTTP", status);
       return;
     }
+    const std::string wait = background_pending_ ? "" : "await window.__ffProbeComposition.__ff.ready;";
     frame->ExecuteJavaScript(
-        "(async()=>{try{window.__ffProbeComposition=document.getElementById('composition').contentWindow;"
-        "await window.__ffProbeComposition.__ff.ready;"
+        "(async()=>{try{window.__ffProbeComposition=document.getElementById('composition').contentWindow;" + wait +
         "const mark=document.createElement('div');mark.id='ff-cef-probe-mark';"
         "mark.style='position:fixed;bottom:0;left:1px;width:1px;height:4px;pointer-events:none';"
         "document.documentElement.appendChild(mark);"
@@ -82,32 +91,38 @@ class Probe : public CefClient, public CefRenderHandler, public CefLifeSpanHandl
 
   void OnTitleChange(CefRefPtr<CefBrowser>, const CefString& title) override {
     const std::string value = title.ToString();
+    if (trace_ && !scan_ && captured_ < 12) std::fprintf(stderr, "CEF title %s\n", value.c_str());
+    const std::string metadata = "ff:meta:" + std::to_string(captured_) + ":";
     if (value == "ff:ready") {
-      Seek();
-    } else if (value == "ff:reuse:" + std::to_string(captured_)) {
+      if (background_pending_) RequestPaint();
+      else Seek();
+    } else if (!background_pending_ && value == "ff:reuse:" + std::to_string(captured_)) {
       Filter(false);
-    } else if (value == "ff:seek:" + std::to_string(captured_)) {
-      repaint_after_ = ticks_ + 1;
-      auto frame = browser_->GetMainFrame();
-      const auto [blue, green, red, alpha] = ExpectedPixel();
-      const std::string color = "rgb(" + std::to_string(red) + "," +
-          std::to_string(green) + "," + std::to_string(blue) + ")";
-      frame->ExecuteJavaScript(
-          std::string("document.getElementById('ff-cef-probe-mark').style.background='") + color + "'",
-          frame->GetURL(), 0);
+    } else if (!background_pending_ && value == "ff:seek:" + std::to_string(captured_)) {
+      RequestPaint();
+    } else if (scan_ && value.rfind(metadata, 0) == 0) {
+      std::printf("meta %d %s\n", captured_, value.c_str() + metadata.size());
+      std::fflush(stdout);
+      ++captured_;
+      last_capture_ = Clock::now();
+      if (!Done()) Seek();
     } else if (value.rfind("ff:error:", 0) == 0) {
       std::fprintf(stderr, "%s\n", value.c_str());
       failed_ = true;
     }
   }
 
-  void OnPaint(CefRefPtr<CefBrowser>, PaintElementType, const RectList&, const void*, int, int) override {
+  void OnPaint(CefRefPtr<CefBrowser>, PaintElementType type, const RectList&, const void*, int, int) override {
+    if (type != PET_VIEW) return;
     ++software_;
+    std::fprintf(stderr, "CEF devolveu pixels de software em vez de textura compartilhada\n");
+    failed_ = true;
   }
 
   void OnAcceleratedPaint(CefRefPtr<CefBrowser>, PaintElementType type, const RectList&,
                           const CefAcceleratedPaintInfo& info) override {
-    if (type != PET_VIEW || repaint_after_ == 0 || ticks_ < repaint_after_ || Done()) return;
+    ++painted_;
+    if (type != PET_VIEW || !paint_pending_ || Done()) return;
     ComPtr<ID3D11Texture2D> texture;
     const HRESULT opened = device_->OpenSharedResource1(info.shared_texture_handle, IID_PPV_ARGS(&texture));
     if (FAILED(opened)) {
@@ -154,8 +169,8 @@ class Probe : public CefClient, public CefRenderHandler, public CefLifeSpanHandl
       failed_ = true;
       return;
     }
-    std::printf("frame %d Vulkan %dx%d BGRA %u %u %u %u\n", captured_, width_, height_,
-                markers.seek[0], markers.seek[1], markers.seek[2], markers.seek[3]);
+    if (!native_render_ || (trace_ && captured_ < 16)) std::printf("frame %d Vulkan %dx%d BGRA %u %u %u %u\n", captured_, width_, height_,
+                                    markers.seek[0], markers.seek[1], markers.seek[2], markers.seek[3]);
     Filter(true);
   }
 
@@ -174,8 +189,12 @@ class Probe : public CefClient, public CefRenderHandler, public CefLifeSpanHandl
   int captured() const { return captured_; }
   int textures() const { return textures_; }
   bool TimedOut() const { return Clock::now() - last_capture_ >= std::chrono::seconds(30); }
+  void ReportTimeout() const {
+    std::fprintf(stderr, "CEF sem quadro novo: frame %d, fundo=%d, scan=%d, BeginFrames=%d, paints=%d, aguardando=%d\n",
+                 captured_, background_pending_, scan_, ticks_, painted_, paint_pending_);
+  }
   void Finish() {
-    if (!Succeeded()) return;
+    if (!Succeeded() || scan_) return;
     try {
       vulkan_.Finish(captured_);
       std::printf("libplacebo Vulkan=%d\n", captured_);
@@ -188,6 +207,19 @@ class Probe : public CefClient, public CefRenderHandler, public CefLifeSpanHandl
  private:
   void Filter(bool new_texture) {
     try {
+      if (background_pending_) {
+        vulkan_.BackgroundFrame();
+        background_pending_ = false;
+        paint_pending_ = false;
+        last_capture_ = Clock::now();
+        std::puts("fundo HTML Vulkan=1");
+        auto frame = browser_->GetMainFrame();
+        frame->ExecuteJavaScript("document.getElementById('ff-cef-background').remove();"
+                                 "document.getElementById('composition').style.visibility='visible';",
+                                 frame->GetURL(), 0);
+        Seek();
+        return;
+      }
       vulkan_.FilterFrame(captured_);
     } catch (const std::exception& e) {
       std::fprintf(stderr, "entrada libplacebo no frame %d: %s\n", captured_, e.what());
@@ -198,14 +230,26 @@ class Probe : public CefClient, public CefRenderHandler, public CefLifeSpanHandl
     std::fflush(stdout);
     ++captured_;
     last_capture_ = Clock::now();
-    repaint_after_ = 0;
+    paint_pending_ = false;
     if (!Done()) Seek();
   }
 
   std::array<uint8_t, 4> ExpectedPixel() const {
+    if (background_pending_) return {201, 204, 43, 255};
     return {static_cast<uint8_t>(224 - (captured_ * 7) % 128),
             static_cast<uint8_t>(64 + captured_ / 128 % 128),
             static_cast<uint8_t>(32 + captured_ % 128), 255};
+  }
+
+  void RequestPaint() {
+    paint_pending_ = true;
+    auto frame = browser_->GetMainFrame();
+    const auto marker = ExpectedPixel();
+    const std::string color = "rgb(" + std::to_string(marker[2]) + "," +
+        std::to_string(marker[1]) + "," + std::to_string(marker[0]) + ")";
+    frame->ExecuteJavaScript(
+        std::string("document.getElementById('ff-cef-probe-mark').style.background='") + color + "'",
+        frame->GetURL(), 0);
   }
 
   bool InitSharedTexture(D3D11_TEXTURE2D_DESC desc) {
@@ -251,14 +295,20 @@ class Probe : public CefClient, public CefRenderHandler, public CefLifeSpanHandl
 
   void Seek() {
     auto frame = browser_->GetMainFrame();
+    char timestamp[32]{};
+    std::snprintf(timestamp, sizeof(timestamp), "%.17g", step_ms_ * captured_);
+    const std::string deliver = scan_
+        ? "delete state.signature;document.title='ff:meta:" + std::to_string(captured_) + ":'+JSON.stringify(state);"
+        : "const same=state.signature!==undefined&&state.signature===window.__ffCefProbeSignature;"
+          "window.__ffCefProbeSignature=state.signature;"
+          "document.title=(same?'ff:reuse:':'ff:seek:')+" + std::to_string(captured_) + ";";
+    // O snapshot de estilos faz o flush de layout. Só a entrega de uma textura precisa do paint.
+    const char* paint = scan_ ? "" : "await page.__ff.settle();";
     frame->ExecuteJavaScript(
-        "(async()=>{try{const page=window.__ffProbeComposition;await page.__ff.seek(" + std::to_string(step_ms_ * captured_) +
-        ");await page.__ff.settle();"
-        "const state=await page.__ffCefProbeInspect();if(state.error)throw Error(state.error);"
-        "const same=state.signature!==undefined&&state.signature===window.__ffCefProbeSignature;"
-        "window.__ffCefProbeSignature=state.signature;"
-        "document.title=(same?'ff:reuse:':'ff:seek:')+" + std::to_string(captured_) +
-        ";}catch(e){document.title='ff:error:'+e.message;}})()", frame->GetURL(), 0);
+        std::string("(async()=>{try{const page=window.__ffProbeComposition;await page.__ff.ready;await page.__ff.seek(") + timestamp +
+        ");" + paint +
+        "const state=await page.__ffCefProbeInspect();if(state.error)throw Error(state.error);" + deliver +
+        "}catch(e){document.title='ff:error:'+e.message;}})()", frame->GetURL(), 0);
   }
 
   const int width_;
@@ -277,8 +327,13 @@ class Probe : public CefClient, public CefRenderHandler, public CefLifeSpanHandl
   int textures_ = 0;
   int software_ = 0;
   int ticks_ = 0;
-  int repaint_after_ = 0;
+  bool paint_pending_ = false;
+  int painted_ = 0;
   bool failed_ = false;
+  bool native_render_ = false;
+  bool background_pending_ = false;
+  bool scan_ = false;
+  const bool trace_ = GetEnvironmentVariableW(L"FRANKFRAMES_CEF_TRACE", nullptr, 0) != 0;
 
   IMPLEMENT_REFCOUNTING(Probe);
 };
@@ -288,8 +343,8 @@ int main(int argc, char** argv) {
   CefRefPtr<GpuApp> app = new GpuApp();
   const int sub = CefExecuteProcess(args, app, nullptr);
   if (sub >= 0) return sub;
-  if (argc != 7) {
-    std::fprintf(stderr, "ff-cef-probe URL largura altura frames fps-num fps-den\n");
+  if (argc != 7 && argc != 8) {
+    std::fprintf(stderr, "ff-cef-probe URL largura altura frames fps-num fps-den [cef.plan|--scan]\n");
     return 2;
   }
   const int width = std::atoi(argv[2]), height = std::atoi(argv[3]), count = std::atoi(argv[4]);
@@ -304,6 +359,16 @@ int main(int argc, char** argv) {
   if (!CefInitialize(args, settings, app, nullptr)) return 3;
 
   CefRefPtr<Probe> probe = new Probe(width, height, count, {den, num});
+  if (argc == 8) {
+    try {
+      if (std::string(argv[7]) == "--scan") probe->SetScan();
+      else probe->SetRenderPlan(ff::LoadRenderPlan(argv[7]));
+    } catch (const std::exception& e) {
+      std::fprintf(stderr, "%s\n", e.what());
+      CefShutdown();
+      return 2;
+    }
+  }
   if (!probe->InitGpu()) { CefShutdown(); return 4; }
   CefWindowInfo window;
   window.SetAsWindowless(nullptr);
@@ -327,6 +392,7 @@ int main(int argc, char** argv) {
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
+  if (!probe->Done()) probe->ReportTimeout();
   probe->Finish();
   const double seconds = std::chrono::duration<double>(Clock::now() - start).count();
   probe->Close();

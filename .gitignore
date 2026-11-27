@@ -6,6 +6,7 @@ out/
 *.m4a
 .tmp/
 vendor/browsers/
+vendor/cef/
 vendor/ffmpeg/bin/
 
 .env

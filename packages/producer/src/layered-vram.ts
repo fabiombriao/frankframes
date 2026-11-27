@@ -2,7 +2,7 @@
 import type { Fps } from "@frankframes/contract";
 import type { Preset } from "@frankframes/encode";
 import type { Viewport } from "@frankframes/engine";
-import type { GlassRegion } from "./layered-capture.ts";
+import type { GlassRegion, ProgressFrame } from "./layered-capture.ts";
 
 export const vulkanDeviceArgs = ["-init_hw_device", "vulkan=ffgpu:NVIDIA", "-filter_hw_device", "ffgpu"];
 export const vulkanDecodeArgs = ["-hwaccel", "vulkan", "-hwaccel_device", "ffgpu", "-hwaccel_output_format", "vulkan"];
@@ -18,10 +18,48 @@ export function vulkanRotation(rotation: number, width: number, height: number):
   return [`libplacebo=w=${width}:h=${height}:rotate=${clockwise}:format=nv12`, "format=vulkan"];
 }
 
-export function vulkanEncoderArgs(viewport: Viewport, fps: Fps, preset: Preset): string[] {
+export function vulkanBitrate(viewport: Viewport, fps: Fps, preset: Preset): number {
   const perPixel = { draft: 0.016, standard: 0.0265, high: 0.052 }[preset];
-  const rate = Math.max(100_000, Math.round(viewport.width * viewport.height * fps.num / fps.den * perPixel));
+  return Math.max(100_000, Math.round(viewport.width * viewport.height * fps.num / fps.den * perPixel));
+}
+
+export function vulkanEncoderArgs(viewport: Viewport, fps: Fps, preset: Preset): string[] {
+  const rate = vulkanBitrate(viewport, fps, preset);
   return ["-c:v", "av1_vulkan", "-bf", "0", "-tune", "hq", "-rc_mode", "vbr", "-b:v", String(rate), "-maxrate", String(rate * 2), "-bufsize", String(rate * 4)];
+}
+
+/** Rasteriza a faixa de progresso por pixel na própria superfície Vulkan. */
+export function progressShader(frames: Array<ProgressFrame | undefined>, bar: ProgressFrame): string {
+  const data = Buffer.alloc(frames.length * 32);
+  for (const [index, frame] of frames.entries()) {
+    if (frame === undefined) continue;
+    const { fill, radius, rgba } = frame;
+    const fields = [fill, Math.min(radius, bar.width / 2, bar.height / 2), 0, 0, ...rgba];
+    for (const [field, value] of fields.entries()) data.writeFloatLE(value, (index * 8 + field) * 4);
+  }
+  return `//!BUFFER progress_data
+//!VAR vec4 bands[${frames.length * 2}]
+//!STORAGE
+${data.toString("hex")}
+
+//!HOOK MAIN
+//!BIND HOOKED
+//!BIND progress_data
+vec4 hook() {
+    vec4 video = HOOKED_tex(HOOKED_pos);
+    int i = clamp(frame - 1, 0, ${frames.length - 1}) * 2;
+    vec4 geometry = bands[i];
+    vec4 rgba = bands[i + 1];
+    vec2 p = HOOKED_pos * HOOKED_size - vec2(${bar.x.toFixed(6)}, ${bar.y.toFixed(6)});
+    vec2 size = vec2(${bar.width.toFixed(6)}, ${bar.height.toFixed(6)});
+    if (p.x < 0.0 || p.y < 0.0 || any(greaterThanEqual(p, size))) return video;
+    vec2 distance = abs(p - size / 2.0) - size / 2.0 + geometry.y;
+    float edge = length(max(distance, 0.0)) + min(max(distance.x, distance.y), 0.0) - geometry.y;
+    float coverage = clamp(min(geometry.x - floor(p.x), 0.5 - edge), 0.0, 1.0);
+    float alpha = floor(rgba.a * coverage + 0.5) / 255.0;
+    return vec4(mix(video.rgb, rgba.rgb / 255.0, alpha), video.a);
+}
+`;
 }
 
 export function vulkanOverlay(base: string, overlay: string, out: string, viewport: Viewport, position?: Viewport & { x: number; y: number }): string {

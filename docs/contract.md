@@ -752,15 +752,20 @@ sem passar pelo cache de JPEGs.
   Para AV1 em `auto` ou `hardware`, o FFmpeg usa NVENC se a máquina aceitar a sonda de codificação.
   Se a sonda falhar, usa `libsvtav1` e emite um aviso.
   A opção `--vram` (`vram: true` na API) ativa camadas e tenta decodificar, compor e codificar AV1
-  com superfícies Vulkan na mesma GPU NVIDIA. O Chrome ainda fornece as camadas como PNG nesta etapa.
+  com superfícies Vulkan na mesma GPU NVIDIA. No Windows x64 com o CEF local configurado, o CEF resolve
+  a geometria e entrega os frames e o gradiente como texturas D3D11 importadas no Vulkan. A barra é
+  desenhada por shader. O render CEF exige um decoder Vulkan para cada fonte e rejeita callbacks em
+  software. A captura transfere para o host apenas metadados e oito bytes de marcadores fora do quadro.
+  O áudio e a montagem do contêiner passam pelo FFmpeg do host.
   Os pixels do vídeo principal seguem da decodificação até o encoder em superfícies de hardware.
   A sonda verifica o encoder e cada fonte. Quando a combinação de dispositivo, fonte, codec ou modo
   de GPU não for compatível, o render usa o caminho por camadas e informa o motivo.
   Com NVENC ativo, o FFmpeg também sonda cada fonte de vídeo para decodificação NVDEC em NV12 (EDT-103).
   As fontes aprovadas usam o mesmo dispositivo CUDA. Se uma fonte não passar, a decodificação dela usa
   a CPU e o render emite um aviso. O compositor desta etapa ainda recebe os frames em memória do host.
-  A saída composta tem garantia visual. `hashes` corresponde aos PNGs esparsos do HTML.
-  Com `--keep`, esses PNGs e os dados do compositor ficam em `layers/` no diretório de trabalho.
+  Sem o executável CEF instalado, o caminho anterior recebe PNGs do Chrome. `hashes` corresponde aos
+  PNGs esparsos desse caminho. No CEF, `hashes` é vazio e o resumo conta frames e texturas.
+  Com `--keep`, `layers/` guarda os dados do compositor e os PNGs quando a captura usa Chrome.
   Se a camada HTML alternar entre PNGs RGB e RGBA, os PNGs RGB recebem alfa opaco antes do concat.
   A normalização mantém os tempos dos frames e preserva os PNGs de captura usados em `hashes`.
 - Sobreposição ou falha de cobertura dos vídeos, estilos de vídeo incompatíveis ou uma forma de vidro que o

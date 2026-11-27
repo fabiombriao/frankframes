@@ -1,6 +1,6 @@
 // FrankFrames — proprietário. Ver LICENSE na raiz.
 import { execFile } from "node:child_process";
-import { open, rm, writeFile } from "node:fs/promises";
+import { open, readFile, rm, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { promisify } from "node:util";
 import { buildMuxArgs, buildVideoArgs } from "@frankframes/encode";
@@ -10,7 +10,7 @@ import type { Fps } from "@frankframes/contract";
 import { timeOfFrame } from "@frankframes/contract";
 import { LayeredError, layerName } from "./layered-capture.ts";
 import type { GlassRegion, LayeredCapture, ProgressFrame, VideoFrame } from "./layered-capture.ts";
-import { colorShader, encodeVulkan, glassShader, rgbVulkan, uploadRgba, vulkanDecodeArgs, vulkanDeviceArgs, vulkanEncoderArgs, vulkanOverlay, vulkanRotation } from "./layered-vram.ts";
+import { colorShader, encodeVulkan, glassShader, progressShader, rgbVulkan, uploadRgba, vulkanBitrate, vulkanDecodeArgs, vulkanDeviceArgs, vulkanEncoderArgs, vulkanOverlay, vulkanRotation } from "./layered-vram.ts";
 import type { CssVideoFilter } from "./layered-vram.ts";
 
 const run = promisify(execFile);
@@ -290,9 +290,28 @@ export async function encodeLayers(ffmpeg: string, options: LayeredEncodeOptions
     options.capture.frames.length, options.vram === true);
 }
 
+interface CefSource {
+  label: string;
+  path: string;
+}
+
+export async function writeCefRenderPlan(options: LayeredEncodeOptions): Promise<void> {
+  const sources: CefSource[] = [];
+  await buildLayeredArgs({ ...options, vram: true }, new Set(), new Map(), sources);
+  const graph = await readFile(join(options.directory, "layers.filter"), "utf8");
+  const fields = [
+    "frankframes-cef-v1", options.outPath,
+    String(vulkanBitrate(options.viewport, options.fps, options.preset)), options.capture.background ? "1" : "0",
+    String(sources.length), ...sources.flatMap(({ label, path }) => [label, path]),
+  ];
+  if (fields.some((field) => /[\x00\r\n]/.test(field))) throw new LayeredError("caminho inválido no plano CEF");
+  await writeFile(join(options.directory, "cef.plan"), `${fields.join("\n")}\n${graph}`);
+}
+
 /** O tempo de cada trecho é o dos frames visíveis, medido no mesmo seek usado para o HTML. */
 async function buildLayeredArgs(
   options: LayeredEncodeOptions, nvdec: ReadonlySet<string>, names: ReadonlyMap<number, string>,
+  cefSources?: CefSource[],
 ): Promise<string[]> {
   const { frames } = options.capture;
   const { sources, viewport, fps, directory } = options;
@@ -334,9 +353,13 @@ async function buildLayeredArgs(
     const begin = requested[0]!.raw;
     const sourceEnd = seekFrame + requested.at(-1)!.raw + 1;
     // A extração de referência aplica fps antes de -ss. O trim preserva a fase dessa grade.
-    if (vram) inputs.push(...vulkanDecodeArgs);
-    else if (nvdec.has(source.input)) inputs.push(...NVDEC_ARGS);
-    inputs.push(...(vram ? ["-noautorotate", "-display_rotation", "0"] : ["-autorotate"]), "-threads", "2", "-i", source.input);
+    const cefInput = `cefv${index}`;
+    if (cefSources !== undefined) cefSources.push({ label: cefInput, path: source.input });
+    else {
+      if (vram) inputs.push(...vulkanDecodeArgs);
+      else if (nvdec.has(source.input)) inputs.push(...NVDEC_ARGS);
+      inputs.push(...(vram ? ["-noautorotate", "-display_rotation", "0"] : ["-autorotate"]), "-threads", "2", "-i", source.input);
+    }
     const label = `v${index}`;
     const count = end - first;
     const timing: string[] = [];
@@ -368,7 +391,8 @@ async function buildLayeredArgs(
     } else {
       filters.push("format=gbrp", `${cropFilter}:format=gbrp:disable_linear=1:dithering=none`, ...videoColorFilters(initial.filter));
     }
-    graph.push(`[${index}:v]${filters.join(",")}[${label}]`);
+    const sourceLabel = cefSources === undefined ? `${index}:v` : cefInput;
+    graph.push(`[${sourceLabel}]${filters.join(",")}[${label}]`);
     videoLabels.push(`[${label}]`);
     first = end;
   }
@@ -379,11 +403,14 @@ async function buildLayeredArgs(
   }
   let stream = videoLabels.length;
   if (options.capture.background) {
-    if (vram) inputs.push("-loop", "1");
-    inputs.push("-framerate", rate, "-i", "background.png");
-    if (vram) {
-      graph.push(`[${stream}:v]trim=end_frame=${frames.length},${uploadRgba}[gradient]`, vulkanOverlay(base, "[gradient]", "[background]", viewport));
-    } else graph.push(`${base}[${stream}:v]overlay=format=gbrp:eof_action=repeat[background]`);
+    if (cefSources !== undefined) graph.push(vulkanOverlay(base, "[cefbackground]", "[background]", viewport));
+    else {
+      if (vram) inputs.push("-loop", "1");
+      inputs.push("-framerate", rate, "-i", "background.png");
+      if (vram) {
+        graph.push(`[${stream}:v]trim=end_frame=${frames.length},${uploadRgba}[gradient]`, vulkanOverlay(base, "[gradient]", "[background]", viewport));
+      } else graph.push(`${base}[${stream}:v]overlay=format=gbrp:eof_action=repeat[background]`);
+    }
     base = "[background]";
     stream += 1;
   }
@@ -427,22 +454,34 @@ async function buildLayeredArgs(
     base = `[glass${index}]`;
     stream += 1;
   }
-  await writeFile(join(directory, "layers.ffconcat"), frameList(names, fps, frames.length));
-  inputs.push("-f", "concat", "-safe", "0", "-i", "layers.ffconcat");
-  if (vram) graph.push(`[${stream}:v]fps=${rate},trim=end_frame=${frames.length},${uploadRgba}[overlay]`, vulkanOverlay(base, "[overlay]", "[html]", viewport));
-  else graph.push(
-    `[${stream}:v]fps=${rate},format=rgba[overlay]`,
-    `${base}[overlay]overlay=format=gbrp:eof_action=repeat[html]`,
-  );
+  if (cefSources !== undefined) graph.push(vulkanOverlay(base, "[cefhtml]", "[html]", viewport));
+  else {
+    await writeFile(join(directory, "layers.ffconcat"), frameList(names, fps, frames.length));
+    inputs.push("-f", "concat", "-safe", "0", "-i", "layers.ffconcat");
+    if (vram) graph.push(`[${stream}:v]fps=${rate},trim=end_frame=${frames.length},${uploadRgba}[overlay]`, vulkanOverlay(base, "[overlay]", "[html]", viewport));
+    else graph.push(
+      `[${stream}:v]fps=${rate},format=rgba[overlay]`,
+      `${base}[overlay]overlay=format=gbrp:eof_action=repeat[html]`,
+    );
+  }
   base = "[html]";
   const progress = frames.map((frame) => frame.progress);
   const bar = progress.find((frame) => frame !== undefined);
   if (bar !== undefined) {
-    const path = "progress.rgba";
-    await writeProgress(join(directory, path), progress, bar, options.signal);
-    inputs.push("-f", "rawvideo", "-pixel_format", "rgba", "-video_size", `${bar.width}x${bar.height}`, "-framerate", rate, "-i", path);
-    if (vram) graph.push(`[${stream + 1}:v]${uploadRgba}[bar]`, vulkanOverlay(base, "[bar]", "[withbar]", viewport, bar));
-    else graph.push(`${base}[${stream + 1}:v]overlay=x=${bar.x}:y=${bar.y}:format=gbrp[withbar]`);
+    if (cefSources !== undefined) {
+      if (progress.some((frame) => frame !== undefined && (frame.x !== bar.x || frame.y !== bar.y ||
+          frame.width !== bar.width || frame.height !== bar.height))) {
+        throw new LayeredError("a faixa de progresso separada precisa manter a mesma caixa");
+      }
+      await writeFile(join(directory, "progress.hook"), progressShader(progress, bar));
+      graph.push(`${base}libplacebo=${rgbVulkan}:custom_shader_path=progress.hook,format=vulkan[withbar]`);
+    } else {
+      const path = "progress.rgba";
+      await writeProgress(join(directory, path), progress, bar, options.signal);
+      inputs.push("-f", "rawvideo", "-pixel_format", "rgba", "-video_size", `${bar.width}x${bar.height}`, "-framerate", rate, "-i", path);
+      if (vram) graph.push(`[${stream + 1}:v]${uploadRgba}[bar]`, vulkanOverlay(base, "[bar]", "[withbar]", viewport, bar));
+      else graph.push(`${base}[${stream + 1}:v]overlay=x=${bar.x}:y=${bar.y}:format=gbrp[withbar]`);
+    }
     base = "[withbar]";
   }
   graph.push(`${base}${vram ? encodeVulkan : "format=yuv420p"}[out]`);
