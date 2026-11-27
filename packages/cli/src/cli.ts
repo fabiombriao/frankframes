@@ -25,6 +25,7 @@ import { UnknownBlockError, installBlock, installBlockFromUrl, listBlocks, readB
 import { runBatchCommand } from "./batch-command.ts";
 import { buildCatalogIndex, publishCatalog, serveCatalog } from "./catalog-server.ts";
 import { runFramesCommand } from "./frames-command.ts";
+import { runReframeCommand } from "./reframe-command.ts";
 import { runGenerateCommand } from "./generate-command.ts";
 import { startGallery } from "./gallery.ts";
 import { openBrowser } from "./open-browser.ts";
@@ -193,6 +194,11 @@ async function main(): Promise<void> {
     }
     return;
   }
+  if (argv[0] === "reframe") {
+    process.exitCode = await runReframeCommand(argv.slice(1));
+    return;
+  }
+
   // `frames` tem parser próprio (`--at`): não passa por `parseCli`.
   if (argv[0] === "frames") {
     process.exitCode = await runFramesCommand(argv.slice(1));

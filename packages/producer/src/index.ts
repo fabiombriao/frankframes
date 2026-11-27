@@ -36,3 +36,5 @@ export { BatchError, assertBatchEntries, parseBatchFile, runBatch, workersPerJob
 export type { BatchJob, BatchJobReport, BatchRenderChoices, BatchReport, BatchSpec, GpuChoice, RunBatchOptions } from "./batch.ts";
 export { FRAMES_ERROR_CODES, FramesError, inspectFrames, lumaStats, parseFrameTimes } from "./frames.ts";
 export type { FrameStat, FramesCode, FramesReport, InspectFramesOptions } from "./frames.ts";
+export { analyzeFaces } from "./face-analysis.ts";
+export { faceComposition, trackFaces } from "./face-tracks.ts";

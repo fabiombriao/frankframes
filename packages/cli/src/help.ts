@@ -6,6 +6,7 @@ export const COMMANDS = [
   "lint",
   "render",
   "frames",
+  "reframe",
   "generate",
   "preview",
   "studio",
@@ -52,6 +53,7 @@ uso:
                                     [--force] [--keep-context] [--json]
                                     (gera o vídeo a partir de texto com o Codex CLI; exige \`codex login\` com conta ChatGPT)
   frankframes preview <arquivo.html> [--open]
+  frankframes reframe <vídeo> -o <pasta> [--start S] [--duration S] [--swap]
   frankframes studio <arquivo.html> [--port N]
   frankframes transcribe <audio> [--provider local|groq|openai-compatible] [--language pt] [--json]
   frankframes captions <audio> [-o legenda.html] [--size 1920x1080] [--language pt] [--motion "<preset de entrada>"]

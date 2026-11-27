@@ -320,88 +320,119 @@ async function buildLayeredArgs(
   const frameSeconds = fps.den / fps.num;
   const graph: string[] = [];
   const inputs: string[] = [];
+  const stacked = frames.some(({ bottomVideo }) => bottomVideo !== undefined);
+  if (stacked && (viewport.height % 2 !== 0 || frames.some(({ bottomVideo }) => bottomVideo === undefined))) {
+    throw new LayeredError("o retrato empilhado exige dois painéis e altura par em toda a composição");
+  }
+  const panelViewport = { width: viewport.width, height: stacked ? viewport.height / 2 : viewport.height };
+  const sequences = [frames.map(({ video }) => video)];
+  if (stacked) sequences.push(frames.map(({ bottomVideo }) => bottomVideo!));
+  const [topSource, bottomSource] = stacked ? sequences.map((sequence) => {
+    const id = sequence[0]?.clipId;
+    return sequence.every(({ clipId }) => clipId === id) ? sources.find(({ timing }) => timing.clipId === id) : undefined;
+  }) : [];
+  // Um único decoder alimenta os dois recortes quando ambos mostram o mesmo trecho.
+  const shared = topSource !== undefined && bottomSource !== undefined && topSource.input === bottomSource.input &&
+    topSource.timing.start === bottomSource.timing.start && topSource.timing.duration === bottomSource.timing.duration &&
+    topSource.timing.offset === bottomSource.timing.offset && topSource.timing.playbackRate === bottomSource.timing.playbackRate;
+  let stream = 0;
+  let segment = 0;
   const videoLabels: string[] = [];
-  for (let first = 0; first < frames.length;) {
-    options.signal?.throwIfAborted();
-    const initial = frames[first]!.video!;
-    const source = sources.find(({ timing }) => timing.clipId === initial.clipId);
-    if (source === undefined) throw new LayeredError(`vídeo sem fonte: ${initial.clipId}`);
-    let end = first + 1;
-    while (end < frames.length && frames[end]!.video?.clipId === initial.clipId) end += 1;
-    const index = videoLabels.length;
-    const { displayWidth, displayHeight } = source.timing.orientation;
-    const crops: string[][] = [];
-    for (let frame = first; frame < end; frame += 1) {
-      const current = frames[frame]!.video!;
-      if (current.filter !== initial.filter) throw new LayeredError(`filtro variável no vídeo ${initial.clipId}`);
-      crops.push(cropForVideo(current, { width: displayWidth, height: displayHeight }, viewport).map((value) => value.toFixed(8)));
-    }
-    const crop = ["crop_w", "crop_h", "crop_x", "crop_y"].map((field, column) => {
-      const changes = crops.flatMap((frame, index) => frame[column] === crops[index - 1]?.[column]
-        ? [] : [{ value: frame[column]!, index }]);
-      return `${field}='${frameExpression(changes, "n", ({ index }) => index, ({ value }) => value)}'`;
-    }).join(":");
-    const { offset, playbackRate, duration, start } = source.timing;
-    const seekFrame = Math.round(offset / frameSeconds);
-    const maxFrame = Math.max(0, Math.ceil(duration * playbackRate / frameSeconds - 1e-9) - 1);
-    const requested: Array<{ raw: number; output: number }> = [];
-    for (let frame = first; frame < end; frame += 1) {
-      const seconds = timeOfFrame(frame, fps) * 1000 / 1000;
-      const raw = Math.max(0, Math.min(maxFrame, Math.floor((seconds - start) * playbackRate * (fps.num / fps.den))));
-      if (raw !== requested.at(-1)?.raw) requested.push({ raw, output: frame - first });
-    }
-    const begin = requested[0]!.raw;
-    const sourceEnd = seekFrame + requested.at(-1)!.raw + 1;
-    // A extração de referência aplica fps antes de -ss. O trim preserva a fase dessa grade.
-    const cefInput = `cefv${index}`;
-    if (cefSources !== undefined) cefSources.push({ label: cefInput, path: source.input });
-    else {
-      if (vram) inputs.push(...vulkanDecodeArgs);
-      else if (nvdec.has(source.input)) inputs.push(...NVDEC_ARGS);
-      inputs.push(...(vram ? ["-noautorotate", "-display_rotation", "0"] : ["-autorotate"]), "-threads", "2", "-i", source.input);
-    }
-    const label = `v${index}`;
-    const count = end - first;
-    const timing: string[] = [];
-    if (requested.some(({ raw }, index) => raw - begin !== index)) {
-      const select = frameExpression(requested, "n", ({ raw }) => raw - begin, ({ raw }) => `eq(n,${raw - begin})`);
-      timing.push(`select='${select}'`);
-    }
-    if (requested.some(({ output }, index) => output !== index)) {
-      const pts = frameExpression(requested, "N", (_, index) => index, ({ output }) => String(output));
-      timing.push(`setpts='${pts}'`, `fps=fps=${rate}:start_time=0`);
-    } else timing.push("setpts=N");
-    const filters = [
-      `fps=${rate}`,
-      `trim=start_frame=${seekFrame + begin}:end_frame=${sourceEnd}`,
-      ...timing,
-      `tpad=stop=${count}:stop_mode=clone`, `trim=end_frame=${count}`, "setsar=1",
-    ];
-    const cropFilter = `libplacebo=w=${viewport.width}:h=${viewport.height}:fit_mode=fill:upscaler=bilinear:downscaler=bilinear:${crop}`;
-    if (vram) {
-      // Igual à interpretação BT.601/sRGB dos quadros JPEG do caminho integral.
-      filters.push(...vulkanRotation(source.timing.orientation.rotation, displayWidth, displayHeight),
-        "setparams=colorspace=smpte170m:color_trc=iec61966-2-1", `${cropFilter}:${rgbVulkan}`, "format=vulkan");
-      const changes = parseVideoFilters(initial.filter);
-      if (changes.length > 0) {
-        const file = `color-${index}.hook`;
-        await writeFile(join(directory, file), colorShader(changes));
-        filters.push(`libplacebo=${rgbVulkan}:custom_shader_path=${file}`, "format=vulkan");
+  for (const [panel, sequence] of sequences.entries()) {
+    const segments: string[] = [];
+    for (let first = 0; first < sequence.length;) {
+      options.signal?.throwIfAborted();
+      const initial = sequence[first]!;
+      const source = sources.find(({ timing }) => timing.clipId === initial.clipId);
+      if (source === undefined) throw new LayeredError(`vídeo sem fonte: ${initial.clipId}`);
+      let end = first + 1;
+      while (end < sequence.length && sequence[end]!.clipId === initial.clipId) end += 1;
+      const index = segment++;
+      const { displayWidth, displayHeight } = source.timing.orientation;
+      const crops: string[][] = [];
+      for (let frame = first; frame < end; frame += 1) {
+        const current = sequence[frame]!;
+        if (current.filter !== initial.filter) throw new LayeredError(`filtro variável no vídeo ${initial.clipId}`);
+        crops.push(cropForVideo(current, { width: displayWidth, height: displayHeight }, panelViewport).map((value) => value.toFixed(8)));
       }
-    } else {
-      filters.push("format=gbrp", `${cropFilter}:format=gbrp:disable_linear=1:dithering=none`, ...videoColorFilters(initial.filter));
+      const crop = ["crop_w", "crop_h", "crop_x", "crop_y"].map((field, column) => {
+        const changes = crops.flatMap((frame, index) => frame[column] === crops[index - 1]?.[column]
+          ? [] : [{ value: frame[column]!, index }]);
+        return `${field}='${frameExpression(changes, "n", ({ index }) => index, ({ value }) => value)}'`;
+      }).join(":");
+      const { offset, playbackRate, duration, start } = source.timing;
+      const seekFrame = Math.round(offset / frameSeconds);
+      const maxFrame = Math.max(0, Math.ceil(duration * playbackRate / frameSeconds - 1e-9) - 1);
+      const requested: Array<{ raw: number; output: number }> = [];
+      for (let frame = first; frame < end; frame += 1) {
+        const seconds = timeOfFrame(frame, fps) * 1000 / 1000;
+        const raw = Math.max(0, Math.min(maxFrame, Math.floor((seconds - start) * playbackRate * (fps.num / fps.den))));
+        if (raw !== requested.at(-1)?.raw) requested.push({ raw, output: frame - first });
+      }
+      const begin = requested[0]!.raw;
+      const sourceEnd = seekFrame + requested.at(-1)!.raw + 1;
+      // A extração de referência aplica fps antes de -ss. O trim preserva a fase dessa grade.
+      const reuse = shared && panel === 1;
+      const slot = reuse ? 0 : stream++;
+      const cefInput = `cefv${slot}`;
+      if (!reuse) {
+        if (cefSources !== undefined) cefSources.push({ label: cefInput, path: source.input });
+        else {
+          if (vram) inputs.push(...vulkanDecodeArgs);
+          else if (nvdec.has(source.input)) inputs.push(...NVDEC_ARGS);
+          inputs.push(...(vram ? ["-noautorotate", "-display_rotation", "0"] : ["-autorotate"]), "-threads", "2", "-i", source.input);
+        }
+      }
+      const label = `v${index}`;
+      const count = end - first;
+      const timing: string[] = [];
+      if (requested.some(({ raw }, index) => raw - begin !== index)) {
+        const select = frameExpression(requested, "n", ({ raw }) => raw - begin, ({ raw }) => `eq(n,${raw - begin})`);
+        timing.push(`select='${select}'`);
+      }
+      if (requested.some(({ output }, index) => output !== index)) {
+        const pts = frameExpression(requested, "N", (_, index) => index, ({ output }) => String(output));
+        timing.push(`setpts='${pts}'`, `fps=fps=${rate}:start_time=0`);
+      } else timing.push("setpts=N");
+      const filters = [
+        `fps=${rate}`,
+        `trim=start_frame=${seekFrame + begin}:end_frame=${sourceEnd}`,
+        ...timing,
+        `tpad=stop=${count}:stop_mode=clone`, `trim=end_frame=${count}`, "setsar=1",
+      ];
+      const cropFilter = `libplacebo=w=${panelViewport.width}:h=${panelViewport.height}:fit_mode=fill:upscaler=bilinear:downscaler=bilinear:${crop}`;
+      if (vram) {
+        // Igual à interpretação BT.601/sRGB dos quadros JPEG do caminho integral.
+        filters.push(...vulkanRotation(source.timing.orientation.rotation, displayWidth, displayHeight),
+          "setparams=colorspace=smpte170m:color_trc=iec61966-2-1", `${cropFilter}:${rgbVulkan}`, "format=vulkan");
+        const changes = parseVideoFilters(initial.filter);
+        if (changes.length > 0) {
+          const file = `color-${index}.hook`;
+          await writeFile(join(directory, file), colorShader(changes));
+          filters.push(`libplacebo=${rgbVulkan}:custom_shader_path=${file}`, "format=vulkan");
+        }
+      } else {
+        filters.push("format=gbrp", `${cropFilter}:format=gbrp:disable_linear=1:dithering=none`, ...videoColorFilters(initial.filter));
+      }
+      const sourceLabel = cefSources === undefined ? `${slot}:v` : cefInput;
+      if (shared && panel === 0) graph.push(`[${sourceLabel}]split=2[camera0][camera1]`);
+      graph.push(`[${shared ? "camera" + panel : sourceLabel}]${filters.join(",")}[${label}]`);
+      segments.push(`[${label}]`);
+      first = end;
     }
-    const sourceLabel = cefSources === undefined ? `${index}:v` : cefInput;
-    graph.push(`[${sourceLabel}]${filters.join(",")}[${label}]`);
-    videoLabels.push(`[${label}]`);
-    first = end;
+    if (segments.length === 1) videoLabels.push(segments[0]!);
+    else {
+      const label = `[video${panel}]`;
+      graph.push(`${segments.join("")}concat=n=${segments.length}:v=1:a=0${label}`);
+      videoLabels.push(label);
+    }
   }
   let base = videoLabels[0]!;
-  if (videoLabels.length > 1) {
-    graph.push(`${videoLabels.join("")}concat=n=${videoLabels.length}:v=1:a=0[video]`);
-    base = "[video]";
+  if (stacked) {
+    const output = vram ? `${rgbVulkan},format=vulkan` : "format=gbrp:disable_linear=1:dithering=none";
+    graph.push(`${videoLabels.join("")}libplacebo=inputs=2:w=${viewport.width}:h=${viewport.height}:pos_x=0:pos_y='idx*${panelViewport.height}':pos_w=${viewport.width}:pos_h=${panelViewport.height}:${output}[stacked]`);
+    base = "[stacked]";
   }
-  let stream = videoLabels.length;
   if (options.capture.background) {
     if (cefSources !== undefined) graph.push(vulkanOverlay(base, "[cefbackground]", "[background]", viewport));
     else {

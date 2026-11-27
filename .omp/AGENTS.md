@@ -24,6 +24,7 @@ node scripts/ci.ts              # gate: typecheck, testes, doctor, render de fum
 node scripts/ci.ts --fast       # 5 s: typecheck + testes rápidos
 node packages/cli/src/cli.ts render examples/hello.html -o out/v.mp4 --preset draft
 node packages/cli/src/cli.ts lint examples/hello.html --json
+node packages/cli/src/cli.ts reframe podcast.mp4 -o out/podcast --start 12 --duration 30
 node packages/cli/src/cli.ts doctor
 node scripts/fetch-fonts.ts     # fontes OFL em vendor/fonts
 node scripts/vendor-ffmpeg.ts   # FFmpeg LGPL pinado em vendor/ffmpeg

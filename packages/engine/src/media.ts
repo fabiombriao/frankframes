@@ -248,6 +248,10 @@ export async function extractFrames(options: ExtractOptions): Promise<{ frameCou
     ...(options.duration !== undefined ? ["-t", String(options.duration)] : []),
     "-vf",
     `fps=${rate}`,
+    // O filtro já amostra na grade desejada. No image2, a sincronização CFR
+    // poderá duplicar o primeiro JPEG após um -ss que cai entre quadros.
+    "-fps_mode",
+    "passthrough",
     "-an",
     "-q:v",
     "2",

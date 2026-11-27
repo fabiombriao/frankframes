@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { extractFrames, openSession, openSessionFor, resolveChrome, startServer } from "../src/index.ts";
@@ -103,6 +103,20 @@ test("vídeo fora de banda: <video> vira <img> e o frame é estável", { timeout
   assert.deepEqual(divergent.slice(0, 10), [], "frames divergentes entre execuções");
   assert.ok(new Set(first.values()).size > 20, "o vídeo precisa mudar de frame, senão o teste não prova nada");
   await mkdir(join(workspace, "done"), { recursive: true });
+});
+
+test("extração com início entre quadros preserva a sequência sem duplicar o primeiro JPEG", async (t) => {
+  if (!(await ffmpegAvailable())) return t.skip("ffmpeg não encontrado");
+  const workspace = await tempDir(t, "ff-media-fractional-");
+  const input = join(workspace, "clip.mp4");
+  await run(FFMPEG, ["-v", "error", "-f", "lavfi", "-i", "testsrc2=s=160x90:r=30:d=0.6",
+    "-c:v", "mpeg4", "-y", input]);
+  const reference = join(workspace, "reference");
+  const cut = join(workspace, "cut");
+  await extractFrames({ ffmpeg: FFMPEG, input, outDir: reference, fps: FPS });
+  await extractFrames({ ffmpeg: FFMPEG, input, outDir: cut, fps: FPS, offset: 0.25, duration: 0.2 });
+  assert.deepEqual(await readFile(join(cut, "000000.jpg")), await readFile(join(reference, "000008.jpg")));
+  assert.deepEqual(await readFile(join(cut, "000001.jpg")), await readFile(join(reference, "000009.jpg")));
 });
 
 test("imagem substituta respeita a janela do clip", { timeout: 300_000 }, async (t) => {

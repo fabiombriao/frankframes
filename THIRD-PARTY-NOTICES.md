@@ -54,6 +54,12 @@ sob a Apache License 2.0 (https://www.apache.org/licenses/LICENSE-2.0): uso, rep
 permitidos, desde que se mantenha o aviso de copyright e o texto da licença, que acompanham o pacote
 instalado em `node_modules/puppeteer-core`. O FrankFrames não o modificou.
 
+### @mediapipe/tasks-vision — Apache-2.0
+
+Versão 1.2.3, Google. A tarefa de detecção facial roda localmente e usa o modelo
+MediaPipe BlazeFace Full Range publicado com licença Apache-2.0. [Código e licença do MediaPipe](https://github.com/google-ai-edge/mediapipe).
+[Ficha e licença do modelo](https://huggingface.co/litert-community/MediaPipe-FaceDetector-BlazeFace-Full-Range).
+
 ### Transitivas de puppeteer-core e de parse5
 
 Mesmos termos de cada licença abaixo; o texto integral e o aviso de copyright de cada pacote ficam no

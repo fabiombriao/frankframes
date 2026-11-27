@@ -37,6 +37,7 @@ export interface ProgressFrame {
 
 export interface PageFrame {
   video: VideoFrame;
+  bottomVideo?: VideoFrame;
   glass: GlassRegion[];
   progress?: ProgressFrame;
   background?: string;
@@ -48,19 +49,25 @@ export async function inspectFrame(sparse: boolean): Promise<PageFrame | { error
   const glass: GlassRegion[] = [];
   const fail = (error: string): { error: string } => ({ error });
   let video: VideoFrame | undefined;
+  let bottomVideo: VideoFrame | undefined;
   const root = document.querySelector('[data-composition-id][data-root="true"]') ?? document.querySelector("[data-composition-id]");
   if (root === null || !(root instanceof HTMLElement)) return fail("a composição precisa de uma raiz HTML");
+  const stacked = root.hasAttribute("data-portrait-stack");
+  const panelHeight = innerHeight / (stacked ? 2 : 1);
   const visible = (style: CSSStyleDeclaration): boolean => style.display !== "none" && style.visibility === "visible";
   const noOutline = (style: CSSStyleDeclaration): boolean => style.outlineStyle === "none" || style.outlineWidth === "0px";
   for (const media of Array.from(document.querySelectorAll<HTMLImageElement>("[data-ff-media]"))) {
     const style = getComputedStyle(media);
     if (!visible(style) || media.getClientRects().length === 0) continue;
     const clipId = media.getAttribute("data-ff-media")!;
-    if (video !== undefined) return fail(`vídeos simultâneos: ${video.clipId} e ${clipId}`);
     const box = media.getBoundingClientRect();
-    if (Math.abs(box.left) + Math.abs(box.top) + Math.abs(box.width - innerWidth) + Math.abs(box.height - innerHeight) > 0.01) {
+    const bottom = stacked && Math.abs(box.top - panelHeight) < 0.01;
+    if (Math.abs(box.left) + Math.abs(box.top - (bottom ? panelHeight : 0)) +
+        Math.abs(box.width - innerWidth) + Math.abs(box.height - panelHeight) > 0.01) {
       return fail(`o vídeo ${clipId} precisa preencher o quadro`);
     }
+    const previous = bottom ? bottomVideo : video;
+    if (previous !== undefined) return fail(`vídeos simultâneos: ${previous.clipId} e ${clipId}`);
     const objectFit = style.objectFit;
     const position = /^(\d+(?:\.\d+)?)% (\d+(?:\.\d+)?)%$/.exec(style.objectPosition);
     if ((objectFit !== "cover" && objectFit !== "fill") || position === null) {
@@ -76,16 +83,22 @@ export async function inspectFrame(sparse: boolean): Promise<PageFrame | { error
           style.borderBottomRightRadius].some((value) => value !== "0px")) {
       return fail(`o vídeo ${clipId} tem transformação, borda ou efeito visual incompatível com o modo por camadas`);
     }
-    if (media.parentElement !== root || (style.zIndex !== "auto" && Number(style.zIndex) !== 0)) {
+    if (media.parentElement !== root ||
+        (style.zIndex !== "auto" && Number(style.zIndex) !== 0 && !(bottom && Number(style.zIndex) === 1))) {
       return fail(`o vídeo ${clipId} precisa estar no fundo, diretamente na raiz e sem z-index próprio`);
     }
     const number = (prop: string, initial: number): number => Number(style.getPropertyValue(prop) || initial);
-    video = {
+    const definition: VideoFrame = {
       clipId, fit: objectFit, position: [Number(position[1]) / 100, Number(position[2]) / 100],
       zoom: number("--ff-zoom", 1), fx: number("--ff-fx", 0.5), fy: number("--ff-fy", 0.5), filter: style.filter,
     };
+    if (bottom) bottomVideo = definition;
+    else video = definition;
   }
   if (video === undefined) return fail("o modo por camadas precisa de um vídeo de fundo em cada frame");
+  if (stacked && bottomVideo === undefined) return fail("o retrato empilhado precisa de dois painéis por quadro");
+  if (stacked && innerHeight % 2 !== 0) return fail("o retrato empilhado exige altura par");
+  const videos = { video, ...(bottomVideo === undefined ? {} : { bottomVideo }) };
 
   const state = globalThis as typeof globalThis & {
     __ff: { settle: () => Promise<void> };
@@ -154,7 +167,7 @@ export async function inspectFrame(sparse: boolean): Promise<PageFrame | { error
   const backgroundProperty = background ? { background } : {};
   if (!sparse || document.querySelector("img:not([data-ff-media]), canvas, iframe, object, embed, svg animate, svg animateTransform")) {
     if (repaint) await state.__ff.settle();
-    return { video, glass, ...backgroundProperty };
+    return { ...videos, glass, ...backgroundProperty };
   }
   const animations = document.getAnimations();
   // Uma barra CSS simples pode mudar em todo frame sem invalidar o PNG que contém o restante do HTML.
@@ -254,7 +267,7 @@ export async function inspectFrame(sparse: boolean): Promise<PageFrame | { error
   for (const element of Array.from(document.querySelectorAll("[data-ff-start]:not(video, [data-ff-media])"))) {
     signature.push([getComputedStyle(element).visibility]);
   }
-  return { video, glass, ...backgroundProperty, ...(progress === undefined ? {} : { progress }), signature: JSON.stringify(signature) };
+  return { ...videos, glass, ...backgroundProperty, ...(progress === undefined ? {} : { progress }), signature: JSON.stringify(signature) };
 }
 
 export class LayeredError extends Error {

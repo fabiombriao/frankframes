@@ -740,6 +740,26 @@ com `z-index` automático ou zero. Os cortes, a orientação, o offset e a veloc
 no manifesto. O Chrome mantém a caixa e o motion do vídeo numa imagem transparente, e o FFmpeg lê a fonte
 sem passar pelo cache de JPEGs.
 
+Com `data-portrait-stack` na raiz, o modo aceita dois vídeos com a largura total do viewport
+e exatamente metade da altura cada um. O primeiro ocupa o topo com `z-index` automático ou zero.
+O segundo começa na metade da altura, com `z-index` automático, zero ou um. A altura do viewport
+precisa ser par. A cobertura é exigida em todos os quadros. Zoom, foco e encaixe são calculados
+por painel antes de compor as demais camadas. Em `--vram`, os dois recortes são combinados
+no Vulkan antes do encode. Painéis que mostram o mesmo arquivo com os mesmos tempos compartilham
+a decodificação quando cada painel contém um único clipe.
+
+**Reenquadramento de podcast (EDT-107).** `frankframes reframe <vídeo> -o <pasta>` gera uma
+composição 1080×1920 a 30 fps a partir de uma câmera horizontal fixa. Para duas pessoas sentadas
+em lados opostos, a análise local amostra a cada 250 ms e usa BlazeFace com o delegate GPU do
+MediaPipe. Sem adaptador WebGL2 de hardware, o comando falha com diagnóstico. As caixas faciais
+são associadas pelo lado da câmera, e o foco suaviza o movimento e mantém a posição durante
+perdas breves. Faltando detecções suficientes em um lado, o comando falha.
+O vídeo é copiado uma vez e referenciado pelos dois painéis. Apenas o painel superior contribui
+com áudio. `--start` e `--duration` selecionam o trecho em segundos e `--swap` inverte
+a ordem dos dois participantes. Os keyframes de zoom e foco ficam disponíveis no Studio.
+No caminho integral, a extração preserva a sequência produzida pelo filtro `fps` sem duplicar
+um quadro na saída JPEG quando o início cai entre dois quadros.
+
 - A câmera amostra zoom e foco após o seek do Chrome. O FFmpeg (`libplacebo` com Vulkan) aplica o recorte com
   coordenadas fracionárias, respeitando `object-fit: cover | fill`, `object-position` em porcentagens e
   o encaixe do retângulo de destino à grade de pintura do Chrome.
@@ -1327,7 +1347,7 @@ As escritas são serializadas: duas edições nunca intercalam leitura e gravaç
 ## 9e. Linha de comando: ajuda
 
 `--help` e `-h` em **qualquer posição** da linha de comando de **qualquer** subcomando (`lint`, `render`, `frames`,
-`generate`, `preview`, `studio`, `transcribe`, `captions`, `models`, `blocks`, `gallery`, `init`, `doctor`, `setup`,
+`generate`, `preview`, `reframe`, `studio`, `transcribe`, `captions`, `models`, `blocks`, `gallery`, `init`, `doctor`, `setup`,
 `upgrade`, `skill`, `browser`, inclusive com ação, como `blocks add --help`) mostram a ajuda geral no stdout e saem
 com 0 **antes de qualquer efeito**: nenhum arquivo é criado ou alterado, nenhum servidor sobe, nenhuma rede é
 usada. A lista de subcomandos fica em `packages/cli/src/help.ts` (`COMMANDS`) e é a mesma que o despacho usa para

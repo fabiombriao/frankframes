@@ -10,7 +10,9 @@
   "dependencies": {
     "@frankframes/contract": "*",
     "@frankframes/encode": "*",
-    "@frankframes/engine": "*"
+    "@frankframes/engine": "*",
+    "@mediapipe/tasks-vision": "1.2.3",
+    "puppeteer-core": "25.18.1"
   },
   "files": [
     "src"

@@ -9,6 +9,10 @@ FrankFrames — proprietário (ver `LICENSE`). Versões seguem `MAJOR.MINOR.PATC
 
 ### Render e mídia
 
+- `reframe` rastreia dois rostos de uma câmera fixa na GPU e gera uma composição vertical com
+  dois painéis, foco editável por keyframes e áudio único. O compositor Vulkan exporta o layout (EDT-107).
+- A extração JPEG mantém a sequência do filtro de FPS em cortes com início fracionário (EDT-107).
+
 - `render --layered` usa o FFmpeg para cortes, câmera subpixel e vidro sobre o vídeo de fundo, com as
   sobreposições do Chrome capturadas em uma camada transparente (EDT-102).
 - Com AV1 NVENC ativo, `render --layered` usa NVDEC nas fontes de vídeo que passam pela sonda de CUDA

@@ -31,7 +31,7 @@ export function frameCacheKey(input: {
   offset: number;
   duration: number;
 }): string {
-  const window = `${input.fps.num}/${input.fps.den}@${input.offset.toFixed(3)}-${input.duration.toFixed(3)}`;
+  const window = `v2:${input.fps.num}/${input.fps.den}@${input.offset.toFixed(3)}-${input.duration.toFixed(3)}`;
   return `${input.digest.slice(0, 16)}-${createHash("sha256").update(window).digest("hex").slice(0, 8)}`;
 }
 

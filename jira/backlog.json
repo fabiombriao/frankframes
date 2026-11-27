@@ -1180,6 +1180,21 @@
             "Sem GPU NVIDIA ou sem suporte, o pipeline atual segue como reserva; modo software continua determinístico por hash; nada GPL."
           ],
           "jiraKey": "EDT-103"
+        },
+        {
+          "summary": "Rastreio de dois rostos para podcast vertical com painéis editáveis",
+          "points": 8,
+          "labels": [
+            "render",
+            "gpu",
+            "studio"
+          ],
+          "acceptance": [
+            "Comando local analisa um trecho horizontal usando detecção acelerada e mantém as pessoas da esquerda e da direita em painéis separados.",
+            "Gera composição 1080x1920 com keyframes editáveis, fonte original copiada e uma trilha de áudio.",
+            "Exporta os dois painéis com --vram no Windows com CEF e valida o caminho normal de render e a perda breve de uma detecção."
+          ],
+          "jiraKey": "EDT-107"
         }
       ],
       "jiraKey": "EDT-101"

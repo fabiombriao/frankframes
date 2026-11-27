@@ -37,6 +37,27 @@ test("CEF usa texturas no grafo Vulkan e passa as dimensões da barra ao shader"
   assert.deepEqual((await readdir(directory)).sort(), ["cef.plan", "layers.filter", "progress.hook"]);
 });
 
+test("CEF comparte a fonte e aplica os recortes em duas metades do retrato", async (t) => {
+  const directory = await tempDir(t, "ff-cef-stack-");
+  const video = { clipId: "top", fit: "cover" as const, position: [0, .5] as [number, number],
+    zoom: 1.5, fx: .3, fy: .5, filter: "none" };
+  const bottomVideo = { ...video, clipId: "bottom", position: [1, .5] as [number, number], fx: .7 };
+  const timing = { start: 0, offset: 1, duration: 1, playbackRate: 1,
+    orientation: { rotation: 0 as const, mirrored: false, displayWidth: 1920, displayHeight: 1080 } };
+  const input = join(directory, "source.mp4");
+  await writeCefRenderPlan({
+    capture: { frames: [{ video, bottomVideo, glass: [] }], hashes: new Map(), rgbFrames: new Set(), background: false },
+    sources: [{ input, timing: { ...timing, clipId: "top" } }, { input, timing: { ...timing, clipId: "bottom" } }],
+    viewport: { width: 1080, height: 1920 }, fps: { num: 30, den: 1 }, directory,
+    outPath: join(directory, "video.mp4"), codec: "av1", preset: "high", warnings: [],
+  });
+  const plan = await readFile(join(directory, "cef.plan"), "utf8");
+  assert.match(plan, /\[cefv0\]split=2\[camera0\]\[camera1\]/);
+  assert.equal(plan.split("source.mp4").length, 2);
+  assert.match(plan, /pos_y='idx\*960':pos_w=1080:pos_h=960/);
+  assert.doesNotMatch(plan, /hwdownload|hwupload/);
+});
+
 test("CEF exige a contagem integral e nenhum callback em software", () => {
   const output = "MP4 Vulkan frames=12\nframes=12 texturas=3 software=0 segundos=1.250\n";
   assert.deepEqual(cefStatistics(output, 12), { frames: 12, textures: 3, software: 0, seconds: 1.25 });

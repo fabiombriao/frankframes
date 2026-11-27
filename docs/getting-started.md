@@ -58,6 +58,25 @@ ele diz exatamente qual comando rodar.
 
 ## 2. Criar um projeto
 
+### Reenquadrar um podcast em dois painéis
+
+Para um vídeo horizontal de câmera fixa, com uma pessoa de cada lado, gere uma composição vertical
+em uma pasta nova. O formato da gravação precisa abrir no navegador instalado pelo `setup`.
+
+```powershell
+node packages/cli/src/cli.ts reframe "C:\MeusProjetos\podcast.mp4" -o out/podcast --start 12 --duration 30
+node packages/cli/src/cli.ts studio out/podcast/index.html
+node packages/cli/src/cli.ts render out/podcast/index.html --vram --gpu hardware -o out/podcast.mp4
+```
+
+O primeiro uso baixa o modelo com SHA-256 fixo. A detecção roda na GPU com WebGL2 de hardware.
+Use `--swap` para inverter quem fica em cima. Selecione o vídeo superior ou inferior no Studio
+para ajustar os keyframes de zoom e foco de cada pessoa. O áudio vem da gravação original, uma vez só.
+O render integral também aceita a composição. O caminho CEF em VRAM depende do helper Windows.
+[Instalação do helper CEF](../scripts/cef-probe/README.md#render-completo).
+
+### Começar com uma composição em branco
+
 ```bash
 node packages/cli/src/cli.ts init meu-video
 ```
