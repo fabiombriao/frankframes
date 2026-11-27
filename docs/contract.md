@@ -1064,6 +1064,9 @@ Qualquer outra falha de medição continua falhando alto.
   mudou (a entrada ou o arquivo de uma legenda, EDT-97), e desfazer/refazer restauram aquele arquivo. Se ele mudou
   fora do Studio, desfazer/refazer recusa com `409 E_HISTORY_STALE` e descarta o histórico em vez de
   sobrescrever a mudança (a conferência é por arquivo). Desfazer uma importação remove o clip, não o arquivo em `assets/`.
+  Ctrl+Z, Ctrl+Shift+Z e Ctrl+Y também acionam o histórico com o foco no seletor de camadas e dentro do preview.
+  Os campos de texto preservam o desfazer e o refazer nativos. Clicar ou arrastar no modo Camadas leva o foco
+  de volta ao Studio para os atalhos da composição.
 - **Legendas** (EDT-97). Em `GET /api/composition`, o host cuja `data-composition-src` aponta para um arquivo com a
   meta `frankframes:captions` (§7b.8) vem com `captions: true`. Vale para clip de topo: `<hostId>` é o id de um clip
   de topo do arquivo da entrada.

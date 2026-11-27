@@ -2483,13 +2483,25 @@ import { createLayerEditor } from "/layers.js";
     );
   }
 
+  function historyShortcut(event) {
+    if (event.defaultPrevented || event.altKey || (!event.ctrlKey && !event.metaKey)) return false;
+    const key = event.key.toLowerCase();
+    if (key !== "z" && (key !== "y" || event.shiftKey)) return false;
+    const target = event.target;
+    if (target?.isContentEditable ||
+        target?.matches?.("textarea, input:not([type=range]):not([type=checkbox]):not([type=radio])")) return false;
+    event.preventDefault();
+    travel(key === "y" || event.shiftKey ? "redo" : "undo");
+    return true;
+  }
+
   document.addEventListener("keydown", (event) => {
     if (event.code === "Space" && !isTyping(event)) {
       event.preventDefault();
       togglePlayback();
       return;
     }
-    if (event.defaultPrevented || isTyping(event)) return;
+    if (historyShortcut(event) || event.defaultPrevented || isTyping(event)) return;
     const mod = event.ctrlKey || event.metaKey;
     const key = event.key.toLowerCase();
     // Com um keyframe selecionado, Delete apaga o keyframe; o clip nunca some por este atalho.
@@ -2512,16 +2524,6 @@ import { createLayerEditor } from "/layers.js";
     if (!mod && !event.altKey && key === "l") {
       event.preventDefault();
       clickPlayerControl("[data-ff-loop]");
-      return;
-    }
-    if (mod && !event.altKey && key === "z") {
-      event.preventDefault();
-      travel(event.shiftKey ? "redo" : "undo");
-      return;
-    }
-    if (mod && !event.altKey && !event.shiftKey && key === "y") {
-      event.preventDefault();
-      travel("redo");
       return;
     }
     if (mod && !event.altKey && !event.shiftKey && key === "c" && state.selectedId !== null) {
@@ -2623,9 +2625,11 @@ import { createLayerEditor } from "/layers.js";
     if (drag === null) renderTimeline();
   }
   player.addEventListener("load", checkLayerEffect);
+  player.contentDocument?.addEventListener("keydown", historyShortcut);
   player.addEventListener("load", () => {
     const doc = player.contentDocument;
     if (!doc) return;
+    doc.addEventListener("keydown", historyShortcut);
     doc.addEventListener("dragenter", (event) => {
       if (!hasFiles(event)) return;
       event.preventDefault();

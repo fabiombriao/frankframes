@@ -960,6 +960,20 @@
             "Teste de regressão no Chromium, aceite no Vídeo 3 e gate local."
           ],
           "jiraKey": "EDT-105"
+        },
+        {
+          "summary": "Studio: Ctrl+Z e refazer após edição visual e com foco no preview",
+          "points": 2,
+          "labels": [
+            "studio",
+            "camadas"
+          ],
+          "acceptance": [
+            "Ctrl+Z funciona depois de manipular uma camada e com o foco no seletor ou no preview.",
+            "Ctrl+Shift+Z e Ctrl+Y refazem pelo mesmo histórico. O desfazer nativo em campos de texto continua disponível.",
+            "Teste de regressão no Chromium e gate local."
+          ],
+          "jiraKey": "EDT-106"
         }
       ],
       "jiraKey": "EDT-35"

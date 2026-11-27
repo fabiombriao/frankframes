@@ -262,6 +262,8 @@ export function createLayerEditor({ player, button, panel, overlay, outline, sav
     const hit = event.altKey ? distinct[behind % distinct.length] : distinct.find(hasPaint) ?? distinct[0];
     const id = corner === null ? hit?.getAttribute(MARKER) : selected?.id;
     if (!id) return;
+    event.preventDefault();
+    button.focus({ preventScroll: true });
     if (selected?.id !== id) pick(id);
     if (event.altKey) return;
     const element = elementFor(selected);
@@ -277,7 +279,6 @@ export function createLayerEditor({ player, button, panel, overlay, outline, sav
       height: parseFloat(computed.height) || element.getBoundingClientRect().height,
       inline: computed.display === "inline", saved: new Map(), changes: {},
     };
-    event.preventDefault();
     overlay.setPointerCapture(event.pointerId);
   }
 

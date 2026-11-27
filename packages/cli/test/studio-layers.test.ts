@@ -90,9 +90,32 @@ test("Camadas: seleciona título e cartão no preview, edita fonte, arrasta, red
         const style = getComputedStyle(document.querySelector(".card")!);
         return style.opacity === "0.5" && style.backgroundColor === "rgb(100, 139, 36)";
       });
-      await page.locator("#undoButton").click();
+      const historyKey = async (redo = false) => {
+        await page.keyboard.down("Control");
+        if (redo) await page.keyboard.down("Shift");
+        await page.keyboard.press("z");
+        if (redo) await page.keyboard.up("Shift");
+        await page.keyboard.up("Control");
+      };
+      await page.focus("#layerPicker");
+      await historyKey();
       await frame.waitForFunction(() => getComputedStyle(document.querySelector(".card")!).opacity === "1");
       assert.match(await readFile(entry, "utf8"), /width: 6[0-9]+(?:\.[0-9]+)?px/);
+
+      const focusPreview = async () => {
+        await page.waitForFunction(() => {
+          const preview = (document.getElementById("player") as HTMLIFrameElement).contentDocument;
+          return preview?.readyState === "complete" && preview.querySelector("[data-ff-scrub]") !== null;
+        }, { polling: 50 });
+        await frame.focus("[data-ff-scrub]");
+        assert.equal(await page.$eval("#player", (element) => element === document.activeElement), true);
+      };
+      await focusPreview();
+      await historyKey(true);
+      await frame.waitForFunction(() => getComputedStyle(document.querySelector(".card")!).opacity === "0.5");
+      await focusPreview();
+      await historyKey();
+      await frame.waitForFunction(() => getComputedStyle(document.querySelector(".card")!).opacity === "1");
 
       const nested = await page.$$eval("#layerPicker option", (options) =>
         (options.find((option) => option.textContent?.includes("Apoio")) as HTMLOptionElement).value);

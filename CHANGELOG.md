@@ -22,6 +22,8 @@ FrankFrames — proprietário (ver `LICENSE`). Versões seguem `MAJOR.MINOR.PATC
 
 ### Studio
 
+- Corrige Ctrl+Z e Refazer depois de editar camadas ou focar o seletor e o preview.
+
 - Clicar na régua ou em um clip posiciona o playhead no quadro mais próximo. Clicar na imagem do preview
   alterna play e pausa.
 - O inspetor edita trechos de texto com marcação, incluindo os destaques e as linhas do gancho, preservando
