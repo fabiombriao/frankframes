@@ -13,10 +13,17 @@ interface P5Location {
 
 interface P5Node {
   nodeName: string;
+  value?: string;
   attrs?: Array<{ name: string; value: string }>;
   childNodes?: P5Node[];
   content?: { childNodes: P5Node[] };
   sourceCodeLocation?: P5Location | null;
+}
+
+export interface ClipTextPart {
+  index: number;
+  tag: string;
+  text: string;
 }
 
 export interface ClipPatch {
@@ -25,6 +32,8 @@ export interface ClipPatch {
   attributes?: Record<string, string | null>;
   /** Substitui o texto do elemento — só quando ele tem um único nó de texto. */
   text?: string;
+  /** Edita nós de texto sem substituir os elementos que os contêm. */
+  textParts?: Array<{ index: number; original: string; text: string }>;
   /**
    * Atributos escritos entre aspas simples (JSON legível: `data-keyframes='[{"time":1}]'`). O valor
    * guarda `"` sem escape; só `&` e `'` viram entidade.
@@ -114,6 +123,52 @@ function escapeAttribute(value: string): string {
   return value.replace(/&/g, "&amp;").replace(/"/g, "&quot;");
 }
 
+function escapeText(value: string): string {
+  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+const NON_VISUAL_TEXT = new Set([
+  "script", "style", "template", "noscript", "title", "textarea",
+  "iframe", "xmp", "noembed", "noframes", "plaintext", "audio", "video", "canvas",
+]);
+type TextRange = Omit<ClipTextPart, "index"> & Pick<Replacement, "start" | "end">;
+
+function* clipTextRanges(node: P5Node): Generator<TextRange> {
+  if (NON_VISUAL_TEXT.has(node.nodeName)) return;
+  const children = node.childNodes ?? [];
+  const location = node.sourceCodeLocation;
+  if (children.length === 0 && location?.startTag && location.endTag) {
+    yield { tag: node.nodeName, text: "", start: location.startTag.endOffset, end: location.endTag.startOffset };
+    return;
+  }
+  for (const child of children) {
+    if (child.nodeName === "#text") {
+      const range = child.sourceCodeLocation;
+      const value = child.value ?? "";
+      if (range && (value.trim() !== "" || children.length === 1)) {
+        yield { tag: node.nodeName, text: value, start: range.startOffset, end: range.endOffset };
+      }
+    } else if (attr(child, "data-composition-id") === undefined &&
+      attr(child, "data-composition-src") === undefined) {
+      yield* clipTextRanges(child);
+    }
+  }
+}
+
+/** Texto autoral dos clips no próprio arquivo, indexado uma vez para o inspetor. */
+export function authoredClipText(source: string): Map<string, { text: string | null; parts: ClipTextPart[] }> {
+  const result = new Map<string, { text: string | null; parts: ClipTextPart[] }>();
+  for (const node of walk(parseSource(source).childNodes)) {
+    const id = attr(node, "data-clip-id");
+    if (id === undefined || result.has(id)) continue;
+    if (attr(node, "data-composition-src") !== undefined) continue;
+    const parts = Array.from(clipTextRanges(node), ({ tag, text }, index) => ({ index, tag, text }));
+    const plain = (node.childNodes ?? []).every((child) => child.nodeName === "#text");
+    result.set(id, { text: plain ? parts[0]?.text.trim() ?? null : null, parts });
+  }
+  return result;
+}
+
 /** `nome="valor"`, ou `nome='valor'` quando o patch pede aspas simples para esse atributo. */
 function attributeText(patch: ClipPatch, name: string, value: string): string {
   if (patch.singleQuoted?.includes(name) !== true) return `${name}="${escapeAttribute(value)}"`;
@@ -153,7 +208,7 @@ function attributeReplacements(
  * alterados — usa a localização do parse5 em vez de re-serializar o documento.
  */
 export function applyPatches(source: string, patches: ClipPatch[]): string {
-  const document = parse(source, { sourceCodeLocationInfo: true }) as unknown as P5Node;
+  const document = parseSource(source);
   const replacements: Replacement[] = [];
 
   for (const patch of patches) {
@@ -165,6 +220,22 @@ export function applyPatches(source: string, patches: ClipPatch[]): string {
     if (!location?.startTag) throw new EditError("E_CLIP_NOT_FOUND", `clip "${patch.clipId}" sem localização no arquivo`);
 
     replacements.push(...attributeReplacements(source, location.startTag, location.attrs, patch));
+
+    if (patch.textParts !== undefined) {
+      if (patch.text !== undefined) {
+        throw new EditError("E_TEXT_NOT_EDITABLE", 'envie "text" ou "textParts"');
+      }
+      const parts = Array.from(clipTextRanges(node));
+      const seen = new Set<number>();
+      for (const { index, original, text } of patch.textParts) {
+        const part = parts[index];
+        if (!part || part.text !== original || seen.has(index)) {
+          throw new EditError("E_TEXT_NOT_EDITABLE", `trecho inválido ou alterado no clip "${patch.clipId}"; recarregue o inspetor`);
+        }
+        seen.add(index);
+        if (text !== original) replacements.push({ start: part.start, end: part.end, text: escapeText(text) });
+      }
+    }
 
     if (patch.text !== undefined) {
       const children = node.childNodes ?? [];
@@ -178,7 +249,7 @@ export function applyPatches(source: string, patches: ClipPatch[]): string {
       replacements.push({
         start: range.startOffset,
         end: range.endOffset,
-        text: patch.text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"),
+        text: escapeText(patch.text),
       });
     }
   }

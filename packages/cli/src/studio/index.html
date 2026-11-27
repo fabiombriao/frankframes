@@ -95,6 +95,8 @@
           <code id="clipId" class="clip-id"></code>
         </div>
 
+        <div id="clipTextFields"></div>
+
         <div class="field-grid">
           <label>
             <span>data-start</span>
@@ -127,12 +129,6 @@
           </label>
         </div>
 
-        <label class="text-field">
-          <span>Texto</span>
-          <textarea id="fieldText" name="text" data-field="text" rows="4" spellcheck="false"></textarea>
-        </label>
-
-        <p class="field-note">Campos esvaziados são enviados como null. O texto só é enviado quando muda.</p>
         <button id="applyButton" type="submit" class="primary-button" aria-label="Aplicar alterações ao clip selecionado">Aplicar</button>
         <div id="inspectorDiagnostics" class="diagnostics" role="status" aria-live="polite"></div>
       </form>

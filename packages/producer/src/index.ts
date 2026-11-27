@@ -10,7 +10,7 @@ export type { FfmpegPair } from "./ffmpeg.ts";
 export { annotateCompiled, annotateTiming, mergeSubCompositions, compileComposition } from "./compile.ts";
 export { annotateMotion, toRuntimeSpec } from "./motion.ts";
 export type { MotionRuntimeSpec } from "./motion.ts";
-export { applyPatches, applyTransition, deleteClip, duplicateClip, editComposition, EDIT_ERROR_CODES, EditError, splitClip, trimClipStart, explicitClipIds, locateClip, topLevelClip, referrersOf, removeRange, refSuffix } from "./edit.ts";
+export { applyPatches, applyTransition, authoredClipText, deleteClip, duplicateClip, editComposition, EDIT_ERROR_CODES, EditError, splitClip, trimClipStart, explicitClipIds, locateClip, topLevelClip, referrersOf, removeRange, refSuffix } from "./edit.ts";
 export { editKeyframes, mergeKeyframePoints } from "./keyframes-edit.ts";
 export type { KeyframePoint, KeyframeProp, KeyframeRequest } from "./keyframes-edit.ts";
 export type { ClipLocation, ClipPatch, CompositionPatch, DeleteRequest, DuplicateRequest, DuplicateResult, SplitRequest, TrimStartRequest, TransitionRequest } from "./edit.ts";

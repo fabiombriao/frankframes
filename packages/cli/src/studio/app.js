@@ -47,7 +47,8 @@ import { fitPlayerBox, playerViewport } from "/player-fit.js";
   const fieldVolume = document.getElementById("fieldVolume");
   const fieldRole = document.getElementById("fieldRole");
   const fieldRate = document.getElementById("fieldRate");
-  const fieldText = document.getElementById("fieldText");
+  const clipTextFields = document.getElementById("clipTextFields");
+  const inspectorPanel = inspector.closest(".inspector-panel");
   const applyButton = document.getElementById("applyButton");
   const compositionDiagnostics = document.getElementById("compositionDiagnostics");
   const inspectorDiagnostics = document.getElementById("inspectorDiagnostics");
@@ -215,7 +216,7 @@ import { fitPlayerBox, playerViewport } from "/player-fit.js";
       volume: asNumber(raw.volume),
       role: role === "voice" || role === "music" || role === "sfx" ? role : null,
       playbackRate: asNumber(raw.playbackRate) ?? 1,
-      text: typeof raw.text === "string" ? raw.text : null,
+      textParts: Array.isArray(raw.textParts) ? raw.textParts : [],
       track: asNumber(raw.track) ?? 0,
       kind: raw.kind === "audio" || raw.kind === "video" ? raw.kind : "text",
       hasAudio: raw.hasAudio === true,
@@ -507,7 +508,18 @@ import { fitPlayerBox, playerViewport } from "/player-fit.js";
     showField(fieldVolume, formatNumber(clip.volume));
     fieldRole.value = clip.role ?? "";
     showField(fieldRate, formatNumber(clip.playbackRate));
-    fieldText.value = clip.text ?? "";
+    clipTextFields.replaceChildren(...clip.textParts.map((part) => {
+      const label = document.createElement("label");
+      label.className = "text-field";
+      const title = document.createElement("span");
+      title.textContent = clip.textParts.length === 1 ? "Texto" : "Texto " + (part.index + 1) + " · " + part.tag;
+      const field = document.createElement("textarea");
+      field.dataset.textPart = String(part.index);
+      field.rows = 2;
+      field.defaultValue = part.text;
+      label.append(title, field);
+      return label;
+    }));
     state.inspectorDirty = false;
     renderDiagnostics(inspectorDiagnostics, []);
     if (state.motionPresets === null) {
@@ -832,11 +844,14 @@ import { fitPlayerBox, playerViewport } from "/player-fit.js";
 
   function selectClip(id) {
     if (!findClip(id)) return;
+    const changed = state.selectedId !== id || inspector.hidden;
+    if (!changed && state.inspectorDirty) return;
     if (state.selectedKeyframe !== null && state.selectedKeyframe.clipId !== id) state.selectedKeyframe = null;
     state.selectedId = id;
     state.inspectorDirty = false;
     updateSelectionStyles();
     fillInspector();
+    if (changed) inspectorPanel.scrollTop = 0;
   }
 
   function updateSelectionStyles() {
@@ -1310,14 +1325,18 @@ import { fitPlayerBox, playerViewport } from "/player-fit.js";
       return;
     }
 
-    const textChanged = fieldText.value !== (clip.text ?? "");
-    if (!Object.keys(attributes).length && !textChanged) {
+    const textParts = Array.from(clipTextFields.querySelectorAll("[data-text-part]")).flatMap((field) => {
+      const index = Number(field.dataset.textPart);
+      const original = field.defaultValue;
+      return field.value === original ? [] : [{ index, original, text: field.value }];
+    });
+    if (!Object.keys(attributes).length && textParts.length === 0) {
       renderDiagnostics(inspectorDiagnostics, [{ severity: "info", message: "Nenhuma alteração para aplicar." }]);
       return;
     }
 
     const body = { attributes };
-    if (textChanged) body.text = fieldText.value;
+    if (textParts.length > 0) body.textParts = textParts;
 
     applyButton.disabled = true;
     try {
@@ -1326,6 +1345,7 @@ import { fitPlayerBox, playerViewport } from "/player-fit.js";
         renderDiagnostics(inspectorDiagnostics, result.diagnostics);
         return;
       }
+      applyHistory(result.payload.history);
       state.inspectorDirty = false;
       await refreshComposition();
       if (findClip(clip.id)) {
@@ -1847,7 +1867,10 @@ import { fitPlayerBox, playerViewport } from "/player-fit.js";
     const clip = findClip(bar.dataset.clipId);
     if (!clip) return;
     selectClip(clip.id);
-    if (clip.start === null || state.total <= 0) return;
+    if (clip.start === null || state.total <= 0) {
+      seekTimeline(event.clientX);
+      return;
+    }
 
     const handle = event.target instanceof Element ? event.target.closest(".resize-handle") : null;
     const startHandle = event.target instanceof Element ? event.target.closest(".resize-handle-start") : null;
@@ -1936,6 +1959,7 @@ import { fitPlayerBox, playerViewport } from "/player-fit.js";
     const deltaPx = event.clientX - drag.originX;
     if (Math.abs(deltaPx) >= 2) drag.moved = true;
     if (drag.mode === "move" && Math.abs(event.clientY - drag.originY) >= 2) drag.moved = true;
+    if (!drag.moved) return;
     const deltaSeconds = deltaPx / drag.pps;
     const threshold = SNAP_PX / drag.pps;
     /* Alt desliga o ímã: o instante cai no frame mais próximo. */
@@ -1994,7 +2018,18 @@ import { fitPlayerBox, playerViewport } from "/player-fit.js";
     clearDropMarks();
     finished.bar.style.transform = "";
     finished.bar.classList.remove("is-dragging");
-    if (!finished.moved) return;
+    if (!finished.moved) {
+      if (event.type === "pointerup" && finished.mode === "move") seekTimeline(finished.originX);
+      return;
+    }
+    if (event.type === "pointercancel") {
+      finished.clip.start = finished.originStart;
+      finished.clip.duration = finished.originDuration;
+      finished.clip.end = finished.originEnd;
+      finished.clip.offset = finished.originOffset;
+      updateBarGeometry(finished.clip, finished.bar);
+      return;
+    }
 
     if (finished.mode === "trim-start") {
       if (finished.clip.start !== finished.originStart) trimClip(finished.clip.id, finished.clip.start);
@@ -2389,8 +2424,8 @@ import { fitPlayerBox, playerViewport } from "/player-fit.js";
     button.click();
   }
 
-  /* Leva o preview ao primeiro frame em `seconds` pelo scrub da própria barra, que também pausa. */
-  function seekPreview(seconds) {
+  /* O scrub da própria barra pausa e busca o frame. As legendas usam o primeiro frame visível. */
+  function seekPreview(seconds, nearest = false) {
     let view = null;
     let range = null;
     try {
@@ -2405,8 +2440,15 @@ import { fitPlayerBox, playerViewport } from "/player-fit.js";
       setConnection("preview sem barra de controle", true);
       return;
     }
-    range.value = String(captionFrame(seconds, meta.fps));
+    const frame = nearest ? Math.round(seconds * meta.fps.num / meta.fps.den) : captionFrame(seconds, meta.fps);
+    range.value = String(frame);
     range.dispatchEvent(new view.Event("input"));
+  }
+
+  function seekTimeline(clientX) {
+    if (state.total <= 0) return;
+    const seconds = (clientX - ruler.getBoundingClientRect().left) / state.pxPerSecond;
+    seekPreview(clamp(seconds, 0, maxPlayhead()), true);
   }
 
   function togglePlayback() {
@@ -2616,6 +2658,12 @@ import { fitPlayerBox, playerViewport } from "/player-fit.js";
 
   window.addEventListener("resize", () => {
     fitPlayer();
+  });
+
+  timelineCanvas.addEventListener("click", (event) => {
+    if (event.button !== 0 || !(event.target instanceof Element)) return;
+    if (!event.target.closest(".ruler, .lane") || event.target.closest("button")) return;
+    seekTimeline(event.clientX);
   });
 
   /* Zoom da timeline (EDT-45): Ctrl+roda ancorada no ponteiro, botões e teclas. */

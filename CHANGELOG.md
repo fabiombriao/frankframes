@@ -22,6 +22,10 @@ FrankFrames — proprietário (ver `LICENSE`). Versões seguem `MAJOR.MINOR.PATC
 
 ### Studio
 
+- Clicar na régua ou em um clip posiciona o playhead no quadro mais próximo. Clicar na imagem do preview
+  alterna play e pausa.
+- O inspetor edita trechos de texto com marcação, incluindo os destaques e as linhas do gancho, preservando
+  o HTML e as animações ao salvar.
 - O texto das legendas do `captions` se corrige no Studio, letra por letra: selecionar o clip das legendas mostra no
   inspetor uma linha por legenda (início–fim e texto), com a legenda sob o playhead marcada e o tempo levando o
   playhead até ela; funciona no toque e em tela pequena. A edição troca só aquela legenda no arquivo, entra no

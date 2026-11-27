@@ -15,6 +15,7 @@ import type { PreviewAudioConfig, VideoOrientation } from "@frankframes/engine";
 import {
   applyPatches,
   applyTransition,
+  authoredClipText,
   editCaptionText,
   editKeyframes,
   EditError,
@@ -271,40 +272,6 @@ function clipDuration(clip: ResolvedClip): number | null {
   return null;
 }
 
-function decodeEntities(value: string): string {
-  return value
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&amp;/g, "&");
-}
-
-const ELEMENT = /<([a-zA-Z][\w:-]*)\b([^>]*)>/g;
-const CLIP_ID_ATTR = /\bdata-clip-id\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/;
-
-/**
- * Texto plano do clip: só quando o conteúdo entre a tag de abertura e o
- * primeiro fechamento da mesma tag não tem marcação. Regex simples, como o
- * contrato do estúdio pede; caso não dê para ler, `null`.
- */
-function extractClipText(source: string, tag: string, id: string): string | null {
-  const expected = tag.toLowerCase();
-  for (const match of source.matchAll(ELEMENT)) {
-    if ((match[1] ?? "").toLowerCase() !== expected) continue;
-    const attr = CLIP_ID_ATTR.exec(match[2] ?? "");
-    if (attr === null) continue;
-    if ((attr[1] ?? attr[2] ?? attr[3]) !== id) continue;
-    const start = (match.index ?? 0) + match[0].length;
-    const close = new RegExp(`</${expected}\\s*>`, "i").exec(source.slice(start));
-    if (close === null) return null;
-    const inner = source.slice(start, start + close.index);
-    if (inner.includes("<")) return null;
-    return decodeEntities(inner.trim());
-  }
-  return null;
-}
-
 interface RootClose {
   index: number;
   tag: string;
@@ -501,7 +468,7 @@ data: ${JSON.stringify(job)}
       ...(audio !== null ? { audio } : {}),
       // O Studio recarrega pelo próprio /api/events; a barra não abre /__ff_reload (404 aqui).
       // `autoplay: false`: o Studio abre pausado no 0 (§9d); só a recarga pós-edição restaura o play.
-      preview: { fps: prepared.fps, frames: prepared.totalFrames, id: prepared.composition.id, reload: false, autoplay: false },
+      preview: { fps: prepared.fps, frames: prepared.totalFrames, id: prepared.composition.id, reload: false, autoplay: false, clickToToggle: true },
     }).replace(/<head[^>]*>/i, (head) => `${head}<base href="${SITE_PREFIX}">`);
     preview = { mtimeMs: current.mtimeMs, revision: seen, prepared, html };
     return { prepared, html };
@@ -617,6 +584,7 @@ data: ${JSON.stringify(job)}
     const composition = loadComposition(source);
     const captionHosts = await captionHostIds(composition.clips);
     const explicit = explicitClipIds(source);
+    const authoredText = authoredClipText(source);
     // Elemento próprio de cada clip (ordinal 0): é o que o inspetor edita.
     const ownMotion = new Map<string, MotionSource>();
     // Tempos (locais ao clip) dos keyframes dos descendentes: o Studio os mostra, só leitura.
@@ -653,7 +621,8 @@ data: ${JSON.stringify(job)}
         playbackRate: clip.playbackRate,
         volume: clip.volume ?? 1,
         role: clip.audioRole ?? null,
-        text: extractClipText(source, clip.tag, clip.id),
+        text: authoredText.get(clip.id)?.text ?? null,
+        textParts: parentId === null ? authoredText.get(clip.id)?.parts ?? [] : [],
         track: clip.track,
         kind: clipKind(clip),
         hasAudio: clip.hasAudio === true,
@@ -698,6 +667,19 @@ data: ${JSON.stringify(job)}
         throw new ReplyError(400, "E_TEXT_NOT_EDITABLE", '"text" precisa ser texto');
       }
       patch.text = body.text;
+    }
+    if (body.textParts !== undefined) {
+      if (!Array.isArray(body.textParts)) {
+        throw new ReplyError(400, "E_TEXT_NOT_EDITABLE", '"textParts" precisa ser uma lista');
+      }
+      patch.textParts = body.textParts.map((item: unknown) => {
+        const { index, original, text } = objectBody(item);
+        if (typeof index !== "number" || !Number.isSafeInteger(index) || index < 0 ||
+          typeof original !== "string" || typeof text !== "string") {
+          throw new ReplyError(400, "E_TEXT_NOT_EDITABLE", "trecho de texto inválido");
+        }
+        return { index, original, text };
+      });
     }
 
     const source = await readFile(entryPath, "utf8");

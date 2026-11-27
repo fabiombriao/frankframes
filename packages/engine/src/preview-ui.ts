@@ -103,7 +103,7 @@ export const PREVIEW_UI_SOURCE = `(() => {
     paint();
   };
 
-  play.addEventListener("click", () => {
+  const togglePlay = () => {
     if (window.__ff.playing()) {
       window.__ff.stopLive();
       return;
@@ -111,7 +111,16 @@ export const PREVIEW_UI_SOURCE = `(() => {
     // No fim, Play recomeça do início em vez de ficar parado no último frame.
     if (window.__ff.now() >= lastMs - 0.5) window.__ff.seek(0);
     window.__ff.startLive(window.__ff.now());
-  });
+  };
+  play.addEventListener("click", togglePlay);
+  if (meta.clickToToggle) {
+    document.addEventListener("click", (event) => {
+      if (event.defaultPrevented || !(event.target instanceof Element)) return;
+      if (event.target.closest("[data-ff-ui],a,button,input,textarea,select,label,[contenteditable],video[controls]")) return;
+      if (document.getSelection()?.type === "Range") return;
+      togglePlay();
+    });
+  }
 
   loopButton.addEventListener("click", () => {
     loop = !loop;

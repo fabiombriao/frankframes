@@ -17,7 +17,7 @@ export interface Injection {
   /** Preview: relógio em tempo real e recarga por SSE. */
   live?: boolean;
   /** Preview com barra de controle; `frames` alimenta o scrub. */
-  preview?: { fps: Fps; frames: number; id?: string; reload?: boolean; autoplay?: boolean };
+  preview?: { fps: Fps; frames: number; id?: string; reload?: boolean; autoplay?: boolean; clickToToggle?: boolean };
   /**
    * Áudio do preview: `src` é o mix do servidor; `error` mostra a falha do mix na barra;
    * `disabled` explica por que não há áudio (composição longa demais).

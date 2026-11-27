@@ -2,7 +2,7 @@
 // Player do Studio segue a raiz (EDT-87): o viewport do iframe é `data-width` × `data-height`, escalado sem cortar.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { copyFile, mkdir, readFile } from "node:fs/promises";
+import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import puppeteer from "puppeteer-core";
@@ -135,6 +135,81 @@ test("EDT-87: com um bloco vertical o iframe tem o viewport 1080x1920 e o quadro
       const wide = await read();
       assert.equal(wide.iframeH, 1080);
       assert.ok(Math.abs(wide.frameW / wide.frameH - 16 / 9) < 0.01, `quadro 16:9: ${wide.frameW}x${wide.frameH}`);
+    } finally {
+      await browser.close();
+      await server.close();
+    }
+  });
+});
+
+test("Studio: clique busca o quadro, preview alterna play e texto autoral mantém o HTML", { timeout: 60_000 }, async (t) => {
+  const chrome = await resolveChrome().catch(() => null);
+  if (chrome === null) {
+    t.skip("Chrome indisponível");
+    return;
+  }
+  await withTempDir("ff-studio-interactions-", async (dir) => {
+    const entry = join(dir, "index.html");
+    const original = '<!doctype html><html lang="pt-BR"><body style="margin:0">' +
+      '<main data-composition-id="interacoes" data-width="1080" data-height="1920" data-fps="30" data-duration="12">' +
+      '<h1 data-clip-id="gancho" data-start="1" data-duration="4" style="position:absolute">' +
+      'Antes de<br><em data-clip-id="destaque">contratar alguém…</em></h1></main></body></html>';
+    await writeFile(entry, original);
+    const server = await startStudio({ entry });
+    const browser = await puppeteer.launch({ executablePath: chrome.path, headless: true, args: ["--no-sandbox"], defaultViewport: { width: 1280, height: 900 } });
+    try {
+      const page = await browser.newPage();
+      await page.goto(server.url);
+      const frame = await (await page.waitForSelector("#player"))!.contentFrame();
+      assert.ok(frame);
+      await frame.waitForSelector("[data-ff-scrub]");
+      await page.waitForSelector('.clip-bar[data-clip-id="gancho"]');
+      const clickAt = async (seconds: number, selector: string) => {
+        const { x, y, frameIndex } = await page.evaluate((time, target) => {
+          const ruler = document.getElementById("ruler")!.getBoundingClientRect();
+          const box = document.querySelector(target)!.getBoundingClientRect();
+          const x = Math.round(ruler.left + (time / 12) * ruler.width);
+          return { x, y: box.top + box.height / 2, frameIndex: Math.round((x - ruler.left) * 360 / ruler.width) };
+        }, seconds, selector);
+        await page.mouse.click(x, y);
+        await frame.waitForFunction((index) =>
+          (document.querySelector("[data-ff-scrub]") as HTMLInputElement).value === String(index), {}, frameIndex);
+        await page.waitForFunction((index) => {
+          const ruler = document.getElementById("ruler")!.getBoundingClientRect();
+          const playhead = document.getElementById("playhead")!;
+          return Math.abs(parseFloat(playhead.style.left) - ruler.width * index / 360) < 0.1;
+        }, {}, frameIndex);
+      };
+      await clickAt(8, "#ruler");
+      await clickAt(7, ".timeline-row .lane");
+      await page.click("#zoomIn");
+      await page.click("#zoomIn");
+      await page.$eval("#timelineScroll", (element) => { element.scrollLeft = 210; });
+      assert.ok(await page.$eval("#timelineScroll", (element) => element.scrollLeft) > 0);
+      await clickAt(3, '.clip-bar[data-clip-id="gancho"]');
+      assert.equal(await page.$eval("#clipId", (element) => element.textContent), "gancho");
+
+      const frameBox = await (await page.$("#playerFrame"))!.boundingBox();
+      assert.ok(frameBox);
+      const toggleOnImage = () => page.mouse.click(frameBox.x + frameBox.width / 2, frameBox.y + frameBox.height / 2);
+      await toggleOnImage();
+      await frame.waitForFunction(() => document.querySelector("[data-ff-play]")?.textContent === "pause");
+      await toggleOnImage();
+      await frame.waitForFunction(() => document.querySelector("[data-ff-play]")?.textContent === "play");
+
+      const values = await page.$$eval("#clipTextFields textarea", (fields) => fields.map((field) => field.value));
+      assert.deepEqual(values, ["Antes de", "contratar alguém…"]);
+      await page.$eval('[data-text-part="1"]', (field) => {
+        (field as HTMLTextAreaElement).value = "montar uma equipe & crescer <agora>";
+        field.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+      await page.click("#applyButton");
+      await frame.waitForFunction(() =>
+        document.querySelector('[data-clip-id="gancho"] em')?.textContent === "montar uma equipe & crescer <agora>");
+      assert.equal(await readFile(entry, "utf8"), original.replace("contratar alguém…", "montar uma equipe &amp; crescer &lt;agora&gt;"));
+      await page.locator("#undoButton").click();
+      await frame.waitForFunction(() => document.querySelector('[data-clip-id="gancho"] em')?.textContent === "contratar alguém…");
+      assert.equal(await readFile(entry, "utf8"), original);
     } finally {
       await browser.close();
       await server.close();

@@ -930,6 +930,21 @@
             "Testes que falhariam sem a mudança; gate verde."
           ],
           "jiraKey": "EDT-98"
+        },
+        {
+          "summary": "Studio: seek pela timeline, play na imagem e edição de texto autoral",
+          "points": 5,
+          "labels": [
+            "studio",
+            "timeline"
+          ],
+          "acceptance": [
+            "Clique na régua, faixa ou clip pausa no quadro mais próximo, inclusive após zoom e rolagem. Arrastar um clip mantém a edição existente.",
+            "Clique na imagem do player alterna play e pausa sem interferir com os controles da barra.",
+            "O inspetor edita o texto de um gancho com quebra e destaque e os textos dentro de grupos na mesma composição. Aplicar preserva a marcação e o histórico consegue desfazer.",
+            "Teste de regressão no Chromium e gate completo."
+          ],
+          "jiraKey": "EDT-104"
         }
       ],
       "jiraKey": "EDT-35"

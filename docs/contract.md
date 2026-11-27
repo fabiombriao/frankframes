@@ -1030,10 +1030,16 @@ Qualquer outra falha de medição continua falhando alto.
   atributos ficam como estão no HTML, byte a byte (`data-duration="68.164583"` não vira `68.165` ao trocar
   `data-start`). Um valor derivado da fonte nunca é arredondado para cima por causa de outro campo. O inspetor de
   Composição segue a mesma regra (`compositionPatch` só envia o que difere do que mostrou).
+- **Texto autoral**. O inspetor do clip lista cada trecho de texto do HTML da entrada, incluindo trechos dentro
+  de elementos do clip, em ordem de leitura. `GET /api/composition` expõe `textParts: [{index, tag, text}]`.
+  `POST /api/clips/<id>` aceita `textParts: [{index, original, text}]` e compara cada trecho ao original.
+  A edição escapa o texto digitado e grava só os nós alterados, preservando tags, destaques, quebras e atributos.
+  As subcomposições externas de legenda continuam com o editor de legendas.
 - **Player segue a raiz** (EDT-87). O iframe do preview tem o viewport de `data-width` × `data-height` da raiz
   (`GET /api/composition` → `width`/`height`; padrão 1920×1080 se faltar, como no render) e é escalado por **uma**
   razão, `min(largura livre / largura, altura livre / altura)`, centrado no painel: nada é cortado nem esticado, em
   16:9 ou 9:16. Editar largura/altura pelo inspetor de Composição muda o player na hora (`player-fit.js`, lógica pura).
+  Clicar na imagem do preview alterna play e pausa pelo mesmo controle da barra do player.
 - **Dividir** (`POST /api/clips/<id>/split {at}`). Só para clip de topo com `data-clip-id` explícito, sem
   `data-keyframes`, atributos de motion (§7b) nem filhos (`E_SPLIT_UNSUPPORTED`), e com `at` a mais de 1 ms das bordas
   (`E_SPLIT_OUT_OF_RANGE`). A primeira metade fica com `data-duration = at − início` e perde o
@@ -1243,6 +1249,8 @@ Qualquer outra falha de medição continua falhando alto.
   alinham ao frame (ver "Faixas"); o diamante de keyframe sempre alinha ao frame.
   O playhead é desenhado em px e, com ele em movimento (tocando ou arrastado no player), a timeline rola
   para mantê-lo visível.
+  Clicar na régua, numa faixa ou no corpo de um clip pausa o preview no quadro mais próximo da posição clicada,
+  considerando o zoom e a rolagem. O clique no corpo do clip também o seleciona. Arrastar continua editando o clip.
 - **Faixas** (EDT-44). A timeline agrupa os clips em linhas por (tipo, `data-track`): vídeo/imagem (`V`), texto
   (`T`) e áudio (`A`); `data-track` ausente vale 0. O bloco visual vem primeiro, da faixa maior (por cima) para
   a menor, e em empate o texto fica acima do vídeo; o bloco de áudio vem abaixo, em ordem crescente. Rótulos
