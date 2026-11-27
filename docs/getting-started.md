@@ -4,6 +4,33 @@ Requisito: Node ≥ 22.18 (o projeto roda TypeScript direto, sem build).
 
 ## 1. Preparar a máquina
 
+### Pelo GitHub (código mais recente)
+
+Entre no GitHub com uma conta que tenha acesso ao repositório privado e extraia o ZIP na outra máquina.
+[Baixar o `main` do FrankFrames](https://github.com/fabiombriao/frankframes/archive/refs/heads/main.zip).
+
+No Windows x64, abra o PowerShell na pasta extraída `frankframes-main` e rode:
+
+```powershell
+npm.cmd ci
+node packages/cli/src/cli.ts setup
+node packages/cli/src/cli.ts doctor
+```
+
+No Linux x64, use `npm ci` para instalar as dependências. Os comandos `setup` e `doctor` são os mesmos.
+O `setup` baixa o navegador, o FFmpeg e as fontes. Siga as instruções que o `doctor` mostrar se alguma
+dependência estiver faltando.
+
+Para continuar um projeto existente, copie a pasta inteira com o `index.html`, a mídia e as subcomposições.
+Na pasta `frankframes-main`, rode o comando abaixo com o caminho real do `index.html`:
+
+```powershell
+node packages/cli/src/cli.ts studio "C:\MeusProjetos\video-3\index.html" --port 5183
+```
+
+Mantenha o terminal aberto durante a edição e acesse [o Studio](http://127.0.0.1:5183/).
+O helper CEF do render `--vram` é instalado à parte no Windows x64. [Instalação do helper](../scripts/cef-probe/README.md#render-completo).
+
 ### Pelo tarball (instalação de uso)
 
 ```bash
@@ -13,7 +40,8 @@ frankframes setup                       # fontes, FFmpeg LGPL e browser pinados,
 frankframes doctor
 ```
 
-Com o tarball, use `frankframes <comando>` onde os exemplos abaixo escrevem `node packages/cli/src/cli.ts <comando>`.
+O tarball da aba Releases corresponde à versão publicada. Com ele, use `frankframes <comando>` onde os
+exemplos abaixo escrevem `node packages/cli/src/cli.ts <comando>`. [Releases do FrankFrames](https://github.com/fabiombriao/frankframes/releases).
 
 ### Pelo clone (desenvolvimento)
 

@@ -7,7 +7,7 @@ effort: high
 
 Você planeja itens do Jira (EDT) do FrankFrames para o agente `executor` (Sonnet 5.5) executar.
 
-Leia `.omp/RULES.md`, `.omp/AGENTS.md`, `PROVENANCE.md`, `docs/contract.md`, `jira/backlog.json`
+Leia `AGENTS.md`, `.omp/RULES.md`, `.omp/AGENTS.md`, `PROVENANCE.md`, `docs/contract.md`, `jira/backlog.json`
 e o código envolvido antes de decidir. Para cada item entregue:
 
 - Desenho: decisões tomadas e por quê, com nomes de atributos, códigos de erro e formatos exatos.

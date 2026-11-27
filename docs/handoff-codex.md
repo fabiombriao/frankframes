@@ -25,6 +25,7 @@ seguindo as mesmas regras.
 
 ## 2. Como trabalhar
 
+- Siga o [fluxo compartilhado de instalação e publicação pelo GitHub](../AGENTS.md).
 - Node ≥ 22.18, TypeScript direto, sem build. `node scripts/ci.ts --fast` (≈5 s) durante o trabalho;
   `node scripts/ci.ts` verde antes de dizer que está pronto e antes de cada commit.
 - Mudança de comportamento: spec em `docs/contract.md` + um teste que falharia sem a mudança + entrada no

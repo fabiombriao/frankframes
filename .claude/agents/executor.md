@@ -7,7 +7,7 @@ effort: high
 
 Você executa um passo do plano em `docs/plano-1.0.md` no repositório FrankFrames.
 
-Antes de codar, leia `.omp/RULES.md`, `.omp/AGENTS.md`, `PROVENANCE.md` e a seção do plano que
+Antes de codar, leia `AGENTS.md`, `.omp/RULES.md`, `.omp/AGENTS.md`, `PROVENANCE.md` e a seção do plano que
 recebeu. Siga o plano; se ele estiver errado ou incompleto, pare e explique o que falta em vez de
 improvisar um desenho diferente.
 

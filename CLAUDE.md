@@ -1,8 +1,9 @@
 # FrankFrames — ponte para o Claude Code
 
-A fonte de verdade das instruções de agente está em `.omp/` (lida pelo omp/Orca).
-Este arquivo só importa os dois para o Claude Code, sem duplicar conteúdo.
+O `AGENTS.md` contém as instruções compartilhadas de instalação e publicação. Os arquivos em `.omp/`
+complementam essas instruções com as regras e o contexto do projeto.
 
+@AGENTS.md
 @.omp/RULES.md
 @.omp/AGENTS.md
 
@@ -17,5 +18,5 @@ Duas sessões ligadas no mesmo checkout, cada uma com um papel só:
 - **Sessão de execução — Sonnet 5.5, esforço alto.** Implementa o item recebido seguindo o plano,
   roda os testes e o `ci --fast`, e responde com o resumo do diff. Não faz commit, push nem mexe no
   Jira; se o plano estiver errado, para e devolve a pergunta ao planejamento em vez de redesenhar.
-- Sem sessões separadas, os mesmos papéis valem como subagentes: `.claude/agents/planejador.md`
-  (Opus) e `.claude/agents/executor.md` (Sonnet).
+- Sem sessões separadas, `.claude/agents/planejador.md` (Opus) e `.claude/agents/executor.md` (Sonnet)
+  atuam como subagentes. A sessão que os coordena roda o gate completo, faz commit, push e atualiza o Jira.

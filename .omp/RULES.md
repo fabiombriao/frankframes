@@ -11,6 +11,8 @@ Estas linhas viajam em toda requisição, inclusive para subagentes. Não são s
 - **Falhar alto.** Proibido catch vazio, fallback silencioso e retry cego. Contrato inválido bloqueia o render.
 - **Nada de fork, código ou texto de framework alheio.** Ver `PROVENANCE.md`.
 - **Antes de dizer que está pronto:** `node scripts/ci.ts` verde.
+- **Publique cada atualização concluída no GitHub.** Siga as instruções de instalação e publicação no
+  [`AGENTS.md` da raiz](../AGENTS.md).
 - **Não pare para reportar progresso.** Só encerre a resposta quando precisar de uma decisão do titular,
   estiver bloqueado por algo fora do alcance das ferramentas, ou a fila estiver concluída. Relatório é
   parte da resposta, não motivo para interromper o trabalho.
