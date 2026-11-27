@@ -10,7 +10,8 @@
   "dependencies": {
     "@frankframes/contract": "*",
     "@frankframes/transcribe": "*",
-    "@frankframes/catalog": "*"
+    "@frankframes/catalog": "*",
+    "@puppeteer/browsers": "3.2.7"
   },
   "scripts": {
     "prepack": "node ../../scripts/prepack.mjs"

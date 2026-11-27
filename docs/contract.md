@@ -919,6 +919,8 @@ Windows e no Linux sai com pixels diferentes (medição abaixo).
 de baixar ou lançar qualquer coisa: `E_BROWSER_PLATFORM_UNSUPPORTED` (navegador) e `E_FFMPEG_PLATFORM_UNSUPPORTED`
 (FFmpeg), com `hint`; o `doctor` e o `setup` reportam o código no passo que falhou. `setup`, `doctor`,
 `browser install` e `render` rodam em Linux x64 (medido em contêiner Docker `node:24-bookworm`, WSL2).
+`setup` e `browser install` usam a dependência local `@puppeteer/browsers` do lockfile para baixar o shell.
+O executável é conferido por SHA-256 em um diretório temporário antes de entrar no cache ativo.
 
 **Goldens por plataforma:** o catálogo guarda um conjunto por plataforma, `catalog/goldens/<win64|linux64>/`
 (`goldens.json` e os PNGs). A conferência usa o conjunto da plataforma em que roda e nunca o de outra. Plataforma

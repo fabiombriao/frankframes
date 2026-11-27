@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 // FrankFrames — proprietário. Ver LICENSE na raiz.
-import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
 import { watch } from "node:fs";
@@ -33,7 +32,7 @@ import { lintReport } from "./lint-report.ts";
 import { HELP, isCommand, wantsHelp } from "./help.ts";
 import { runDoctor, runInit, runSkillInstall } from "./onboarding.ts";
 import { defaultOutput, guardEncoder } from "./render-guard.ts";
-import { runSetup } from "./setup.ts";
+import { ensureBrowser, runSetup } from "./setup.ts";
 import { runUpgrade } from "./upgrade.ts";
 import { startStudio } from "./studio-server.ts";
 import type { RenderStage } from "@frankframes/producer";
@@ -163,28 +162,12 @@ async function browserCommand(action: string): Promise<number> {
     return 2;
   }
 
-  const vendor = assetPath("browsers");
-  const child = spawn(
-    process.platform === "win32" ? "cmd" : "npx",
-    process.platform === "win32"
-      ? ["/c", "npx", "--yes", "@puppeteer/browsers", "install", `chrome-headless-shell@${pinned.version}`, "--path", vendor]
-      : ["--yes", "@puppeteer/browsers", "install", `chrome-headless-shell@${pinned.version}`, "--path", vendor],
-    { stdio: "inherit" },
-  );
-  const exited = Promise.withResolvers<number>();
-  child.on("error", (error) => {
-    process.stderr.write(`falha ao executar npx: ${error.message}\n`);
-    exited.resolve(1);
-  });
-  child.on("exit", (value) => exited.resolve(value ?? 1));
-  const code = await exited.promise;
-  if (code !== 0) return code;
-  const pin = await checkPinnedBrowser();
-  if (!pin.matches) {
-    process.stderr.write(`download concluído, mas o digest não confere: ${pin.digest}\n`);
+  const step = await ensureBrowser();
+  if (step.state === "falhou") {
+    process.stderr.write(`falha ao instalar o Chrome: ${step.detail}\n`);
     return 1;
   }
-  process.stdout.write(`ok ${pinned.version} · ${pin.path}\n`);
+  process.stdout.write(`ok ${step.detail}\n`);
   return 0;
 }
 

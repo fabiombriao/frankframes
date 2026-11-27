@@ -6,8 +6,7 @@ Requisito: Node ≥ 22.18 (o projeto roda TypeScript direto, sem build).
 
 ### Pelo GitHub (código mais recente)
 
-Entre no GitHub com uma conta que tenha acesso ao repositório privado e extraia o ZIP na outra máquina.
-[Baixar o `main` do FrankFrames](https://github.com/fabiombriao/frankframes/archive/refs/heads/main.zip).
+Baixe o ZIP do `main` e extraia na outra máquina. [Baixar o FrankFrames](https://github.com/fabiombriao/frankframes/archive/refs/heads/main.zip).
 
 No Windows x64, abra o PowerShell na pasta extraída `frankframes-main` e rode:
 
@@ -18,8 +17,9 @@ node packages/cli/src/cli.ts doctor
 ```
 
 No Linux x64, use `npm ci` para instalar as dependências. Os comandos `setup` e `doctor` são os mesmos.
-O `setup` baixa o navegador, o FFmpeg e as fontes. Siga as instruções que o `doctor` mostrar se alguma
-dependência estiver faltando.
+O `npm ci` instala as dependências do lockfile. O `setup` baixa o navegador, o FFmpeg e as fontes.
+Ele verifica o SHA-256 do executável do Chrome antes de colocá-lo no diretório definitivo da instalação.
+Siga as instruções que o `doctor` mostrar se alguma dependência estiver faltando.
 
 Para continuar um projeto existente, copie a pasta inteira com o `index.html`, a mídia e as subcomposições.
 Na pasta `frankframes-main`, rode o comando abaixo com o caminho real do `index.html`:

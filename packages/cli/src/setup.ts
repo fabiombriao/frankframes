@@ -5,15 +5,16 @@
  *   frankframes setup [--check] [--fonts-only]
  *
  * Idempotente: só baixa o que falta e verifica hash do que já existe.
- * O `postinstall` chama apenas as fontes (1 MB); o resto exige o comando.
+ * O comando `setup` baixa os assets na instalação escolhida.
  */
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { access, copyFile, mkdir, mkdtemp, readFile, readdir, rename, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
+import { Browser, BrowserPlatform, install } from "@puppeteer/browsers";
 import { BrowserPlatformError, FONT_CATALOG, assetHome, checkPinnedBrowser, cleanupWarning, fileSha256, fontFileName, pinnedBrowser, removeOrWarn, removeTree } from "@frankframes/engine";
 import { EncodePolicyError, ffmpegBuildFor } from "@frankframes/encode";
 import type { FfmpegBuild } from "@frankframes/encode";
@@ -246,19 +247,36 @@ export async function ensureBrowser(options: { check?: boolean } = {}): Promise<
   if (options.check === true) {
     return { name: "browser", state: "ausente", detail: pin.present ? "digest diferente" : `rode \`frankframes browser install\`` };
   }
+  if (process.env.FRANKFRAMES_BROWSER_PATH !== undefined) {
+    return { name: "browser", state: "falhou", detail: `FRANKFRAMES_BROWSER_PATH aponta para um executável indisponível ou com digest diferente: ${pin.path}` };
+  }
 
   const vendor = join(assetHome(), "browsers");
   await mkdir(vendor, { recursive: true });
-  const args = ["--yes", "@puppeteer/browsers", "install", `chrome-headless-shell@${pinned.version}`, "--path", vendor];
-  await run(
-    process.platform === "win32" ? "cmd" : "npx",
-    process.platform === "win32" ? ["/c", "npx", ...args] : args,
-    { maxBuffer: 8 << 20 },
-  );
+  const staging = await mkdtemp(join(vendor, ".ff-browser-"));
+  try {
+    const browser = await install({
+      browser: Browser.CHROMEHEADLESSSHELL,
+      buildId: pinned.version,
+      platform: pinned.platform === "win64" ? BrowserPlatform.WIN64 : BrowserPlatform.LINUX,
+      cacheDir: staging,
+    });
+    const digest = await fileSha256(browser.executablePath);
+    if (digest !== pinned.sha256) throw new Error(`digest não confere: esperado ${pinned.sha256}, obtido ${digest}`);
 
-  const after = await checkPinnedBrowser();
-  if (!after.matches) return { name: "browser", state: "falhou", detail: `digest não confere: ${after.digest ?? "arquivo ausente"}` };
-  return { name: "browser", state: "instalado", detail: `${pinned.version} (${pinned.platform})` };
+    const destination = join(vendor, relative(staging, browser.path));
+    await mkdir(dirname(destination), { recursive: true });
+    const current = await checkPinnedBrowser();
+    if (!current.matches) {
+      if (await exists(destination)) await rename(destination, join(staging, "anterior"));
+      await rename(browser.path, destination);
+    }
+    return { name: "browser", state: "instalado", detail: `${pinned.version} (${pinned.platform}) em ${pin.path}` };
+  } catch (error) {
+    return { name: "browser", state: "falhou", detail: (error as Error).message };
+  } finally {
+    await removeOrWarn(staging);
+  }
 }
 
 export interface SetupOptions {

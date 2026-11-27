@@ -4,6 +4,9 @@ FrankFrames — proprietário (ver `LICENSE`). Versões seguem `MAJOR.MINOR.PATC
 
 ## Próxima versão
 
+- `setup` e `browser install` baixam o Chrome com a dependência fixada no lockfile e só ativam
+  o shell após conferir seu SHA-256.
+
 ### Render e mídia
 
 - `render --layered` usa o FFmpeg para cortes, câmera subpixel e vidro sobre o vídeo de fundo, com as

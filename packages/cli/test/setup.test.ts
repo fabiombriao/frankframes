@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import { ffmpegBuildFor } from "@frankframes/encode";
 import type { FfmpegBuild } from "@frankframes/encode";
-import { ensureFfmpeg, ensureFonts } from "../src/setup.ts";
+import { ensureBrowser, ensureFfmpeg, ensureFonts } from "../src/setup.ts";
 import { withTempDir } from "../../../scripts/test-support/temp.ts";
 
 const exec = promisify(execFile);
@@ -239,6 +239,25 @@ test("home vazio reporta fontes e ffmpeg ausentes, sem baixar", async () => {
     assert.equal(fonts.state, "ausente");
     const ffmpeg = await ensureFfmpeg({ check: true });
     assert.equal(ffmpeg.state, "ausente");
+  });
+});
+
+test("browser: preserva o caminho explícito quando o executável não confere com o pin", async (t) => {
+  if (process.arch !== "x64" || !["win32", "linux"].includes(process.platform)) return t.skip("plataforma sem shell pinado");
+  await withHome(async (home) => {
+    const selection = join(home, "browser-configurado");
+    await writeFile(selection, "executável com digest diferente");
+    const previous = process.env.FRANKFRAMES_BROWSER_PATH;
+    process.env.FRANKFRAMES_BROWSER_PATH = selection;
+    try {
+      const result = await ensureBrowser();
+      assert.equal(result.state, "falhou");
+      assert.match(result.detail, /FRANKFRAMES_BROWSER_PATH/);
+      assert.equal(await readFile(selection, "utf8"), "executável com digest diferente");
+    } finally {
+      if (previous === undefined) delete process.env.FRANKFRAMES_BROWSER_PATH;
+      else process.env.FRANKFRAMES_BROWSER_PATH = previous;
+    }
   });
 });
 

@@ -13,6 +13,13 @@ O guia cobre download, `setup`, `doctor`, abertura do Studio e instalação do h
 Confira o `main` remoto antes de informar se o repositório está atualizado. O pacote da aba Releases
 corresponde à versão da tag publicada.
 
+Quando a pessoa pedir para instalar ou deixar o FrankFrames funcionando, esse pedido já autoriza os
+passos da instalação local descritos no guia: obter o código, rodar `npm ci`, baixar as dependências
+do `setup` e verificar o funcionamento. Execute nessa ordem e confirme a entrega com o `doctor` e
+um render de teste ou a abertura do Studio, conforme o pedido. Prossiga sem exigir inventário ou
+um segundo "autorizado". Se houver uma exigência de permissão do ambiente, identifique a etapa
+afetada e siga a solicitação de permissão correspondente.
+
 ## Publicar cada atualização concluída no GitHub
 
 1. Revise `git status` e o diff. Inclua no commit apenas os arquivos da tarefa.
