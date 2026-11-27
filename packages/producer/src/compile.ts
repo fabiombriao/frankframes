@@ -5,6 +5,7 @@ import { parse, serialize } from "parse5";
 import { loadComposition } from "@frankframes/contract";
 import type { Composition, ResolvedClip } from "@frankframes/contract";
 import { annotateMotion } from "./motion.ts";
+import { STUDIO_LAYER_ATTR } from "./edit.ts";
 
 interface P5Node {
   nodeName: string;
@@ -83,7 +84,10 @@ interface MergeContext {
   depth: number;
   ancestors: string[];
   warnings: string[];
+  annotateSource?: SourceAnnotation;
 }
+
+export type SourceAnnotation = (html: string, file: string, host?: string) => string;
 
 /** `<style>`, `<script>` e `<link>` do `<head>` do arquivo inlinado. */
 function headAssets(document: P5Node): P5Node[] {
@@ -119,7 +123,7 @@ async function inlineNode(node: P5Node, ctx: MergeContext): Promise<void> {
   }
 
   const html = ctx.files.get(absolute) ?? (await readFile(absolute, "utf8"));
-  const document = parse(html) as unknown as P5Node;
+  const document = parse(ctx.annotateSource?.(html, absolute, attr(node, STUDIO_LAYER_ATTR)) ?? html) as unknown as P5Node;
   const root = [...walk(document.childNodes)].find((candidate) => candidate.nodeName !== "#text" && attr(candidate, "data-composition-id") !== undefined);
   const inlined = [...headAssets(document), ...(root?.childNodes ?? []).map(cloneNode)];
 
@@ -168,10 +172,13 @@ export async function mergeSubCompositions(
   entryDir: string,
   entryPath?: string,
   files: ReadonlyMap<string, string> = new Map(),
+  annotateSource?: SourceAnnotation,
 ): Promise<MergeResult> {
-  const document = parse(entryHtml) as unknown as P5Node;
   const entry = resolve(entryPath ?? resolve(entryDir, "index.html"));
-  const ctx: MergeContext = { files, entryDir: resolve(entryDir), depth: 0, ancestors: [entry], warnings: [] };
+  const document = parse(annotateSource?.(entryHtml, entry) ?? entryHtml) as unknown as P5Node;
+  const ctx: MergeContext = { files, entryDir: resolve(entryDir), depth: 0, ancestors: [entry], warnings: [],
+    ...(annotateSource ? { annotateSource } : {}),
+  };
   await inlineAll(document.childNodes, ctx);
   return { html: serialize(document as never), warnings: ctx.warnings };
 }

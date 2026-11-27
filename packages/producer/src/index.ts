@@ -11,9 +11,11 @@ export { annotateCompiled, annotateTiming, mergeSubCompositions, compileComposit
 export { annotateMotion, toRuntimeSpec } from "./motion.ts";
 export type { MotionRuntimeSpec } from "./motion.ts";
 export { applyPatches, applyTransition, authoredClipText, deleteClip, duplicateClip, editComposition, EDIT_ERROR_CODES, EditError, splitClip, trimClipStart, explicitClipIds, locateClip, topLevelClip, referrersOf, removeRange, refSuffix } from "./edit.ts";
+export { annotateStudioLayers, editStudioLayer, STUDIO_LAYER_ATTR } from "./edit.ts";
 export { editKeyframes, mergeKeyframePoints } from "./keyframes-edit.ts";
 export type { KeyframePoint, KeyframeProp, KeyframeRequest } from "./keyframes-edit.ts";
 export type { ClipLocation, ClipPatch, CompositionPatch, DeleteRequest, DuplicateRequest, DuplicateResult, SplitRequest, TrimStartRequest, TransitionRequest } from "./edit.ts";
+export type { AuthoredLayer } from "./edit.ts";
 export { buildCaptionComposition, countKaraokeWords, editCaptionText, hasCaptionMeta, readCaptionFile, renderCue } from "./captions.ts";
 export type { CaptionCue, CaptionLayout } from "./captions.ts";
 export type { CaptionOptions, CaptionSegment } from "./captions.ts";

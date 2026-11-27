@@ -945,6 +945,21 @@
             "Teste de regressão no Chromium e gate completo."
           ],
           "jiraKey": "EDT-104"
+        },
+        {
+          "summary": "Studio: selecionar e editar camadas visuais no preview",
+          "points": 8,
+          "labels": [
+            "studio",
+            "camadas"
+          ],
+          "acceptance": [
+            "No Vídeo 3, selecionar separadamente o título Folha de pagamento e o fundo do cartão, aumentar a fonte, arrastar, redimensionar e mudar a cor e a opacidade.",
+            "A lista inclui camadas aninhadas e subcomposições. O editor permite alterar texto, estilo e CSS inline por elemento, com histórico e revisão de origem.",
+            "Camadas sobrepostas selecionáveis via lista e Alt+clique. O arrasto e a opacidade compõem com a animação existente.",
+            "Teste de regressão no Chromium, aceite no Vídeo 3 e gate local."
+          ],
+          "jiraKey": "EDT-105"
         }
       ],
       "jiraKey": "EDT-35"

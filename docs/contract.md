@@ -1035,6 +1035,18 @@ Qualquer outra falha de medição continua falhando alto.
   `POST /api/clips/<id>` aceita `textParts: [{index, original, text}]` e compara cada trecho ao original.
   A edição escapa o texto digitado e grava só os nós alterados, preservando tags, destaques, quebras e atributos.
   As subcomposições externas de legenda continuam com o editor de legendas.
+- **Edição por camadas**. O botão "Camadas" pausa o preview e exibe a lista de elementos autorais da composição
+  e dos arquivos que ela inclui. Selecionar um clip na timeline destaca sua camada. No preview, o clique pega
+  o primeiro elemento visível na posição do ponteiro e Alt+clique percorre os elementos sobrepostos. Arrastar
+  move a camada e as alças nos cantos mudam largura e altura. O inspetor edita texto, fonte, dimensões,
+  cores, opacidade, bordas e as declarações CSS inline. Desligar o modo devolve o clique na imagem ao play/pausa.
+  A geometria usa pixels da composição, considerando a escala do preview. O arrasto grava `transform`,
+  em composição com as propriedades individuais do motion. Em um elemento com trilha de opacidade, o estilo
+  `--ff-layer-opacity` multiplica os valores da trilha por um fator de 0 a 1.
+  `GET /api/layers` devolve a árvore em ordem de documento. `POST /api/layers` aplica `{id, revision, style?, text?}`
+  ao elemento correspondente no arquivo de origem. Edições com revisão vencida recebem `E_HISTORY_STALE`.
+  A escrita passa pelo contrato da árvore e entra no histórico. Identificadores de seleção só existem no preview.
+  As propriedades são da camada HTML ou SVG. Desenhos internos de um bitmap ou de um canvas formam uma camada única.
 - **Player segue a raiz** (EDT-87). O iframe do preview tem o viewport de `data-width` × `data-height` da raiz
   (`GET /api/composition` → `width`/`height`; padrão 1920×1080 se faltar, como no render) e é escalado por **uma**
   razão, `min(largura livre / largura, altura livre / altura)`, centrado no painel: nada é cortado nem esticado, em

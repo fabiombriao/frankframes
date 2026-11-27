@@ -135,6 +135,7 @@ export interface PrepareOptions {
   vars?: Record<string, string>;
   /** Prepara fontes e tempos de vídeo para o compositor, sem extrair JPEGs. */
   layered?: boolean;
+  annotateSource?: NonNullable<Parameters<typeof mergeSubCompositions>[4]>;
 }
 
 export interface PreparedComposition {
@@ -178,7 +179,7 @@ export async function prepare(options: PrepareOptions): Promise<PreparedComposit
   throwIfCanceled(signal, "compile");
   progress("compile", 5, entry);
   const source = await readFile(entry, "utf8");
-  const merged = await mergeSubCompositions(source, entryDir, entry);
+  const merged = await mergeSubCompositions(source, entryDir, entry, undefined, options.annotateSource);
   warnings.push(...merged.warnings);
 
   // Variáveis entram depois de inlinar as sub-composições (um data-var dentro de uma vale igual) e antes do

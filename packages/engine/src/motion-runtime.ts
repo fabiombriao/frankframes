@@ -70,8 +70,15 @@ export const MOTION_SOURCE = `(() => {
     }
     assertNoConflict(element, spec);
     for (const binding of spec.s) element.style.setProperty(binding[0], binding[1]);
+    const authoredOpacity = element.style.getPropertyValue("--ff-layer-opacity").trim();
+    const multiplier = authoredOpacity !== "" && Number.isFinite(Number(authoredOpacity))
+      ? Math.max(0, Math.min(1, Number(authoredOpacity))) : 1;
     for (const item of spec.a) {
-      const frames = item.k.map((key) => ({ offset: key[0], [camel(item.p)]: String(key[1]), easing: key[2] === null ? "linear" : key[2] }));
+      const frames = item.k.map((key) => ({
+        offset: key[0],
+        [camel(item.p)]: String(item.p === "opacity" && multiplier !== 1 ? Number(key[1]) * multiplier : key[1]),
+        easing: key[2] === null ? "linear" : key[2],
+      }));
       const animation = element.animate(frames, { delay: item.d, duration: item.n, fill: "both", easing: "linear", id: "ff-motion" });
       animation.pause();
     }

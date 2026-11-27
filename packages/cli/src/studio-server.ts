@@ -1,12 +1,13 @@
 // FrankFrames — proprietário. Ver LICENSE na raiz.
 import { watch } from "node:fs";
+import { createHash } from "node:crypto";
 import type { FSWatcher } from "node:fs";
-import { readFile, rename, rm, stat, unlink, writeFile } from "node:fs/promises";
+import { readFile, realpath, rename, rm, stat, unlink, writeFile } from "node:fs/promises";
 import { statIfPresent } from "./fs-util.ts";
 import { createServer } from "node:http";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
-import { basename, dirname, extname, isAbsolute, join, resolve, sep } from "node:path";
+import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describePresets, listPresets, loadComposition, parseComposition, parseMotionValue } from "@frankframes/contract";
 import type { MotionKind, MotionSource, ResolvedClip } from "@frankframes/contract";
@@ -15,9 +16,11 @@ import type { PreviewAudioConfig, VideoOrientation } from "@frankframes/engine";
 import {
   applyPatches,
   applyTransition,
+  annotateStudioLayers,
   authoredClipText,
   editCaptionText,
   editKeyframes,
+  editStudioLayer,
   EditError,
   explicitClipIds,
   hasCaptionMeta,
@@ -34,7 +37,7 @@ import {
   editComposition,
   trimClipStart,
 } from "@frankframes/producer";
-import type { ClipPatch, CompositionPatch, FfmpegPair, KeyframeRequest, PreparedComposition } from "@frankframes/producer";
+import type { AuthoredLayer, ClipPatch, CompositionPatch, FfmpegPair, KeyframeRequest, PreparedComposition } from "@frankframes/producer";
 import { UnknownBlockError, installBlock, listBlocks, motionThumbPath } from "@frankframes/catalog";
 import { ExportError, createExporter } from "./studio-export.ts";
 import { HistoryStaleError, StudioHistory } from "./studio-history.ts";
@@ -76,6 +79,7 @@ const STUDIO_FILES: Record<string, string> = {
   "/motion.js": "motion.js",
   "/composition.js": "composition.js",
   "/inspector.js": "inspector.js",
+  "/layers.js": "layers.js",
   "/player-fit.js": "player-fit.js",
   "/style.css": "style.css",
 };
@@ -89,6 +93,28 @@ const AUDIO_NAME = /^[0-9a-f]{64}\.wav$/;
 /** Arquivos do projeto (ex.: `assets/`) vistos pelo preview via `<base>`. */
 const SITE_PREFIX = "/__ff_site/";
 const MAX_BODY_BYTES = 1024 * 1024;
+
+interface StudioLayer {
+  data: Omit<AuthoredLayer, "ordinal"> & { revision: string; sourceId: string };
+  file: string;
+  ordinal: number;
+}
+
+function sourceRevision(source: string): string {
+  return createHash("sha256").update(source).digest("hex");
+}
+
+function parseTextParts(input: unknown): NonNullable<ClipPatch["textParts"]> {
+  if (!Array.isArray(input)) throw new ReplyError(400, "E_TEXT_NOT_EDITABLE", "os trechos precisam ser uma lista");
+  return input.map((item: unknown) => {
+    const { index, original, text } = objectBody(item);
+    if (typeof index !== "number" || !Number.isSafeInteger(index) || index < 0 ||
+      typeof original !== "string" || typeof text !== "string") {
+      throw new ReplyError(400, "E_TEXT_NOT_EDITABLE", "trecho de texto inválido");
+    }
+    return { index, original, text };
+  });
+}
 
 const MIME: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
@@ -336,7 +362,7 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
   const clients = new Set<ServerResponse>();
   let watcher: FSWatcher | undefined;
   let debounce: NodeJS.Timeout | undefined;
-  let preview: { mtimeMs: number; revision: number; prepared: PreparedComposition; html: string } | undefined;
+  let preview: { mtimeMs: number; revision: number; prepared: PreparedComposition; html: string; layers: Map<string, StudioLayer> } | undefined;
   /** Escritas fora do arquivo de entrada (legendas): o `mtime` dele não muda, então o cache do preview conta aqui. */
   let revision = 0;
   let tmpCounter = 0;
@@ -452,14 +478,28 @@ data: ${JSON.stringify(job)}
     }
   };
 
-  const loadPreview = async (): Promise<{ prepared: PreparedComposition; html: string }> => {
+  const loadPreview = async (): Promise<NonNullable<typeof preview>> => {
     const current = await stat(entryPath);
     // Lida antes do `prepare`: uma escrita durante a preparação deixa o cache vencido.
     const seen = revision;
     if (preview !== undefined && preview.mtimeMs === current.mtimeMs && preview.revision === seen) {
-      return { prepared: preview.prepared, html: preview.html };
+      return preview;
     }
-    const prepared = await prepare({ entry: entryPath });
+    const layers = new Map<string, StudioLayer>();
+    const prepared = await prepare({
+      entry: entryPath,
+      annotateSource: (source, file, host) => {
+        if (file !== entryPath && host === undefined) return source;
+        const digest = sourceRevision(source);
+        const sourceId = sourceRevision(file);
+        const parent = host ? layers.get(host) : undefined;
+        const annotated = annotateStudioLayers(source, host ? host + "." : "", parent ? parent.data.depth + 1 : 0);
+        for (const { ordinal, ...data } of annotated.layers) {
+          layers.set(data.id, { data: { ...data, revision: digest, sourceId }, file, ordinal });
+        }
+        return annotated.html;
+      },
+    });
     const audio = await previewAudioConfig(prepared);
     const html = injectEngine(prepared.compiledHtml, {
       manifest: prepared.manifest,
@@ -470,8 +510,8 @@ data: ${JSON.stringify(job)}
       // `autoplay: false`: o Studio abre pausado no 0 (§9d); só a recarga pós-edição restaura o play.
       preview: { fps: prepared.fps, frames: prepared.totalFrames, id: prepared.composition.id, reload: false, autoplay: false, clickToToggle: true },
     }).replace(/<head[^>]*>/i, (head) => `${head}<base href="${SITE_PREFIX}">`);
-    preview = { mtimeMs: current.mtimeMs, revision: seen, prepared, html };
-    return { prepared, html };
+    preview = { mtimeMs: current.mtimeMs, revision: seen, prepared, html, layers };
+    return preview;
   };
 
   const serveStatic = async (res: ServerResponse, pathname: string): Promise<void> => {
@@ -669,17 +709,7 @@ data: ${JSON.stringify(job)}
       patch.text = body.text;
     }
     if (body.textParts !== undefined) {
-      if (!Array.isArray(body.textParts)) {
-        throw new ReplyError(400, "E_TEXT_NOT_EDITABLE", '"textParts" precisa ser uma lista');
-      }
-      patch.textParts = body.textParts.map((item: unknown) => {
-        const { index, original, text } = objectBody(item);
-        if (typeof index !== "number" || !Number.isSafeInteger(index) || index < 0 ||
-          typeof original !== "string" || typeof text !== "string") {
-          throw new ReplyError(400, "E_TEXT_NOT_EDITABLE", "trecho de texto inválido");
-        }
-        return { index, original, text };
-      });
+      patch.textParts = parseTextParts(body.textParts);
     }
 
     const source = await readFile(entryPath, "utf8");
@@ -777,6 +807,42 @@ data: ${JSON.stringify(job)}
     const compiled = await compileComposition({ entryHtml: next, entryDir, entryPath, ...(files === undefined ? {} : { files }) });
     if (!compiled.composition.ok) throw new ReplyError(400, "E_CONTRACT_INVALID", message, compiled.composition.diagnostics);
     return compiled.composition;
+  };
+
+  const patchLayer = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
+    const { id, revision: expected, style, text } = objectBody(await bodyJson(req));
+    if (typeof id !== "string" || typeof expected !== "string" ||
+      (style !== undefined && typeof style !== "string") || (style === undefined && text === undefined)) {
+      throw new ReplyError(400, "E_BODY_INVALID", "informe a camada, a versão e o estilo ou texto a editar");
+    }
+    const patch = { ...(style !== undefined ? { style } : {}), ...(text !== undefined ? { textParts: parseTextParts(text) } : {}) };
+    const { layers } = await loadPreview();
+    const layer = layers.get(id);
+    if (!layer) throw new ReplyError(404, "E_CLIP_NOT_FOUND", "camada não encontrada no preview");
+    const fileFromRoot = relative(await realpath(entryDir), await realpath(layer.file));
+    if (isAbsolute(fileFromRoot) || fileFromRoot === ".." || fileFromRoot.startsWith(".." + sep)) {
+      throw new ReplyError(403, "E_BODY_INVALID", "arquivo da camada fora da composição");
+    }
+    const source = await readFile(layer.file, "utf8");
+    if (expected !== sourceRevision(source) || expected !== layer.data.revision) {
+      throw new ReplyError(409, "E_HISTORY_STALE", "a composição mudou desde que esta camada foi aberta");
+    }
+    let next: string;
+    try {
+      next = editStudioLayer(source, layer.ordinal, patch);
+    } catch (error) {
+      if (error instanceof EditError) throw new ReplyError(400, error.code, error.message);
+      throw error;
+    }
+    if (next !== source) {
+      const files = layer.file === entryPath ? undefined : new Map([[layer.file, next]]);
+      await validatedTree(files === undefined ? next : await readFile(entryPath, "utf8"), "a camada deixaria o contrato inválido", files);
+      if (await readFile(layer.file, "utf8") !== source) {
+        throw new ReplyError(409, "E_HISTORY_STALE", "o arquivo mudou enquanto a edição da camada era validada");
+      }
+      await commit("editar camada " + layer.data.label, source, next, layer.file);
+    }
+    sendJson(res, 200, { ok: true, revision: sourceRevision(next), history: history.state() });
   };
 
   /**
@@ -1172,6 +1238,13 @@ data: ${JSON.stringify(job)}
     }
 
     if (method === "GET") {
+      if (pathname === "/api/layers") {
+        const { layers } = await loadPreview();
+        const ordered = [...layers.values()].map((layer) => layer.data)
+          .sort((a, b) => a.id.localeCompare(b.id, "en", { numeric: true }));
+        sendJson(res, 200, { layers: ordered });
+        return;
+      }
       if (pathname === "/api/composition") {
         sendJson(res, 200, await compositionPayload());
         return;
@@ -1275,6 +1348,10 @@ data: ${JSON.stringify(job)}
     }
 
     if (method === "POST") {
+      if (pathname === "/api/layers") {
+        await serial(() => patchLayer(req, res));
+        return;
+      }
       if (pathname.startsWith("/api/clips/")) {
         const rest = pathname.slice("/api/clips/".length);
         const splitMatch = /^([^/]+)\/split$/.exec(rest);

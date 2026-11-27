@@ -133,7 +133,7 @@ const NON_VISUAL_TEXT = new Set([
 ]);
 type TextRange = Omit<ClipTextPart, "index"> & Pick<Replacement, "start" | "end">;
 
-function* clipTextRanges(node: P5Node): Generator<TextRange> {
+function* clipTextRanges(node: P5Node, descendants = true): Generator<TextRange> {
   if (NON_VISUAL_TEXT.has(node.nodeName)) return;
   const children = node.childNodes ?? [];
   const location = node.sourceCodeLocation;
@@ -148,7 +148,7 @@ function* clipTextRanges(node: P5Node): Generator<TextRange> {
       if (range && (value.trim() !== "" || children.length === 1)) {
         yield { tag: node.nodeName, text: value, start: range.startOffset, end: range.endOffset };
       }
-    } else if (attr(child, "data-composition-id") === undefined &&
+    } else if (descendants && attr(child, "data-composition-id") === undefined &&
       attr(child, "data-composition-src") === undefined) {
       yield* clipTextRanges(child);
     }
@@ -167,6 +167,85 @@ export function authoredClipText(source: string): Map<string, { text: string | n
     result.set(id, { text: plain ? parts[0]?.text.trim() ?? null : null, parts });
   }
   return result;
+}
+
+export const STUDIO_LAYER_ATTR = "data-ff-studio-layer";
+const LAYER_EXCLUDED = new Set(["script", "style", "link", "meta", "noscript", "title", "desc", "metadata", "source", "track", "br"]);
+
+export interface AuthoredLayer {
+  id: string;
+  ordinal: number;
+  depth: number;
+  label: string;
+  clipId: string | null;
+  style: string;
+  text: ClipTextPart[];
+}
+
+function* layerNodes(node: P5Node, depth = 0): Generator<{ node: P5Node; depth: number }> {
+  for (const child of node.content?.childNodes ?? node.childNodes ?? []) {
+    if (!child.attrs || LAYER_EXCLUDED.has(child.nodeName)) continue;
+    const visible = child.nodeName !== "template" && child.sourceCodeLocation?.startTag !== undefined;
+    if (visible) yield { node: child, depth };
+    yield* layerNodes(child, depth + Number(visible));
+  }
+}
+
+function layerRoot(source: string): P5Node | undefined {
+  return findRoot(parseSource(source) as unknown as Parameters<typeof findRoot>[0]) as unknown as P5Node | undefined;
+}
+
+/** Adiciona identificadores ao HTML servido no Studio. O arquivo autoral nunca recebe os identificadores. */
+export function annotateStudioLayers(source: string, prefix = "", startDepth = 0): { html: string; layers: AuthoredLayer[] } {
+  const root = layerRoot(source);
+  if (!root) return { html: source, layers: [] };
+  const replacements: Replacement[] = [];
+  const layers = Array.from(layerNodes(root), ({ node, depth }, ordinal): AuthoredLayer => {
+    const id = prefix + ordinal;
+    const clipId = attr(node, "data-clip-id") ?? null;
+    const style = attr(node, "style") ?? "";
+    const text = Array.from(clipTextRanges(node, false), ({ tag, text }, index) => ({ tag, text, index }));
+    const summary = text.map((part) => part.text.trim()).filter(Boolean).join(" ").slice(0, 65);
+    const className = attr(node, "class")?.trim().split(/\s+/).filter(Boolean).join(".");
+    const label = clipId ?? (summary || (className ? node.nodeName + "." + className : node.nodeName));
+    const location = node.sourceCodeLocation!;
+    replacements.push(...attributeReplacements(source, location.startTag!, location.attrs, {
+      clipId: "", attributes: { [STUDIO_LAYER_ATTR]: id },
+    }));
+    return { id, ordinal, depth: startDepth + depth, label, clipId, style, text };
+  });
+  return { html: applyReplacements(source, replacements), layers };
+}
+
+export function editStudioLayer(source: string, ordinal: number, patch: Pick<ClipPatch, "textParts"> & { style?: string }): string {
+  const root = layerRoot(source);
+  const node = root ? Array.from(layerNodes(root))[ordinal]?.node : undefined;
+  const location = node?.sourceCodeLocation;
+  if (!node || !location?.startTag) throw new EditError("E_CLIP_NOT_FOUND", "camada ausente no arquivo");
+  const replacements: Replacement[] = [];
+  if (patch.style !== undefined) {
+    replacements.push(...attributeReplacements(source, location.startTag, location.attrs, {
+      clipId: "", attributes: { style: patch.style.trim() === "" ? null : patch.style },
+    }));
+  }
+  if (patch.textParts) {
+    replacements.push(...textReplacements(Array.from(clipTextRanges(node, false)), patch.textParts, "camada"));
+  }
+  return applyReplacements(source, replacements);
+}
+
+function textReplacements(parts: TextRange[], updates: NonNullable<ClipPatch["textParts"]>, label: string): Replacement[] {
+  const seen = new Set<number>();
+  const replacements: Replacement[] = [];
+  for (const { index, original, text } of updates) {
+    const part = parts[index];
+    if (!part || part.text !== original || seen.has(index)) {
+      throw new EditError("E_TEXT_NOT_EDITABLE", `trecho inválido ou alterado em "${label}"; recarregue o inspetor`);
+    }
+    seen.add(index);
+    if (text !== original) replacements.push({ start: part.start, end: part.end, text: escapeText(text) });
+  }
+  return replacements;
 }
 
 /** `nome="valor"`, ou `nome='valor'` quando o patch pede aspas simples para esse atributo. */
@@ -225,16 +304,7 @@ export function applyPatches(source: string, patches: ClipPatch[]): string {
       if (patch.text !== undefined) {
         throw new EditError("E_TEXT_NOT_EDITABLE", 'envie "text" ou "textParts"');
       }
-      const parts = Array.from(clipTextRanges(node));
-      const seen = new Set<number>();
-      for (const { index, original, text } of patch.textParts) {
-        const part = parts[index];
-        if (!part || part.text !== original || seen.has(index)) {
-          throw new EditError("E_TEXT_NOT_EDITABLE", `trecho inválido ou alterado no clip "${patch.clipId}"; recarregue o inspetor`);
-        }
-        seen.add(index);
-        if (text !== original) replacements.push({ start: part.start, end: part.end, text: escapeText(text) });
-      }
+      replacements.push(...textReplacements(Array.from(clipTextRanges(node)), patch.textParts, patch.clipId));
     }
 
     if (patch.text !== undefined) {

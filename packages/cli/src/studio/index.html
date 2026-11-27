@@ -17,6 +17,8 @@
       <input id="importInput" type="file" multiple hidden accept="video/*,audio/*,image/*,.mov,.mkv,.m4a,.opus,.flac,.html,.htm,text/html">
       <button id="insertTextButton" type="button" class="tool-button" title="Criar um texto simples editável no playhead (não é um bloco do catálogo)">Inserir texto</button>
       <button id="compositionButton" type="button" class="tool-button" title="Editar a composição: duração, largura, altura e fps da raiz">Composição</button>
+      <button id="layersButton" type="button" class="tool-button" aria-controls="layerPanel" aria-pressed="false"
+        title="Selecionar, mover e redimensionar camadas no preview">Camadas</button>
       <button id="splitButton" type="button" class="tool-button" title="Dividir o clip selecionado no playhead (S)" disabled>Dividir</button>
       <button id="deleteButton" type="button" class="tool-button" title="Excluir o clip selecionado, sem mover o resto (Delete)" disabled>Excluir</button>
       <button id="undoButton" type="button" class="tool-button" title="Desfazer (Ctrl+Z)" disabled>Desfazer</button>
@@ -40,6 +42,12 @@
     <section id="playerPanel" class="panel player-panel" aria-label="Player">
       <div id="playerFrame" class="player-frame">
         <iframe id="player" src="/preview" width="1920" height="1080" allow="autoplay" title="Preview da composição"></iframe>
+        <div id="layerOverlay" class="layer-overlay" aria-hidden="true" title="Alt+clique para selecionar a camada atrás" hidden>
+          <div id="layerOutline" class="layer-outline" hidden>
+            <span data-corner="nw"></span><span data-corner="ne"></span>
+            <span data-corner="sw"></span><span data-corner="se"></span>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -47,6 +55,26 @@
       <h2>Inspetor</h2>
       <div id="toolDiagnostics" class="diagnostics" role="status" aria-live="polite"></div>
       <div id="compositionDiagnostics" class="diagnostics" role="status" aria-live="polite"></div>
+      <form id="layerPanel" class="layer-panel" aria-label="Editar camadas" hidden novalidate>
+        <label class="layer-picker">
+          <span>Camada</span>
+          <select id="layerPicker"></select>
+        </label>
+        <div id="layerTextFields"></div>
+        <div id="layerProperties" class="field-grid" hidden></div>
+        <details>
+          <summary>CSS da camada</summary>
+          <label class="text-field">
+            <span>Estilo inline</span>
+            <textarea id="layerCss" rows="4" spellcheck="false"></textarea>
+          </label>
+        </details>
+        <div class="layer-actions">
+          <button id="layerApply" type="submit" class="primary-button" disabled>Aplicar à camada</button>
+          <button id="layerReset" type="button" class="tool-button" disabled>Reverter campos</button>
+        </div>
+        <div id="layerDiagnostics" class="diagnostics" role="status" aria-live="polite"></div>
+      </form>
       <p id="inspectorEmpty" class="panel-status">Selecione um clip na timeline para editá-lo.</p>
 
       <form id="compositionForm" class="composition-form" hidden novalidate aria-label="Composição (raiz)">

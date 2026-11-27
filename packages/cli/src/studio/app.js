@@ -3,6 +3,7 @@ import { keyframeMarks, keyframePropsFor, renderKeyframeSection, renderMotionSec
 import { compositionFields, compositionPatch, pastEndNotice } from "/composition.js";
 import { activeCueIndex, captionFrame, displayNumber, numericChanges } from "/inspector.js";
 import { fitPlayerBox, playerViewport } from "/player-fit.js";
+import { createLayerEditor } from "/layers.js";
 
 (() => {
   "use strict";
@@ -50,6 +51,22 @@ import { fitPlayerBox, playerViewport } from "/player-fit.js";
   const clipTextFields = document.getElementById("clipTextFields");
   const inspectorPanel = inspector.closest(".inspector-panel");
   const applyButton = document.getElementById("applyButton");
+  const layerDiagnostics = document.getElementById("layerDiagnostics");
+  const layerEditor = createLayerEditor({
+    player,
+    button: document.getElementById("layersButton"),
+    panel: document.getElementById("layerPanel"),
+    overlay: document.getElementById("layerOverlay"),
+    outline: document.getElementById("layerOutline"),
+    dirtyChanged: () => updateExportButton(),
+    showDiagnostics: (diagnostics) => renderDiagnostics(layerDiagnostics, diagnostics),
+    save: async (changes) => {
+      const result = await mutate("POST", "/api/layers", changes);
+      if (result.ok) applyHistory(result.payload.history);
+      else renderDiagnostics(layerDiagnostics, result.diagnostics);
+      return result.ok ? result.payload.revision : null;
+    },
+  });
   const compositionDiagnostics = document.getElementById("compositionDiagnostics");
   const inspectorDiagnostics = document.getElementById("inspectorDiagnostics");
   const captionsSection = document.getElementById("captionsSection");
@@ -478,6 +495,7 @@ import { fitPlayerBox, playerViewport } from "/player-fit.js";
 
   function clearInspector() {
     state.selectedId = null;
+    layerEditor.sync(null);
     state.inspectorDirty = false;
     inspector.hidden = true;
     fillComposition();
@@ -848,6 +866,7 @@ import { fitPlayerBox, playerViewport } from "/player-fit.js";
     if (!changed && state.inspectorDirty) return;
     if (state.selectedKeyframe !== null && state.selectedKeyframe.clipId !== id) state.selectedKeyframe = null;
     state.selectedId = id;
+    layerEditor.sync(id);
     state.inspectorDirty = false;
     updateSelectionStyles();
     fillInspector();
@@ -902,7 +921,7 @@ import { fitPlayerBox, playerViewport } from "/player-fit.js";
   /* Com export rodando o botão reabre o progresso; senão só vale sem edição pendente nem inspetor sujo. */
   function updateExportButton() {
     const running = exportRunning();
-    const blocked = !running && (state.busy || state.inflight > 0 || state.inspectorDirty || captionsDirty());
+    const blocked = !running && (state.busy || state.inflight > 0 || state.inspectorDirty || captionsDirty() || layerEditor.dirty());
     exportButton.disabled = blocked || state.exportDefaults === null;
     exportButton.textContent = running ? "Exportando " + Math.round(state.exportJob.percent) + "%" : "Exportar";
     exportButton.title = blocked
@@ -2704,6 +2723,7 @@ import { fitPlayerBox, playerViewport } from "/player-fit.js";
     const previous = state.playhead;
     state.playhead = state.total > 0 ? clamp(timeMs / 1000, 0, maxPlayhead()) : Math.max(0, timeMs / 1000);
     paintPlayhead();
+    layerEditor.paint();
     if (state.playhead !== previous) followPlayhead();
     updateToolbar();
   }, FRAME_POLL_MS);
