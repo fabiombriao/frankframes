@@ -115,6 +115,52 @@ test("a opção por camadas sem vídeo mantém os frames integrais do produtor",
   assert.deepEqual(layered.hashes, standard.hashes);
 });
 
+test("camadas alternam entre PNG transparente e opaco sem reiniciar a linha do tempo", { timeout: 120_000 }, async (t) => {
+  const pair = await resolveFfmpeg();
+  try {
+    await resolveChrome();
+    await run(pair.ffmpeg, ["-v", "error", "-f", "lavfi", "-i", "color=s=96x96", "-vf", "libplacebo",
+      "-frames:v", "1", "-f", "null", "-"]);
+  } catch {
+    t.skip("Chrome ou libplacebo indisponível");
+    return;
+  }
+  const dir = await tempDir(t, "ff-layered-alpha-");
+  const source = join(dir, "source.mp4");
+  const entry = join(dir, "index.html");
+  const outPath = join(dir, "output.mp4");
+  await run(pair.ffmpeg, ["-v", "error", "-f", "lavfi", "-i", "color=c=blue:s=96x96:r=12:d=1",
+    "-c:v", "mpeg4", "-y", source]);
+  await writeFile(entry, `<!doctype html><style>
+html,body{margin:0}
+video,.flash{position:absolute;inset:0;width:100%;height:100%}
+video{object-fit:cover}
+.flash{background:red}
+.corner{position:absolute;top:0;left:0;width:32px;height:32px;background:lime}
+</style><main data-composition-id="flash" data-width="96" data-height="96" data-fps="12" data-duration="1">
+<video src="source.mp4" data-duration="1" data-has-audio="false"></video>
+<div class="flash" data-start="0.25" data-duration="0.25" data-track="1"></div>
+<div class="corner" data-start="0.5" data-duration="0.5" data-track="1"></div>
+</main>`);
+  await renderComposition({ entry, outPath, ...pair, layered: true, gpu: "software", workers: 1, preset: "high" });
+  const { stdout } = await run(pair.ffmpeg, ["-v", "error", "-xerror", "-i", outPath,
+    "-f", "rawvideo", "-pix_fmt", "rgb24", "-"], { encoding: "buffer", maxBuffer: 1 << 20 });
+  assert.equal(stdout.length, 12 * 96 * 96 * 3);
+  const pixel = (frame: number, x: number, y: number): number[] => {
+    const at = 3 * (frame * 96 * 96 + y * 96 + x);
+    return [...stdout.subarray(at, at + 3)];
+  };
+  for (let frame = 0; frame < 12; frame += 1) {
+    const [red, , blue] = pixel(frame, 60, 60);
+    if (frame >= 3 && frame < 6) assert.ok(red! > blue! + 100, `flash opaco no frame ${frame}`);
+    else assert.ok(blue! > red! + 100, `vídeo visível no frame ${frame}`);
+    if (frame >= 6) {
+      const [r, g, b] = pixel(frame, 16, 16);
+      assert.ok(g! > Math.max(r!, b!) + 100, `camada seguinte no frame ${frame}`);
+    }
+  }
+});
+
 test("o render por camadas usa NVDEC na fonte aprovada quando NVENC está ativo", { timeout: 120_000 }, async (t) => {
   const pair = await resolveFfmpeg();
   try {
@@ -192,12 +238,14 @@ html,body{margin:0}
 video{position:absolute;inset:0;width:100vw;height:100vh;object-fit:cover;filter:contrast(1.1)}
 .bg{position:absolute;inset:0;background:linear-gradient(transparent,#00204050)}
 .glass{position:absolute;left:48px;top:80px;width:160px;height:104px;border-radius:16px;backdrop-filter:blur(10px)}
+.flash{position:absolute;inset:0;background:red}
 .bar{position:absolute;left:8px;top:8px;width:240px;height:4px;overflow:hidden;border-radius:2px}
 .bar i{display:block;height:100%;width:0;background:#ff6a3d;animation:fill 1s linear forwards}
 @keyframes fill{to{width:100%}}
 </style><main data-composition-id="vram" data-width="256" data-height="256" data-fps="12" data-duration="1">
 <video src="source.mp4" data-duration="1" data-has-audio="false"></video>
-<div class="bg"></div><div class="glass" data-start="0.5" data-duration="0.5"></div><div class="bar"><i></i></div>
+<div class="bg"></div><div class="glass" data-start="0.5" data-duration="0.5"></div>
+<div class="flash" data-start="0.25" data-duration="0.25"></div><div class="bar"><i></i></div>
 </main>`);
   const progress: string[] = [];
   const result = await renderComposition({
@@ -214,7 +262,9 @@ video{position:absolute;inset:0;width:100vw;height:100vh;object-fit:cover;filter
     const values = Array.from({ length: 12 }, (_, i) => stdout[at(frame, 113 + i, 125)]!);
     return Math.max(...values) - Math.min(...values);
   };
-  assert.ok(range(4) > 80, "o vidro ainda está invisível no frame 4");
+  assert.ok(range(2) > 80, "o vidro ainda está invisível no frame 2");
+  const flash = at(4, 130, 125);
+  assert.ok(stdout[flash]! > stdout[flash + 2]! + 100, "o quadro opaco aparece em VRAM");
   assert.ok(range(7) < 30, "o vidro borra o fundo depois de entrar");
   const fill = at(10, 130, 9);
   assert.ok(stdout[fill]! > stdout[fill + 1]! + 65, "a barra laranja chegou ao meio");

@@ -267,6 +267,7 @@ export interface LayeredCapture {
   frames: PageFrame[];
   hashes: Map<number, string>;
   background: boolean;
+  rgbFrames: ReadonlySet<number>;
 }
 
 export function layerName(frame: number): string {
@@ -287,6 +288,7 @@ export async function captureLayers(options: {
   onScan?: (scanned: number) => void;
 }): Promise<LayeredCapture> {
   const frames: PageFrame[] = Array.from({ length: options.total });
+  const rgbFrames = new Set<number>();
   const previous = new WeakMap<Session, { frame: number; signature: string | undefined }>();
   const inspect = `(${inspectFrame.toString()})(${options.sparse})`;
   const interval = Math.max(60, Math.ceil(options.total / 10));
@@ -312,7 +314,11 @@ export async function captureLayers(options: {
       previous.set(session, { frame, signature: state.signature });
       return state.signature === undefined || last?.frame !== frame - 1 || last.signature !== state.signature;
     },
-    onFrame: (frame, png) => writeFile(join(options.directory, layerName(frame)), png),
+    onFrame: (frame, png) => {
+      // O Chrome usa PNG truecolor (tipo IHDR 2) quando a captura é inteiramente opaca.
+      if (png[25] === 2) rgbFrames.add(frame);
+      return writeFile(join(options.directory, layerName(frame)), png);
+    },
   });
   const backgrounds = new Set(frames.map(({ background }) => background));
   if (backgrounds.size > 1) throw new LayeredError("o gradiente de fundo precisa ter o mesmo estilo em todos os workers");
@@ -335,5 +341,5 @@ export async function captureLayers(options: {
       await server.close();
     }
   }
-  return { frames, hashes, background: background !== undefined };
+  return { frames, hashes, background: background !== undefined, rgbFrames };
 }

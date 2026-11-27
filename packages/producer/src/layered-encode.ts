@@ -208,6 +208,59 @@ export async function probeLayeredVram(ffmpeg: string, sources: LayeredSource[],
   return undefined;
 }
 
+function runLayeredFfmpeg(
+  ffmpeg: string, args: string[], directory: string, signal: AbortSignal | undefined,
+  step: string, total: number, strictStderr: boolean,
+): Promise<void> {
+  // Depois de abortar, espere o close antes de liberar os arquivos que o FFmpeg lê.
+  return new Promise((resolve, reject) => {
+    const child = execFile(ffmpeg, args, {
+      cwd: directory, windowsHide: true, maxBuffer: 16 << 20,
+      ...(signal === undefined ? {} : { signal }),
+    }, (error, output, stderr) => {
+      const settle = (): void => {
+        const reported = [...output.matchAll(/^frame=(\d+)\r?$/gm)].at(-1)?.[1];
+        const diagnostic = stderr.trim();
+        if (error?.name === "AbortError") reject(error);
+        else if (error !== null || (strictStderr && diagnostic !== "")) {
+          const status = child.signalCode === null ? `código ${error?.code ?? child.exitCode ?? "desconhecido"}`
+            : `sinal ${child.signalCode}`;
+          const detail = diagnostic || (child.pid === undefined ? error?.message : undefined) || "sem mensagem no stderr";
+          reject(new Error(`FFmpeg na etapa de ${step} (${status}, ${reported ?? "0"} de ${total} frames): ${detail}`, { cause: error }));
+        } else if (Number(reported) !== total) {
+          reject(new Error(`FFmpeg confirmou ${reported ?? "nenhum"} de ${total} frames na etapa de ${step}`));
+        } else resolve();
+      };
+      if (child.pid === undefined || child.exitCode !== null || child.signalCode !== null) settle();
+      else child.once("close", settle);
+    });
+    const kill = (): void => { child.kill(); };
+    process.prependOnceListener("exit", kill);
+    child.once("close", () => process.removeListener("exit", kill));
+  });
+}
+
+async function layerFiles(ffmpeg: string, options: LayeredEncodeOptions): Promise<Map<number, string>> {
+  const { hashes, rgbFrames } = options.capture;
+  const names = new Map([...hashes.keys()].map((frame) => [frame, layerName(frame)]));
+  if (rgbFrames.size === 0 || rgbFrames.size === names.size) return names;
+
+  // O decoder do concat precisa entregar um formato fixo. A troca RGB ↔ RGBA
+  // reinicia o grafo inteiro antes que o filtro format=rgba receba o frame.
+  const frames = [...rgbFrames].sort((a, b) => a - b);
+  const input = "png-opacos.ffconcat";
+  await writeFile(join(options.directory, input), frameList(
+    new Map(frames.map((frame, index) => [index, layerName(frame)])), options.fps, frames.length,
+  ));
+  await runLayeredFfmpeg(ffmpeg, [
+    "-hide_banner", "-loglevel", "error", "-xerror", "-nostats", "-progress", "pipe:1",
+    "-f", "concat", "-safe", "0", "-i", input, "-vf", "format=rgba", "-fps_mode", "passthrough",
+    "-frames:v", String(frames.length), "-c:v", "png", "-start_number", "0", "-y", "rgba-%06d.png",
+  ], options.directory, options.signal, "normalização dos PNGs", frames.length, true);
+  for (const [index, frame] of frames.entries()) names.set(frame, `rgba-${String(index).padStart(6, "0")}.png`);
+  return names;
+}
+
 export async function encodeLayers(ffmpeg: string, options: LayeredEncodeOptions): Promise<void> {
   const nvdec = new Set<string>();
   if (options.av1Nvenc === true && options.vram !== true) {
@@ -230,34 +283,18 @@ export async function encodeLayers(ffmpeg: string, options: LayeredEncodeOptions
     }
   }
   if (nvdec.size > 0) options.onNvdec?.(nvdec.size);
-  const args = await buildLayeredArgs(options, nvdec);
-  // Em caso de abort, o callback do execFile pode chegar antes da saída do processo.
-  // Espere o close antes de liberar o diretório que o FFmpeg está lendo.
-  const stdout = await new Promise<string>((resolve, reject) => {
-    const child = execFile(ffmpeg, args, {
-      cwd: options.directory, windowsHide: true, maxBuffer: 16 << 20,
-      ...(options.signal === undefined ? {} : { signal: options.signal }),
-    }, (error, output, stderr) => {
-      const settle = (): void => {
-        if (error === null && (options.vram !== true || stderr.trim() === "")) resolve(output);
-        else reject(new Error(stderr.trim() || error?.message || "erro no grafo Vulkan", { cause: error }));
-      };
-      if (child.pid === undefined || child.exitCode !== null || child.signalCode !== null) settle();
-      else child.once("close", settle);
-    });
-    const kill = (): void => { child.kill(); };
-    process.prependOnceListener("exit", kill);
-    child.once("close", () => process.removeListener("exit", kill));
-  });
-  const reported = [...stdout.matchAll(/^frame=(\d+)\r?$/gm)].at(-1)?.[1];
-  if (Number(reported) !== options.capture.frames.length) {
-    throw new Error(`FFmpeg confirmou ${reported ?? "nenhum"} de ${options.capture.frames.length} frames`);
-  }
+  const names = await layerFiles(ffmpeg, options);
+  const args = await buildLayeredArgs(options, nvdec, names);
+  const step = options.vram === true ? "composição e encode Vulkan" : "composição e encode por camadas";
+  await runLayeredFfmpeg(ffmpeg, args, options.directory, options.signal, step,
+    options.capture.frames.length, options.vram === true);
 }
 
 /** O tempo de cada trecho é o dos frames visíveis, medido no mesmo seek usado para o HTML. */
-async function buildLayeredArgs(options: LayeredEncodeOptions, nvdec: ReadonlySet<string>): Promise<string[]> {
-  const { frames, hashes } = options.capture;
+async function buildLayeredArgs(
+  options: LayeredEncodeOptions, nvdec: ReadonlySet<string>, names: ReadonlyMap<number, string>,
+): Promise<string[]> {
+  const { frames } = options.capture;
   const { sources, viewport, fps, directory } = options;
   const vram = options.vram === true;
   const rate = `${fps.num}/${fps.den}`;
@@ -390,7 +427,7 @@ async function buildLayeredArgs(options: LayeredEncodeOptions, nvdec: ReadonlySe
     base = `[glass${index}]`;
     stream += 1;
   }
-  await writeFile(join(directory, "layers.ffconcat"), frameList(new Map([...hashes.keys()].map((frame) => [frame, layerName(frame)])), fps, frames.length));
+  await writeFile(join(directory, "layers.ffconcat"), frameList(names, fps, frames.length));
   inputs.push("-f", "concat", "-safe", "0", "-i", "layers.ffconcat");
   if (vram) graph.push(`[${stream}:v]fps=${rate},trim=end_frame=${frames.length},${uploadRgba}[overlay]`, vulkanOverlay(base, "[overlay]", "[html]", viewport));
   else graph.push(

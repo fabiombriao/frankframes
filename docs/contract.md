@@ -761,6 +761,8 @@ sem passar pelo cache de JPEGs.
   a CPU e o render emite um aviso. O compositor desta etapa ainda recebe os frames em memória do host.
   A saída composta tem garantia visual. `hashes` corresponde aos PNGs esparsos do HTML.
   Com `--keep`, esses PNGs e os dados do compositor ficam em `layers/` no diretório de trabalho.
+  Se a camada HTML alternar entre PNGs RGB e RGBA, os PNGs RGB recebem alfa opaco antes do concat.
+  A normalização mantém os tempos dos frames e preserva os PNGs de captura usados em `hashes`.
 - Sobreposição ou falha de cobertura dos vídeos, estilos de vídeo incompatíveis ou uma forma de vidro que o
   compositor não consegue representar geram `E_LAYERED_UNSUPPORTED`. Use o render integral para essas cenas.
 
